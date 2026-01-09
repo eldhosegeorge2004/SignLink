@@ -554,10 +554,10 @@ async function startCamera() {
 
         const camera = new Camera(localVideo, {
             onFrame: async () => {
-                await hands.send({ image: localVideo });
+                if (isCamOn) {
+                    await hands.send({ image: localVideo });
+                }
             },
-            // Removing hardcoded width/height to let browser/MediaPipe 
-            // choose the best native resolution for the device (Portrait on mobile)
         });
         await camera.start();
         initAudioAnalysis(localStream);
@@ -852,7 +852,14 @@ micBtn.addEventListener('click', () => {
 
 camBtn.addEventListener('click', () => {
     isCamOn = !isCamOn;
-    localStream.getVideoTracks()[0].enabled = isCamOn;
+    localStream.getVideoTracks().forEach(track => track.enabled = isCamOn);
+
+    // Clear canvas when video is off
+    if (!isCamOn) {
+        ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
+        predictionDiv.innerText = "Camera Off";
+    }
+
     camBtn.innerHTML = `<span class="material-icons">${isCamOn ? 'videocam' : 'videocam_off'}</span>`;
     camBtn.classList.toggle('red-btn', !isCamOn);
     camBtn.setAttribute('title', isCamOn ? 'Turn off camera' : 'Turn on camera');
