@@ -646,6 +646,10 @@ video {
     gap: 8px;
 }
 
+.control-right {
+    justify-content: flex-end;
+}
+
 .control-center {
     display: flex;
     gap: 16px;
@@ -657,8 +661,8 @@ video {
     display: none !important;
     position: absolute;
     bottom: 80px;
-    right: 170px;
-    /* Anchored relative to right side */
+    right: 24px;
+    /* Align to the right side of screen */
     background: rgba(15, 23, 42, 0.95);
     backdrop-filter: blur(24px);
     flex-direction: column;
@@ -1059,9 +1063,9 @@ video {
     }
 
     .secondary-controls {
-        right: 50%;
-        transform: translateX(50%);
-        bottom: 80px;
+        right: 15px;
+        transform: none;
+        bottom: 85px;
     }
 
     .control-left,
