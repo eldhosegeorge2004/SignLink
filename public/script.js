@@ -1041,3 +1041,18 @@ if (moreBtn && secondaryControls) {
         }
     });
 }
+
+// Copy Code Logic
+const copyCodeBtn = document.getElementById('copyCodeBtn');
+if (copyCodeBtn) {
+    copyCodeBtn.addEventListener('click', () => {
+        const code = meetingCodeDisplay.innerText;
+        navigator.clipboard.writeText(code).then(() => {
+            const originalText = meetingCodeDisplay.innerText;
+            meetingCodeDisplay.innerText = "COPIED!";
+            setTimeout(() => {
+                meetingCodeDisplay.innerText = originalText;
+            }, 1500);
+        });
+    });
+}

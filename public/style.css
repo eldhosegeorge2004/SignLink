@@ -720,22 +720,36 @@ video {
     background: rgba(255, 255, 255, 0.1);
 }
 
-.meeting-code {
+#meetingCodeContainer {
+    z-index: 101;
+}
+
+.meeting-code-bubble {
     color: var(--text-muted);
     font-weight: 500;
     background: rgba(255, 255, 255, 0.05);
-    padding: 10px 16px;
-    border-radius: 12px;
-    font-size: 0.95rem;
+    padding: 10px 18px;
+    border-radius: 30px;
+    font-size: 0.9rem;
     cursor: pointer;
-    border: 1px solid transparent;
+    border: 1px solid var(--glass-border);
     transition: all 0.2s;
     font-family: var(--font-body);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    backdrop-filter: blur(10px);
 }
 
-.meeting-code:hover {
+.meeting-code-bubble:hover {
     border-color: var(--primary-color);
+    background: rgba(255, 255, 255, 0.1);
     color: var(--text-main);
+}
+
+.small-icon {
+    font-size: 18px;
+    opacity: 0.6;
 }
 
 /* Side Panel (Training/Chat) */
@@ -1065,7 +1079,8 @@ video {
     .secondary-controls {
         right: 15px;
         transform: none;
-        bottom: 85px;
+        bottom: 140px;
+        /* Stacked above the code bubble */
     }
 
     .control-left,
@@ -1073,9 +1088,27 @@ video {
         display: flex;
     }
 
+    #meetingCodeContainer {
+        position: fixed;
+        bottom: 85px;
+        /* Just above the control bar */
+        right: 15px;
+        top: auto;
+        left: auto;
+        z-index: 250;
+    }
+
+    .meeting-code-bubble {
+        padding: 10px 16px;
+        font-size: 0.85rem;
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(59, 130, 246, 0.5);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
     .meeting-code {
-        font-size: 0.75rem;
-        padding: 6px 10px;
+        display: none;
+        /* Hide old class if used */
     }
 
     .control-btn {
