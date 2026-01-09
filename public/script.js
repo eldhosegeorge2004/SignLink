@@ -579,11 +579,28 @@ async function startCamera() {
 
 function preprocessLandmarks(landmarks) {
     const wrist = landmarks[0];
-    // Normalize coordinates relative to wrist
-    return landmarks.flatMap(p => [
-        p.x - wrist.x,
-        p.y - wrist.y,
-        p.z - wrist.z
+
+    // 1. Translation Invariance: Shift all points relative to the wrist (0,0,0)
+    let shifted = landmarks.map(p => ({
+        x: p.x - wrist.x,
+        y: p.y - wrist.y,
+        z: p.z - wrist.z
+    }));
+
+    // 2. Scale Invariance: Calculate "hand size" (distance from wrist to index finger MCP)
+    // Index MCP is landmark 5
+    const indexMCP = shifted[5];
+    const distance = Math.sqrt(
+        Math.pow(indexMCP.x, 2) +
+        Math.pow(indexMCP.y, 2) +
+        Math.pow(indexMCP.z, 2)
+    ) || 1e-6; // Avoid division by zero
+
+    // 3. Normalize all coordinates by this distance
+    return shifted.flatMap(p => [
+        p.x / distance,
+        p.y / distance,
+        p.z / distance
     ]);
 }
 
@@ -607,20 +624,19 @@ function onResults(results) {
 
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         for (const landmarks of results.multiHandLandmarks) {
-            // Draw connectors using MediaPipe drawing utils
-            if (typeof drawConnectors !== 'undefined') {
+            // 1. Draw landmarks ONLY if overlay is ON
+            if (isOverlayOn && typeof drawConnectors !== 'undefined') {
                 drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
                 drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 2 });
             }
 
+            // 2. Preprocess for AI (Normalization is Scale/Translation invariant)
             const flatLandmarks = preprocessLandmarks(landmarks);
 
+            // 3. Handle Collection or Prediction
             if (isCollecting) {
                 const label = labelInput.value.trim();
                 if (label) {
-                    // collectedData.push({ label: label, landmarks: flatLandmarks });
-                    // updateDataStats();
-                    // Save to Firebase instead
                     saveGesture(label, flatLandmarks);
                 }
             } else {
@@ -629,7 +645,7 @@ function onResults(results) {
         }
     } else {
         predictionDiv.innerText = "Waiting for hands...";
-        predictionBuffer.length = 0; // Clear buffer when hand leaves
+        predictionBuffer.length = 0;
     }
     ctx.restore();
 }
@@ -945,45 +961,7 @@ if (overlayBtn) {
     });
 }
 
-// Modify onResults to respect overlay state
-const originalOnResults = onResults;
-onResults = function (results) {
-    if (localCanvas.width !== localVideo.videoWidth || localCanvas.height !== localVideo.videoHeight) {
-        localCanvas.width = localVideo.videoWidth;
-        localCanvas.height = localVideo.videoHeight;
-    }
-
-    ctx.save();
-    ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
-
-    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        for (const landmarks of results.multiHandLandmarks) {
-            // Draw connectors ONLY if overlay is ON
-            if (isOverlayOn && typeof drawConnectors !== 'undefined') {
-                drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
-                drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 2 });
-            }
-
-            const flatLandmarks = preprocessLandmarks(landmarks);
-
-            // Prediction runs AUTOMATICALLY regardless of overlay
-            if (isCollecting) {
-                const label = labelInput.value.trim();
-                if (label) {
-                    saveGesture(label, flatLandmarks);
-                }
-            } else {
-                runPrediction(flatLandmarks);
-            }
-        }
-    } else {
-        predictionDiv.innerText = "Waiting for hands...";
-        predictionBuffer.length = 0;
-    }
-    ctx.restore();
-}
-// Re-bind the modified function to hands
-hands.onResults(onResults);
+// Toggles are already wired up above to isOverlayOn variable
 
 
 // Training Toggle
