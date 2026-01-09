@@ -41,7 +41,6 @@ body {
     overflow: hidden;
     height: 100vh;
     height: 100dvh;
-    /* Handles mobile address bars */
     width: 100vw;
     display: flex;
     flex-direction: column;
@@ -49,7 +48,6 @@ body {
         radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 40%),
         radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 40%);
     position: fixed;
-    /* Prevents scroll bounce on iOS */
     top: 0;
     left: 0;
 }
@@ -79,12 +77,10 @@ body {
 /* --- Join Screen / Home Page --- */
 #join-screen {
     background: transparent;
-    /* Uses body gradient */
     position: relative;
     overflow-y: auto;
 }
 
-/* Header */
 header {
     display: flex;
     justify-content: space-between;
@@ -124,7 +120,6 @@ header {
     border: 1px solid var(--glass-border);
 }
 
-/* Lobby Content */
 .lobby-content {
     flex: 1;
     display: flex;
@@ -200,25 +195,9 @@ header {
     overflow: hidden;
 }
 
-.btn-primary::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(rgba(255, 255, 255, 0.2), transparent);
-    opacity: 0;
-    transition: opacity 0.3s;
-}
-
 .btn-primary:hover {
     transform: translateY(-2px);
     box-shadow: 0 12px 28px rgba(59, 130, 246, 0.5);
-}
-
-.btn-primary:hover::after {
-    opacity: 1;
 }
 
 .input-group {
@@ -296,7 +275,6 @@ header {
 .btn-text:hover:not(:disabled) {
     opacity: 1;
     color: var(--primary-color);
-    text-decoration: none;
 }
 
 .status-text {
@@ -317,32 +295,6 @@ header {
     animation: float 6s ease-in-out infinite;
 }
 
-.hero-image-placeholder {
-    width: 400px;
-    height: 400px;
-    background: var(--card-bg);
-    border-radius: 20px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-    border: 1px solid #30363d;
-    position: relative;
-    overflow: hidden;
-}
-
-/* Abstract blob background for image */
-.hero-image-placeholder::before {
-    content: '';
-    position: absolute;
-    width: 200%;
-    height: 200%;
-    background: radial-gradient(#2f81f7 10%, transparent 60%);
-    opacity: 0.1;
-    animation: rotate 20s linear infinite;
-}
-
-/* Hero Visual Animation */
 .hero-visual {
     position: relative;
     width: 500px;
@@ -357,7 +309,6 @@ header {
     background: rgba(20, 20, 30, 0.6);
     border: 1px solid var(--glass-border);
     backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
     padding: 18px 28px;
     border-radius: 20px;
     display: flex;
@@ -378,22 +329,21 @@ header {
     border-radius: 50%;
 }
 
-/* Positioning cards */
 .c1 {
-    top: 15%;
     left: -5%;
+    top: 15%;
     animation: float 6s ease-in-out infinite;
 }
 
 .c2 {
-    top: 45%;
     right: -15%;
+    top: 45%;
     animation: float 7s ease-in-out infinite 1s;
 }
 
 .c3 {
-    bottom: 15%;
     left: 10%;
+    bottom: 15%;
     animation: float 8s ease-in-out infinite 2s;
 }
 
@@ -429,7 +379,6 @@ header {
     }
 }
 
-/* Features Grid */
 .features-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -450,26 +399,10 @@ header {
     overflow: hidden;
 }
 
-.feature-item::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.05), transparent 70%);
-    opacity: 0;
-    transition: opacity 0.4s;
-}
-
 .feature-item:hover {
     transform: translateY(-10px);
     border-color: var(--glass-highlight);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-}
-
-.feature-item:hover::before {
-    opacity: 1;
 }
 
 .f-icon {
@@ -504,7 +437,6 @@ footer {
     margin-top: auto;
 }
 
-/* Animations */
 @keyframes fadeInSlide {
     from {
         opacity: 0;
@@ -529,16 +461,6 @@ footer {
     }
 }
 
-@keyframes rotate {
-    from {
-        transform: rotate(0deg);
-    }
-
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 /* --- Meeting Room --- */
 #meeting-room {
     background: transparent;
@@ -556,7 +478,6 @@ footer {
     gap: 20px;
 }
 
-/* Remote View (Full Screen) */
 .remote-view-container {
     width: 100%;
     height: 100%;
@@ -577,7 +498,6 @@ video {
     object-fit: cover;
 }
 
-/* Local View (Floating PiP) */
 .local-view-container {
     position: absolute;
     bottom: 120px;
@@ -585,7 +505,6 @@ video {
     width: 320px;
     height: 240px;
     background: #1e293b;
-    /* Slate background */
     border-radius: 24px;
     overflow: hidden;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
@@ -627,7 +546,6 @@ video {
     object-fit: contain;
     background: #000;
     transform: scaleX(-1);
-    /* Mirror for natural view */
     transition: opacity 0.3s var(--ease-out);
     pointer-events: none;
 }
@@ -657,7 +575,6 @@ video {
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Captions / Predicitons */
 .caption-overlay {
     position: absolute;
     bottom: 40px;
@@ -726,9 +643,6 @@ video {
 .control-right {
     display: flex;
     align-items: center;
-}
-
-.control-right {
     gap: 8px;
 }
 
@@ -738,14 +652,27 @@ video {
     align-items: center;
 }
 
+/* Secondary Controls (Dropdown for Everyone) */
 .secondary-controls {
-    display: flex;
-    gap: 16px;
-    align-items: center;
+    display: none !important;
+    position: absolute;
+    bottom: 80px;
+    right: 170px;
+    /* Anchored relative to right side */
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(24px);
+    flex-direction: column;
+    padding: 12px;
+    border-radius: 20px;
+    border: 1px solid var(--glass-border);
+    gap: 12px;
+    z-index: 150;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
 }
 
-#moreBtn {
-    display: none;
+.secondary-controls.active {
+    display: flex !important;
+    animation: fadeInSlide 0.3s var(--ease-out);
 }
 
 .control-btn {
@@ -817,14 +744,13 @@ video {
     height: auto;
     background: rgba(20, 20, 30, 0.85);
     backdrop-filter: blur(24px);
-    border-left: 1px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     border-radius: 24px;
     z-index: 200;
     transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
     display: flex;
     flex-direction: column;
     box-shadow: -10px 0 40px rgba(0, 0, 0, 0.4);
-    border: 1px solid var(--glass-border);
 }
 
 .side-panel.open {
@@ -1056,14 +982,6 @@ video {
 
 /* Responsiveness */
 @media (max-width: 768px) {
-    header {
-        padding: 20px;
-    }
-
-    .logo {
-        font-size: 20px;
-    }
-
     .lobby-content {
         flex-direction: column;
         padding: 20px;
@@ -1073,12 +991,10 @@ video {
 
     .lobby-left h1 {
         font-size: 2.5rem;
-        margin-bottom: 16px;
     }
 
     .lobby-left p {
         font-size: 1rem;
-        margin-bottom: 30px;
         max-width: 100%;
     }
 
@@ -1107,13 +1023,6 @@ video {
         width: 100%;
         max-width: 350px;
         height: 350px;
-        margin: 0 auto;
-    }
-
-    .floating-card {
-        padding: 8px 12px;
-        font-size: 0.75rem;
-        gap: 8px;
     }
 
     .c1 {
@@ -1149,30 +1058,10 @@ video {
         backdrop-filter: blur(24px);
     }
 
-    #moreBtn {
-        display: flex;
-    }
-
     .secondary-controls {
-        display: none !important;
-        position: absolute;
+        right: 50%;
+        transform: translateX(50%);
         bottom: 80px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(15, 23, 42, 0.95);
-        backdrop-filter: blur(24px);
-        flex-direction: column;
-        padding: 10px;
-        border-radius: 20px;
-        border: 1px solid var(--glass-border);
-        gap: 10px;
-        z-index: 150;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-    }
-
-    .secondary-controls.active {
-        display: flex !important;
-        animation: fadeInSlide 0.3s var(--ease-out);
     }
 
     .control-left,
@@ -1186,8 +1075,8 @@ video {
     }
 
     .control-btn {
-        width: 48px;
-        height: 48px;
+        width: 44px;
+        height: 44px;
     }
 
     .side-panel {
@@ -1204,7 +1093,6 @@ video {
 
     .caption-overlay {
         width: 90%;
-        padding: 10px;
         font-size: 0.9rem;
     }
 
@@ -1232,7 +1120,7 @@ video {
     }
 }
 
-/* --- Accessibility Boost Styles --- */
+/* --- Accessibility Styles --- */
 .userInfo {
     display: flex;
     align-items: center;
@@ -1245,7 +1133,7 @@ video {
     background: var(--primary-color);
     border-radius: 4px;
     opacity: 0.3;
-    transition: transform 0.1s, box-shadow 0.1s;
+    transition: transform 0.1s;
 }
 
 .volume-active {
@@ -1259,7 +1147,6 @@ video {
     max-width: 80%;
     text-align: center;
     font-style: italic;
-    font-weight: 300;
     background: rgba(15, 23, 42, 0.85);
     border-color: rgba(59, 130, 246, 0.4);
 }
