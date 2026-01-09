@@ -1125,11 +1125,14 @@ video:poster {
 
     /* Meeting Room Mobile Adjustments */
     .local-view-container {
-        width: 110px;
-        height: 150px;
-        bottom: 100px;
+        width: 100px;
+        height: 130px;
+        top: 20px;
+        /* Moved to top to clear the bottom for captions */
+        bottom: auto;
         right: 15px;
         border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     }
 
     .control-bar {
