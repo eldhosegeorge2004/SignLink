@@ -40,11 +40,18 @@ body {
     color: var(--text-main);
     overflow: hidden;
     height: 100vh;
+    height: 100dvh;
+    /* Handles mobile address bars */
+    width: 100vw;
     display: flex;
     flex-direction: column;
     background-image:
         radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 40%),
         radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 40%);
+    position: fixed;
+    /* Prevents scroll bounce on iOS */
+    top: 0;
+    left: 0;
 }
 
 /* --- Utilities --- */
@@ -1107,12 +1114,15 @@ video:poster {
     }
 
     .control-bar {
-        width: 95%;
-        bottom: 20px;
-        gap: 10px;
-        padding: 10px;
-        flex-wrap: wrap;
-        justify-content: center;
+        width: 92%;
+        bottom: 15px;
+        gap: 8px;
+        padding: 10px 5px;
+        flex-wrap: nowrap;
+        /* Keep them in one row if possible */
+        overflow-x: auto;
+        /* Allow side-scroll for buttons on very small phones */
+        justify-content: space-evenly;
     }
 
     .control-left,
@@ -1122,9 +1132,11 @@ video:poster {
     }
 
     .control-btn {
-        width: 44px;
-        height: 44px;
-        border-radius: 12px;
+        width: 48px;
+        /* Easier to tap for fingers */
+        height: 48px;
+        border-radius: 14px;
+        flex-shrink: 0;
     }
 
     .side-panel {
