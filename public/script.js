@@ -854,10 +854,16 @@ camBtn.addEventListener('click', () => {
     isCamOn = !isCamOn;
     localStream.getVideoTracks().forEach(track => track.enabled = isCamOn);
 
-    // Clear canvas when video is off
+    const localContainer = document.getElementById('localContainer');
+
+    // UI feedback for video state
     if (!isCamOn) {
         ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
         predictionDiv.innerText = "Camera Off";
+        localContainer.classList.add('video-muted');
+    } else {
+        localContainer.classList.remove('video-muted');
+        predictionDiv.innerText = "Waiting for sign...";
     }
 
     camBtn.innerHTML = `<span class="material-icons">${isCamOn ? 'videocam' : 'videocam_off'}</span>`;
