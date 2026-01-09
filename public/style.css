@@ -577,10 +577,6 @@ video {
     object-fit: cover;
 }
 
-video:poster {
-    background: transparent;
-}
-
 /* Local View (Floating PiP) */
 .local-view-container {
     position: absolute;
@@ -625,16 +621,6 @@ video:poster {
     box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
 }
 
-#localCanvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    object-fit: contain;
-}
-
 .local-view-container video {
     width: 100%;
     height: 100%;
@@ -644,6 +630,16 @@ video:poster {
     /* Mirror for natural view */
     transition: opacity 0.3s var(--ease-out);
     pointer-events: none;
+}
+
+#localCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    object-fit: contain;
 }
 
 .userInfo {
@@ -676,24 +672,20 @@ video:poster {
     color: white;
     backdrop-filter: blur(16px);
     z-index: 50;
-    /* Higher than videos (5) but lower than controls (100) */
     transition: all 0.3s ease;
     border: 1px solid var(--glass-border);
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
     pointer-events: none;
-    /* Don't block clicks to the video */
 }
 
 #prediction-overlay {
     bottom: 220px;
-    /* High position for AI Sign Recognition */
     background: rgba(15, 23, 42, 0.85);
     border-color: var(--primary-color);
 }
 
 #remote-caption-overlay {
     bottom: 280px;
-    /* Highest position for remote messages */
     background: rgba(0, 77, 64, 0.9);
     color: #80cbc4;
     border: 1px solid #4db6ac;
@@ -716,7 +708,6 @@ video:poster {
     bottom: 30px;
     left: 50%;
     transform: translateX(-50%);
-    height: auto;
     background: rgba(20, 20, 30, 0.75);
     backdrop-filter: blur(20px);
     display: flex;
@@ -744,6 +735,17 @@ video:poster {
 .control-center {
     display: flex;
     gap: 16px;
+    align-items: center;
+}
+
+.secondary-controls {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+#moreBtn {
+    display: none;
 }
 
 .control-btn {
@@ -816,8 +818,6 @@ video:poster {
     background: rgba(20, 20, 30, 0.85);
     backdrop-filter: blur(24px);
     border-left: 1px solid var(--glass-border);
-    border-radius: 24px 0 0 24px;
-    /* Only round left side? No, let's float it */
     border-radius: 24px;
     z-index: 200;
     transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
@@ -1054,22 +1054,6 @@ video:poster {
     cursor: default;
 }
 
-.chat-input-area input:focus {
-    border-color: var(--primary-color);
-}
-
-.send-btn {
-    background: transparent;
-    border: none;
-    color: var(--primary-color);
-    cursor: pointer;
-}
-
-.send-btn:disabled {
-    color: #484f58;
-}
-
-/* Responsiveness */
 /* Responsiveness */
 @media (max-width: 768px) {
     header {
@@ -1132,7 +1116,6 @@ video:poster {
         gap: 8px;
     }
 
-    /* Pull cards inward so they don't clip on small screens */
     .c1 {
         left: 0%;
         top: 10%;
@@ -1148,34 +1131,53 @@ video:poster {
         bottom: 10%;
     }
 
-    /* Meeting Room Mobile Adjustments */
     .local-view-container {
         width: 100px;
         height: 130px;
         top: 20px;
-        /* Moved to top to clear the bottom for captions */
         bottom: auto;
         right: 15px;
         border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     }
 
     .control-bar {
-        width: 92%;
+        width: 95%;
         bottom: 15px;
-        gap: 8px;
-        padding: 10px 5px;
-        flex-wrap: nowrap;
-        /* Keep them in one row if possible */
-        overflow-x: auto;
-        /* Allow side-scroll for buttons on very small phones */
-        justify-content: space-evenly;
+        gap: 10px;
+        padding: 10px;
+        justify-content: space-around;
+        backdrop-filter: blur(24px);
+    }
+
+    #moreBtn {
+        display: flex;
+    }
+
+    .secondary-controls {
+        display: none !important;
+        position: absolute;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(15, 23, 42, 0.95);
+        backdrop-filter: blur(24px);
+        flex-direction: column;
+        padding: 10px;
+        border-radius: 20px;
+        border: 1px solid var(--glass-border);
+        gap: 10px;
+        z-index: 150;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .secondary-controls.active {
+        display: flex !important;
+        animation: fadeInSlide 0.3s var(--ease-out);
     }
 
     .control-left,
     .control-right {
         display: flex;
-        /* Restored visibility */
     }
 
     .meeting-code {
@@ -1183,17 +1185,9 @@ video:poster {
         padding: 6px 10px;
     }
 
-    .control-btn.small-btn {
-        width: 38px;
-        height: 38px;
-    }
-
     .control-btn {
         width: 48px;
-        /* Easier to tap for fingers */
         height: 48px;
-        border-radius: 14px;
-        flex-shrink: 0;
     }
 
     .side-panel {
@@ -1224,7 +1218,6 @@ video:poster {
 
     #remote-caption-overlay {
         bottom: 250px;
-        /* Increased gap from 50px to 60px */
     }
 }
 
@@ -1240,7 +1233,6 @@ video:poster {
 }
 
 /* --- Accessibility Boost Styles --- */
-
 .userInfo {
     display: flex;
     align-items: center;
@@ -1254,7 +1246,6 @@ video:poster {
     border-radius: 4px;
     opacity: 0.3;
     transition: transform 0.1s, box-shadow 0.1s;
-    box-shadow: 0 0 0px var(--primary-color);
 }
 
 .volume-active {
@@ -1265,7 +1256,6 @@ video:poster {
 
 .stt-overlay {
     bottom: 160px;
-    /* Middle position for Speech to Text */
     max-width: 80%;
     text-align: center;
     font-style: italic;

@@ -1023,3 +1023,21 @@ if (uploadBtn && uploadInput) {
 
 closePanelBtn.addEventListener('click', () => sidePanel.classList.remove('open'));
 hangupBtn.addEventListener('click', () => window.location.reload());
+
+// More Options Toggle (Mobile)
+const moreBtn = document.getElementById('moreBtn');
+const secondaryControls = document.getElementById('secondary-controls');
+
+if (moreBtn && secondaryControls) {
+    moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        secondaryControls.classList.toggle('active');
+    });
+
+    // Close dropdown when clicking elsewhere
+    document.addEventListener('click', (e) => {
+        if (!secondaryControls.contains(e.target) && !moreBtn.contains(e.target)) {
+            secondaryControls.classList.remove('active');
+        }
+    });
+}
