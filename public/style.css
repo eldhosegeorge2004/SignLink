@@ -643,14 +643,39 @@ video:poster {
     gap: 12px;
     color: white;
     backdrop-filter: blur(16px);
-    z-index: 4;
-    transition: opacity 0.3s;
+    z-index: 50;
+    /* Higher than videos (5) but lower than controls (100) */
+    transition: all 0.3s ease;
     border: 1px solid var(--glass-border);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+    /* Don't block clicks to the video */
 }
 
 #prediction-overlay {
-    bottom: 140px;
+    bottom: 220px;
+    /* High position for AI Sign Recognition */
+    background: rgba(15, 23, 42, 0.85);
+    border-color: var(--primary-color);
+}
+
+#remote-caption-overlay {
+    bottom: 280px;
+    /* Highest position for remote messages */
+    background: rgba(0, 77, 64, 0.9);
+    color: #80cbc4;
+    border: 1px solid #4db6ac;
+}
+
+.remote-says-label {
+    font-size: 0.8rem;
+    margin-right: 5px;
+    opacity: 0.8;
+}
+
+#remotePrediction {
+    font-weight: bold;
+    color: #fff;
 }
 
 /* Control Bar */
@@ -1074,11 +1099,13 @@ video:poster {
 }
 
 .stt-overlay {
-    bottom: 80px;
+    bottom: 160px;
+    /* Middle position for Speech to Text */
     max-width: 80%;
     text-align: center;
     font-style: italic;
     font-weight: 300;
+    background: rgba(15, 23, 42, 0.85);
     border-color: rgba(59, 130, 246, 0.4);
 }
 

@@ -609,7 +609,7 @@ function onResults(results) {
             const flatLandmarks = preprocessLandmarks(landmarks);
 
             if (isCollecting) {
-                const label = labelInput.value.trim().toUpperCase();
+                const label = labelInput.value.trim();
                 if (label) {
                     // collectedData.push({ label: label, landmarks: flatLandmarks });
                     // updateDataStats();
@@ -647,9 +647,9 @@ function runPrediction(flatLandmarks) {
                     socket.emit("sign-message", { room: roomName, text: smoothLabel });
 
                     // Check for Emoji Shortcuts
-                    if (EMOJI_MAP[smoothLabel]) {
-                        popEmojis(EMOJI_MAP[smoothLabel]);
-                        socket.emit("emoji-pop", { room: roomName, emoji: EMOJI_MAP[smoothLabel] });
+                    if (EMOJI_MAP[smoothLabel.toUpperCase()]) {
+                        popEmojis(EMOJI_MAP[smoothLabel.toUpperCase()]);
+                        socket.emit("emoji-pop", { room: roomName, emoji: EMOJI_MAP[smoothLabel.toUpperCase()] });
                     }
                 }
             }
@@ -961,7 +961,7 @@ onResults = function (results) {
 
             // Prediction runs AUTOMATICALLY regardless of overlay
             if (isCollecting) {
-                const label = labelInput.value.trim().toUpperCase();
+                const label = labelInput.value.trim();
                 if (label) {
                     saveGesture(label, flatLandmarks);
                 }
