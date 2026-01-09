@@ -1187,7 +1187,7 @@ video:poster {
     }
 
     #prediction-overlay {
-        bottom: 180px;
+        bottom: 190px;
     }
 
     .stt-overlay {
@@ -1195,7 +1195,8 @@ video:poster {
     }
 
     #remote-caption-overlay {
-        bottom: 230px;
+        bottom: 250px;
+        /* Increased gap from 50px to 60px */
     }
 }
 
