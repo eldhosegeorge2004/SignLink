@@ -341,20 +341,26 @@ joinBtn.addEventListener('click', async () => {
             const audioDevices = devices.filter(d => d.kind === 'audioinput');
             const videoDevices = devices.filter(d => d.kind === 'videoinput');
 
-            let msg = `--- Device Report ---\n`;
-            msg += `Microphones found: ${audioDevices.length}\n`;
-            audioDevices.forEach(d => msg += `- ${d.label || 'Unknown Mic'} (${d.deviceId})\n`);
-
-            msg += `\nCameras found: ${videoDevices.length}\n`;
-            videoDevices.forEach(d => msg += `- ${d.label || 'Unknown Cam'} (${d.deviceId})\n`);
-
-            msg += `\nPermission State: ${(await navigator.permissions.query({ name: 'microphone' })).state}`;
+            const micModal = document.getElementById('mic-modal');
+            const modalRetryBtn = document.getElementById('modalRetryBtn');
+            const modalDismissBtn = document.getElementById('modalDismissBtn');
 
             if (audioDevices.length === 0) {
-                msg += `\n\nERROR: No microphone hardware detected.\n1. Check if mic is plugged in.\n2. Check Windows Privacy Settings > Microphone.\n3. Check Browser Permission (Lock icon in URL bar).`;
-            }
+                micModal.classList.add('active');
 
-            alert(msg);
+                modalRetryBtn.onclick = () => window.location.reload();
+                modalDismissBtn.onclick = () => micModal.classList.remove('active');
+            } else {
+                let msg = `--- Device Report ---\n`;
+                msg += `Microphones found: ${audioDevices.length}\n`;
+                audioDevices.forEach(d => msg += `- ${d.label || 'Unknown Mic'} (${d.deviceId})\n`);
+
+                msg += `\nCameras found: ${videoDevices.length}\n`;
+                videoDevices.forEach(d => msg += `- ${d.label || 'Unknown Cam'} (${d.deviceId})\n`);
+
+                msg += `\nPermission State: ${(await navigator.permissions.query({ name: 'microphone' })).state}`;
+                alert(msg);
+            }
         } catch (e) {
             alert("Diagnostic failed: " + e.message);
         }

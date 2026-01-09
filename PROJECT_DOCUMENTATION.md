@@ -88,10 +88,10 @@ gantt
 | **M1** | **Project Initialization**: Repository setup, Node.js environment configured. | ✅ Completed |
 | **M2** | **Signaling & Connectivity**: Socket.io server working for real-time messaging. | ✅ Completed |
 | **M3** | **Video Telephony**: WebRTC video/audio streams functioning between peers. | ✅ Completed |
-| **M4** | **Hand Visualization**: MediaPipe landmarks drawing correctly on video feed. | 🔄 In Progress |
-| **M5** | **SL Recognition**: TensorFlow.js model predicting gestures (ISL/ASL) in real-time. | ⏳ Pending |
-| **M6** | **Cloud Persistence**: User data and chat history saving to Firebase Firestore. | ⏳ Pending |
-| **M7** | **Product Launch**: Fully polished UI, optimized performance, hosted online. | ⏳ Pending |
+| **M4** | **Hand Visualization**: MediaPipe landmarks drawing correctly on video feed. | ✅ Completed |
+| **M5** | **SL Recognition**: TensorFlow.js model predicting gestures (ISL/ASL) in real-time. | ✅ Completed |
+| **M6** | **Cloud Persistence**: User data and chat history saving to Firebase Firestore. | ✅ Completed |
+| **M7** | **Product Launch**: Fully polished UI, optimized performance, hosted online. | 🔄 In Progress |
 
 ---
 
