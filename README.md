@@ -48,3 +48,5 @@ The application expects a TensorFlow.js model at `public/model/model.json`.
 - **Video Call**: WebRTC peer-to-peer video/audio.
 - **Hand Tracking**: MediaPipe Hands draws landmarks on your local video.
 - **Sign Recognition**: Simple TensorFlow.js integration (requires trained model).
+
+Just for checking
