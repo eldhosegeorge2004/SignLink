@@ -383,10 +383,11 @@ const hands = new Hands({
 });
 
 hands.setOptions({
-    maxNumHands: 2, // Enable both hands
+    maxNumHands: 2,
     modelComplexity: 1,
-    minDetectionConfidence: 0.7,
-    minTrackingConfidence: 0.5
+    minDetectionConfidence: 0.8, // Increased for better mobile detection
+    minTrackingConfidence: 0.7,  // Increased to reduce jitter
+    selfieMode: true             // Essential for front-facing phone cameras
 });
 
 hands.onResults(onResults);
@@ -549,8 +550,8 @@ async function startCamera() {
             onFrame: async () => {
                 await hands.send({ image: localVideo });
             },
-            width: 640,
-            height: 480
+            // Removing hardcoded width/height to let browser/MediaPipe 
+            // choose the best native resolution for the device (Portrait on mobile)
         });
         await camera.start();
         initAudioAnalysis(localStream);
