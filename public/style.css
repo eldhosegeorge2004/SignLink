@@ -611,8 +611,6 @@ video:poster {
     height: 100%;
     pointer-events: none;
     object-fit: contain;
-    transform: scaleX(-1);
-    /* Mirror to match selfie mode */
 }
 
 .local-view-container video {
