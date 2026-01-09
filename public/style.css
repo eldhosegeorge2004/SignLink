@@ -1038,39 +1038,134 @@ video:poster {
 }
 
 /* Responsiveness */
+/* Responsiveness */
 @media (max-width: 768px) {
-    .lobby-content {
-        flex-direction: column;
-        padding: 40px 20px;
-        text-align: center;
+    header {
+        padding: 20px;
     }
 
-    .lobby-right {
-        margin-top: 40px;
+    .logo {
+        font-size: 20px;
+    }
+
+    .lobby-content {
+        flex-direction: column;
+        padding: 20px;
+        text-align: center;
+        gap: 30px;
     }
 
     .lobby-left h1 {
         font-size: 2.5rem;
+        margin-bottom: 16px;
+    }
+
+    .lobby-left p {
+        font-size: 1rem;
+        margin-bottom: 30px;
+        max-width: 100%;
     }
 
     .join-box {
+        flex-direction: column;
+        width: 100%;
+        padding: 15px;
+    }
+
+    .input-group {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .btn-primary {
+        width: 100%;
         justify-content: center;
     }
 
+    .features-grid {
+        padding: 20px;
+        grid-template-columns: 1fr;
+    }
+
+    .hero-visual {
+        width: 300px;
+        height: 300px;
+    }
+
+    .floating-card {
+        padding: 10px 15px;
+        font-size: 0.8rem;
+    }
+
+    /* Meeting Room Mobile Adjustments */
     .local-view-container {
-        width: 120px;
-        height: 90px;
-        bottom: 90px;
-        right: 10px;
+        width: 110px;
+        height: 150px;
+        bottom: 100px;
+        right: 15px;
+        border-radius: 12px;
     }
 
     .control-bar {
-        padding: 0 10px;
+        width: 95%;
+        bottom: 20px;
+        gap: 10px;
+        padding: 10px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .control-left,
+    .control-right {
+        display: none;
+        /* Hide meeting code and secondary buttons on narrow phones to save space */
     }
 
     .control-btn {
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+    }
+
+    .side-panel {
+        width: 100%;
+        right: -100%;
+        border-radius: 24px 24px 0 0;
+        top: 10%;
+        bottom: 0;
+    }
+
+    .side-panel.open {
+        transform: translateX(-100%);
+    }
+
+    .caption-overlay {
+        width: 90%;
+        padding: 10px;
+        font-size: 0.9rem;
+    }
+
+    #prediction-overlay {
+        bottom: 180px;
+    }
+
+    .stt-overlay {
+        bottom: 130px;
+    }
+
+    #remote-caption-overlay {
+        bottom: 230px;
+    }
+}
+
+@media (max-width: 480px) {
+    .lobby-left h1 {
+        font-size: 2rem;
+    }
+
+    .control-btn {
+        width: 38px;
+        height: 38px;
     }
 }
 
