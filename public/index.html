@@ -74,7 +74,11 @@
                         <span class="material-icons input-icon">keyboard</span>
                         <input type="text" id="startRoomInput" placeholder="Enter code or link">
                     </div>
-                    <button id="joinBtn" class="btn-text" disabled>Join</button>
+                    <button id="joinBtn" class="btn-primary"
+                        style="background: rgba(255,255,255,0.1); box-shadow: none;" disabled>
+                        <span class="material-icons">login</span>
+                        Join
+                    </button>
                 </div>
                 <div id="status" class="status-text">Ready to connect</div>
             </div>
@@ -204,10 +208,10 @@
                         <span class="material-icons" style="color: #4db6ac;">layers</span>
                     </button>
                     <!-- Newly added to dropdown -->
-                    <button class="control-btn" title="Info">
+                    <button class="control-btn" id="infoBtn" title="Info">
                         <span class="material-icons">info</span>
                     </button>
-                    <button class="control-btn" title="People">
+                    <button class="control-btn" id="peopleBtn" title="People">
                         <span class="material-icons">group</span>
                     </button>
                 </div>
@@ -295,6 +299,51 @@
             </div>
         </div>
 
+        <!-- Info Panel -->
+        <div id="info-panel" class="side-panel">
+            <div class="panel-header">
+                <h3>Meeting Details</h3>
+                <button class="close-btn" id="closeInfoBtn"><span class="material-icons">close</span></button>
+            </div>
+            <div class="panel-content">
+                <div class="info-section">
+                    <label>Joining Info</label>
+                    <div class="info-link-box">
+                        <span id="infoMeetingCode">abc-def-ghi</span>
+                        <button class="copy-btn" id="copyInfoCodeBtn" title="Copy meeting code">
+                            <span class="material-icons">content_copy</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="info-section">
+                    <label>Active Mode</label>
+                    <div class="mode-info-tag">
+                        <span class="material-icons">translate</span>
+                        <span id="infoCurrentMode">ISL Mode</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- People Panel -->
+        <div id="people-panel" class="side-panel">
+            <div class="panel-header">
+                <h3>People</h3>
+                <button class="close-btn" id="closePeopleBtn"><span class="material-icons">close</span></button>
+            </div>
+            <div class="panel-content">
+                <div id="peopleList" class="people-list">
+                    <div class="person-item">
+                        <div class="person-avatar">Y</div>
+                        <div class="person-info">
+                            <div class="person-name">You (Local)</div>
+                            <div class="person-status">Connected</div>
+                        </div>
+                    </div>
+                    <!-- Remote user will be added here -->
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Diagnostics Modal -->

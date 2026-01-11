@@ -84,6 +84,28 @@ const sttToggleBtn = document.getElementById('sttToggleBtn');
 const localVolumeMeter = document.getElementById('localVolume');
 const remoteVolumeMeter = document.getElementById('remoteVolume');
 
+// Panels & Controls
+const infoBtn = document.getElementById('infoBtn');
+const peopleBtn = document.getElementById('peopleBtn');
+const chatToggleBtn = document.getElementById('chatToggleBtn');
+
+const infoPanel = document.getElementById('info-panel');
+const peoplePanel = document.getElementById('people-panel');
+const chatPanel = document.getElementById('chat-panel');
+
+const closeInfoBtn = document.getElementById('closeInfoBtn');
+const closePeopleBtn = document.getElementById('closePeopleBtn');
+const closeChatBtn = document.getElementById('closeChatBtn');
+
+const infoCurrentMode = document.getElementById('infoCurrentMode');
+const infoMeetingCode = document.getElementById('infoMeetingCode');
+const copyInfoCodeBtn = document.getElementById('copyInfoCodeBtn');
+const peopleList = document.getElementById('peopleList');
+
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const sendChatBtn = document.getElementById('sendChatBtn');
+
 // --- Global State ---
 let localStream;
 let pc;
@@ -94,6 +116,9 @@ let isTTSOn = true;
 let isSTTOn = false;
 let lastSpokenLabel = "";
 let lastSpokenTime = 0;
+let lastRemoteSpokenText = "";
+let lastRemoteSpokenTime = 0;
+let iceCandidatesBuffer = []; // Buffer for ICE candidates
 
 // Accessibility Feature States
 let recognition;
@@ -102,8 +127,24 @@ let analyser;
 let micSource;
 let volumeInterval;
 
+// Resume audio on any user interaction
+document.addEventListener('click', () => {
+    if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume().then(() => console.log("AudioContext manually resumed."));
+    }
+}, { once: true });
+
+socket.on('connect', () => console.log("Connected to signaling server with ID:", socket.id));
+socket.on('connect_error', (err) => console.error("Socket Connection Error:", err));
+
 const rtcConfig = {
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" },
+        { urls: "stun:stun4.l.google.com:19302" }
+    ]
 };
 
 // --- Clock Utility ---
@@ -167,10 +208,20 @@ function initSTT() {
 }
 
 function updateSTTUI() {
+    if (!sttToggleBtn) return;
     sttToggleBtn.innerHTML = `<span class="material-icons">${isSTTOn ? 'interpreter_mode' : 'voice_over_off'}</span>`;
     sttToggleBtn.classList.toggle('red-btn', !isSTTOn);
     sttToggleBtn.title = isSTTOn ? "Turn off Speech-to-Text" : "Turn on Speech-to-Text";
 }
+updateSTTUI(); // Sync at startup
+
+function updateTTSUI() {
+    if (!ttsBtn) return;
+    ttsBtn.innerHTML = `<span class="material-icons">${isTTSOn ? 'volume_up' : 'volume_off'}</span>`;
+    ttsBtn.classList.toggle('red-btn', !isTTSOn);
+    ttsBtn.setAttribute('title', isTTSOn ? 'Mute Text-to-Speech' : 'Enable Text-to-Speech');
+}
+updateTTSUI(); // Sync at startup
 
 sttToggleBtn.addEventListener('click', () => {
     isSTTOn = !isSTTOn;
@@ -203,10 +254,27 @@ function showSTT(text, isSelf = false) {
 
 // 2. Visual Audio Feedback (Volume Meter)
 async function initAudioAnalysis(stream) {
+    console.log("Initializing audio analysis...");
     try {
-        if (!stream.getAudioTracks().length) return;
+        const tracks = stream.getAudioTracks();
+        if (!stream || !tracks.length) {
+            console.warn("No audio tracks found in stream for analysis.");
+            return;
+        }
 
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const activeTrack = tracks[0];
+        console.log(`[Audio Diagnostic] Using Mic: "${activeTrack.label}"`);
+        console.log(`[Audio Diagnostic] Hardware Enabled: ${activeTrack.enabled}, Status: ${activeTrack.readyState}`);
+
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        if (audioContext.state === 'suspended') {
+            console.log("Resuming suspended AudioContext...");
+            await audioContext.resume();
+        }
+
         analyser = audioContext.createAnalyser();
         micSource = audioContext.createMediaStreamSource(stream);
         micSource.connect(analyser);
@@ -215,10 +283,11 @@ async function initAudioAnalysis(stream) {
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
 
+        console.log("Audio analysis started. Loop active.");
+
         function checkVolume() {
-            if (!isMicOn) {
+            if (!isMicOn || !localStream || !localStream.getAudioTracks().some(t => t.enabled)) {
                 localVolumeMeter.classList.remove('volume-active');
-                localVolumeMeter.style.transform = 'scaleY(1)';
                 return;
             }
 
@@ -230,15 +299,11 @@ async function initAudioAnalysis(stream) {
             let average = sum / bufferLength;
             let volume = average / 128; // 0 to 2
 
-            if (volume > 0.1) {
+            if (volume > 0.02) {
                 localVolumeMeter.classList.add('volume-active');
-                localVolumeMeter.style.transform = `scaleY(${1 + volume})`;
-                // Emit volume to remote
                 socket.emit('volume-level', { room: roomName, level: volume });
             } else {
                 localVolumeMeter.classList.remove('volume-active');
-                localVolumeMeter.style.transform = 'scaleY(1)';
-                socket.emit('volume-level', { room: roomName, level: 0 });
             }
         }
 
@@ -312,12 +377,25 @@ if (modeSelect) {
 }
 
 function loadSavedLabels() {
-    uniqueLabels = JSON.parse(localStorage.getItem(localStorageLabelKey)) || [];
+    try {
+        const stored = localStorage.getItem(localStorageLabelKey);
+        uniqueLabels = stored ? JSON.parse(stored) : [];
+        console.log(`Loaded ${uniqueLabels.length} labels for ${currentMode} mode.`);
+        if (uniqueLabels.length > 0) {
+            console.log("Labels:", uniqueLabels);
+        }
+    } catch (e) {
+        console.error("Failed to parse saved labels from local storage:", e);
+        uniqueLabels = [];
+    }
 }
 
 newMeetingBtn.addEventListener('click', () => {
-    const randomId = Math.random().toString(36).substring(7);
-    startRoomInput.value = randomId;
+    let room = startRoomInput.value.trim();
+    if (!room) {
+        room = Math.random().toString(36).substring(7);
+        startRoomInput.value = room;
+    }
     joinBtn.disabled = false;
     joinBtn.click();
 });
@@ -401,7 +479,7 @@ hands.onResults(onResults);
 let model = null;
 let isCollecting = false;
 // Initial Load
-// Initial Load
+if (modeSelect) modeSelect.value = currentMode;
 updateModeVariables();
 loadSavedLabels();
 loadFromFirestore();
@@ -479,11 +557,22 @@ function saveGesture(label, landmarks) {
 
 async function loadSavedModel() {
     try {
+        console.log(`Attempting to load model: ${localStorageModelKey}`);
         model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}`);
-        console.log("Model loaded from local storage");
-        trainStatusDiv.innerText = "Model loaded.";
+
+        // Also load labels associated with this mode
+        loadSavedLabels();
+
+        if (model && uniqueLabels.length > 0) {
+            console.log("Model and labels loaded safely from local storage.");
+            trainStatusDiv.innerText = "Saved model loaded.";
+            if (saveBtn) saveBtn.disabled = false;
+        } else {
+            console.warn("Model loaded but uniqueLabels is empty (or model is null).");
+            trainStatusDiv.innerText = "Model found, but labels missing.";
+        }
     } catch (e) {
-        console.log("No saved model found.");
+        console.log("No saved model found for this mode yet.");
     }
 }
 loadSavedModel();
@@ -497,7 +586,20 @@ async function startCamera() {
 
     try {
         try {
-            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            console.log("Requesting camera and microphone...");
+            const constraints = {
+                video: true,
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    sampleRate: 48000,
+                    sampleSize: 16,
+                    channelCount: 1
+                }
+            };
+            localStream = await navigator.mediaDevices.getUserMedia(constraints);
+            console.log("Media access granted.");
         } catch (err) {
             if (err.name === 'NotFoundError') {
                 console.warn("Microphone not found, attempting video only.");
@@ -520,7 +622,16 @@ async function startCamera() {
                         e.stopImmediatePropagation(); // Prevent standard toggle logic
                         try {
                             console.log("Retrying microphone access...");
-                            const newStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                            const audioConstraints = {
+                                audio: {
+                                    echoCancellation: true,
+                                    noiseSuppression: true,
+                                    autoGainControl: true,
+                                    sampleRate: 48000,
+                                    channelCount: 1
+                                }
+                            };
+                            const newStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
 
                             // Success! Add track to stream and PC
                             const audioTrack = newStream.getAudioTracks()[0];
@@ -534,11 +645,11 @@ async function startCamera() {
                             micBtn.innerHTML = `<span class="material-icons">mic</span>`;
                             micBtn.classList.remove('red-btn');
                             micBtn.title = "Turn off microphone";
-                            alert("Microphone connected successfully!");
 
-                            // Remove this temporary listener so standard toggle works next time
-                            // (Reloading page is cleaner, but this is a hotfix)
-                            window.location.reload();
+                            // Initialize analysis for the new track
+                            initAudioAnalysis(localStream);
+
+                            alert("Microphone connected successfully!");
                         } catch (retryErr) {
                             console.error("Retry failed:", retryErr);
                             alert("Still cannot find microphone. Please check connection.");
@@ -659,15 +770,18 @@ function runPrediction(flatLandmarks) {
             const pIndex = prediction.argMax(-1).dataSync()[0];
             const conf = prediction.max().dataSync()[0];
 
-            if (conf > 0.75) { // Increased confidence threshold
+            if (conf > 0.75) {
                 const label = uniqueLabels[pIndex];
                 const smoothLabel = getSmoothedPrediction(label);
                 predictionDiv.innerText = `Sign: ${smoothLabel} (${Math.round(conf * 100)}%)`;
 
-                if (isTTSOn && smoothLabel !== lastSpokenLabel && (Date.now() - lastSpokenTime > 3000)) {
+                // Always emit prediction to remote so they see the caption
+                if (smoothLabel !== lastSpokenLabel || (Date.now() - lastSpokenTime > 4000)) {
                     lastSpokenLabel = smoothLabel;
                     lastSpokenTime = Date.now();
                     socket.emit("sign-message", { room: roomName, text: smoothLabel });
+
+                    if (isTTSOn) speak(smoothLabel);
 
                     // Check for Emoji Shortcuts
                     if (EMOJI_MAP[smoothLabel.toUpperCase()]) {
@@ -751,6 +865,17 @@ trainBtn.addEventListener('click', async () => {
     model = newModel;
     trainStatusDiv.innerText = "Training Done!";
     trainBtn.disabled = false;
+    if (saveBtn) saveBtn.disabled = false;
+
+    // 4. Auto-save for better persistence
+    try {
+        await model.save(`localstorage://${localStorageModelKey}`);
+        localStorage.setItem(localStorageLabelKey, JSON.stringify(uniqueLabels));
+        console.log("Model and labels auto-saved successfully.");
+    } catch (err) {
+        console.error("Auto-save failed:", err);
+    }
+
     xs.dispose();
     ys.dispose();
 });
@@ -772,35 +897,93 @@ clearBtn.addEventListener('click', () => {
 
 // --- Signaling & WebRTC ---
 socket.on("user-joined", async (id) => {
-    console.log("Peer connected:", id);
-    if (!localStream) return; // Prevent race condition
+    console.log("New peer joined room:", id);
+    updatePeopleList(id); // Update the People panel
+    if (!localStream) {
+        console.warn("Local stream not ready. Peer connection delayed.");
+        return;
+    }
     createPeerConnection();
-    const offer = await pc.createOffer();
+    const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+    });
     await pc.setLocalDescription(offer);
+    console.log("Sending offer to peer...");
     socket.emit("offer", { room: roomName, sdp: offer });
 });
 
+socket.on("user-left", (id) => {
+    console.log("Peer left room:", id);
+    updatePeopleList(null); // Remove from People panel
+    // Cleanup peer connection if it matches
+    if (pc) {
+        pc.close();
+        pc = null;
+    }
+    // Remote video cleanup
+    if (remoteVideo) {
+        remoteVideo.srcObject = null;
+    }
+});
+
 socket.on("offer", async (data) => {
+    console.log("Offer received from peer");
     if (!pc) createPeerConnection();
     await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-    const answer = await pc.createAnswer();
+    processBufferedIceCandidates();
+    const answer = await pc.createAnswer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+    });
     await pc.setLocalDescription(answer);
+    console.log("Sending answer...");
     socket.emit("answer", { room: roomName, sdp: answer });
 });
 
 socket.on("answer", async (data) => {
-    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    console.log("Answer received from peer");
+    if (pc) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        processBufferedIceCandidates();
+    }
 });
 
 socket.on("ice", async (data) => {
-    if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+    if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+        try {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } catch (e) {
+            console.error("Error adding ICE candidate:", e);
+        }
+    } else {
+        iceCandidatesBuffer.push(data.candidate);
+    }
 });
+
+async function processBufferedIceCandidates() {
+    console.log(`Processing ${iceCandidatesBuffer.length} buffered ICE candidates`);
+    while (iceCandidatesBuffer.length > 0) {
+        const candidate = iceCandidatesBuffer.shift();
+        try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+            console.error("Error adding buffered ICE candidate:", e);
+        }
+    }
+}
 
 socket.on("sign-message", data => {
     remotePredictionDiv.innerText = data.text;
     remoteCaptionOverlay.classList.remove('hidden');
     setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
-    if (isTTSOn) speak(data.text);
+
+    // Prevent repeating the same word too quickly for TTS
+    if (isTTSOn && (data.text !== lastRemoteSpokenText || Date.now() - lastRemoteSpokenTime > 4000)) {
+        speak(data.text);
+        lastRemoteSpokenText = data.text;
+        lastRemoteSpokenTime = Date.now();
+    }
 });
 
 socket.on("speech-message", data => {
@@ -809,12 +992,10 @@ socket.on("speech-message", data => {
 
 socket.on("volume-level", data => {
     if (remoteVolumeMeter) {
-        if (data.level > 0.1) {
+        if (data.level > 0.02) {
             remoteVolumeMeter.classList.add('volume-active');
-            remoteVolumeMeter.style.transform = `scaleY(${1 + data.level})`;
         } else {
             remoteVolumeMeter.classList.remove('volume-active');
-            remoteVolumeMeter.style.transform = 'scaleY(1)';
         }
     }
 });
@@ -833,18 +1014,73 @@ function createPeerConnection() {
     };
 
     pc.ontrack = (event) => {
-        remoteVideo.srcObject = event.streams[0];
+        console.log("Remote track received:", event.track.kind);
+
+        // Prefer using the stream provided by the event, this handles audio+video sync better
+        if (event.streams && event.streams[0]) {
+            if (remoteVideo.srcObject !== event.streams[0]) {
+                remoteVideo.srcObject = event.streams[0];
+                console.log("Attached remote stream from event");
+            }
+        } else {
+            // Fallback: manually manage the stream if event.streams is missing
+            if (!remoteVideo.srcObject || !(remoteVideo.srcObject instanceof MediaStream)) {
+                remoteVideo.srcObject = new MediaStream();
+            }
+            remoteVideo.srcObject.addTrack(event.track);
+        }
+
+        // Ensure the remote video is unmuted and plays
+        remoteVideo.muted = false;
+        remoteVideo.volume = 1.0;
+
+        // Final attempt to play, catching block errors
+        const playPromise = remoteVideo.play();
+        if (playPromise !== undefined) {
+            playPromise.then(_ => {
+                console.log("Autoplay success!");
+            }).catch(error => {
+                console.warn("Autoplay was prevented. User must interact with page first.");
+                // We show this via the STT overlay as a hint
+                if (sttText) sttText.innerText = "Click anywhere to enable remote sound!";
+                sttOverlay.classList.remove('hidden');
+            });
+        }
     };
 
     if (localStream) {
-        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+        console.log(`Adding ${localStream.getTracks().length} local tracks to PeerConnection`);
+        localStream.getTracks().forEach(track => {
+            pc.addTrack(track, localStream);
+        });
+    } else {
+        console.error("localStream is null when createPeerConnection is called!");
     }
+
+    pc.onconnectionstatechange = () => {
+        console.log("WebRTC Connection State:", pc.connectionState);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+        console.log("WebRTC ICE Connection State:", pc.iceConnectionState);
+    };
 }
 
 // --- Audio Controls ---
-micBtn.addEventListener('click', () => {
+micBtn.addEventListener('click', async () => {
+    if (!localStream || !localStream.getAudioTracks().length) {
+        console.warn("No audio track to toggle");
+        return;
+    }
+
     isMicOn = !isMicOn;
     localStream.getAudioTracks()[0].enabled = isMicOn;
+
+    // Ensure AudioContext resumes if it was blocked by browser
+    if (isMicOn && audioContext && audioContext.state === 'suspended') {
+        await audioContext.resume();
+    }
+
     micBtn.innerHTML = `<span class="material-icons">${isMicOn ? 'mic' : 'mic_off'}</span>`;
     micBtn.classList.toggle('red-btn', !isMicOn);
     micBtn.setAttribute('title', isMicOn ? 'Turn off microphone' : 'Turn on microphone');
@@ -873,9 +1109,7 @@ camBtn.addEventListener('click', () => {
 
 ttsBtn.addEventListener('click', () => {
     isTTSOn = !isTTSOn;
-    ttsBtn.innerHTML = `<span class="material-icons">${isTTSOn ? 'volume_up' : 'volume_off'}</span>`;
-    ttsBtn.classList.toggle('red-btn', !isTTSOn);
-    ttsBtn.setAttribute('title', isTTSOn ? 'Mute Text-to-Speech' : 'Enable Text-to-Speech');
+    updateTTSUI();
 });
 
 function speak(text) {
@@ -887,25 +1121,61 @@ function speak(text) {
 }
 
 // --- Chat Logic ---
-const chatPanel = document.getElementById('chat-panel');
-const closeChatBtn = document.getElementById('closeChatBtn');
-const chatMessages = document.getElementById('chatMessages');
-const chatInput = document.getElementById('chatInput');
-const sendChatBtn = document.getElementById('sendChatBtn');
 
-// Toggle Chat Panel (reusing info button or adding new one? Using existing 'Chat' button at bottom right)
-const chatToggleBtn = document.getElementById('chatToggleBtn');
+function closeAllPanels() {
+    sidePanel.classList.remove('open');
+    chatPanel.classList.remove('open');
+    if (infoPanel) infoPanel.classList.remove('open');
+    if (peoplePanel) peoplePanel.classList.remove('open');
+}
+
+// Toggle Chat Panel
 if (chatToggleBtn) {
     chatToggleBtn.addEventListener('click', () => {
-        chatPanel.classList.toggle('open');
-        // Close training panel if open
-        sidePanel.classList.remove('open');
-        // Reset alert color
-        chatToggleBtn.style.color = '';
+        const isOpen = chatPanel.classList.contains('open');
+        closeAllPanels();
+        if (!isOpen) chatPanel.classList.add('open');
+        if (chatToggleBtn) chatToggleBtn.style.color = '';
     });
 }
 
-closeChatBtn.addEventListener('click', () => chatPanel.classList.remove('open'));
+// Toggle Info Panel
+if (infoBtn) {
+    infoBtn.addEventListener('click', () => {
+        const isOpen = infoPanel.classList.contains('open');
+        closeAllPanels();
+        if (!isOpen) {
+            infoPanel.classList.add('open');
+            // Update info display
+            if (infoMeetingCode) infoMeetingCode.innerText = roomName || "N/A";
+            if (infoCurrentMode) infoCurrentMode.innerText = `${currentMode} Mode`;
+        }
+    });
+}
+
+// Toggle People Panel
+if (peopleBtn) {
+    peopleBtn.addEventListener('click', () => {
+        const isOpen = peoplePanel.classList.contains('open');
+        closeAllPanels();
+        if (!isOpen) peoplePanel.classList.add('open');
+    });
+}
+
+if (closeChatBtn) closeChatBtn.addEventListener('click', () => chatPanel.classList.remove('open'));
+if (closeInfoBtn) closeInfoBtn.addEventListener('click', () => infoPanel.classList.remove('open'));
+if (closePeopleBtn) closePeopleBtn.addEventListener('click', () => peoplePanel.classList.remove('open'));
+
+if (copyInfoCodeBtn) {
+    copyInfoCodeBtn.addEventListener('click', () => {
+        if (!roomName) return;
+        navigator.clipboard.writeText(roomName).then(() => {
+            const icon = copyInfoCodeBtn.querySelector('.material-icons');
+            icon.innerText = 'done';
+            setTimeout(() => icon.innerText = 'content_copy', 2000);
+        });
+    });
+}
 
 // Chat Input Logic
 chatInput.addEventListener('input', (e) => {
@@ -944,6 +1214,34 @@ socket.on('chat-message', (data) => {
     }
 });
 
+function updatePeopleList(remoteId = null) {
+    if (!peopleList) return;
+
+    let html = `
+        <div class="person-item">
+            <div class="person-avatar">Y</div>
+            <div class="person-info">
+                <div class="person-name">You (Local)</div>
+                <div class="person-status">Connected</div>
+            </div>
+        </div>
+    `;
+
+    if (remoteId) {
+        html += `
+            <div class="person-item">
+                <div class="person-avatar" style="background: #e37400;">R</div>
+                <div class="person-info">
+                    <div class="person-name">Remote User</div>
+                    <div class="person-status" style="color: #4db6ac;">Connected</div>
+                </div>
+            </div>
+        `;
+    }
+
+    peopleList.innerHTML = html;
+}
+
 function appendMessage(data, type) {
     const time = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -979,8 +1277,9 @@ if (overlayBtn) {
 
 // Training Toggle
 trainToggleBtn.addEventListener('click', () => {
-    sidePanel.classList.toggle('open');
-    chatPanel.classList.remove('open');
+    const isOpen = sidePanel.classList.contains('open');
+    closeAllPanels();
+    if (!isOpen) sidePanel.classList.add('open');
 });
 
 // Upload Dataset Logic

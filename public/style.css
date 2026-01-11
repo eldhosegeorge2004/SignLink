@@ -949,6 +949,124 @@ video {
     padding: 0 4px;
 }
 
+/* Info & People Panel Styles */
+.info-section {
+    margin-bottom: 24px;
+}
+
+.info-section label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.info-link-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+}
+
+.copy-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    transition: 0.2s;
+    display: flex;
+}
+
+.copy-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--primary-color);
+}
+
+.copy-btn .material-icons {
+    font-size: 20px;
+}
+
+.mode-info-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--gradient-primary);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.mode-info-tag .material-icons {
+    font-size: 18px;
+}
+
+.people-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.person-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.person-avatar {
+    width: 42px;
+    height: 42px;
+    background: var(--gradient-primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: white;
+    font-size: 1.1rem;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.person-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.person-name {
+    font-weight: 600;
+    color: var(--text-main);
+    font-size: 0.95rem;
+}
+
+.person-status {
+    font-size: 0.8rem;
+    color: var(--primary-color);
+    font-weight: 500;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .chat-input-area {
     padding: 20px;
     border-top: 1px solid var(--glass-border);
@@ -999,6 +1117,84 @@ video {
 }
 
 /* Responsiveness */
+
+
+
+
+/* --- Accessibility Styles --- */
+.userInfo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.volume-meter {
+    width: 6px;
+    height: 18px;
+    background: var(--primary-color);
+    border-radius: 4px;
+    opacity: 0.3;
+    transition: transform 0.1s;
+    transform-origin: bottom;
+}
+
+.volume-active {
+    opacity: 1;
+    background: #00ff00;
+    box-shadow: 0 0 10px #00ff00;
+}
+
+.stt-overlay {
+    bottom: 160px;
+    max-width: 80%;
+    text-align: center;
+    font-style: italic;
+    background: rgba(15, 23, 42, 0.85);
+    border-color: rgba(59, 130, 246, 0.4);
+}
+
+#stttext {
+    font-size: 1.1rem;
+    color: #e2e8f0;
+}
+
+/* Emoji Animations */
+#particles-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1000;
+    overflow: hidden;
+}
+
+.particle {
+    position: absolute;
+    font-size: 2rem;
+    pointer-events: none;
+    animation: particleUp 2s ease-out forwards;
+    transform: translate(-50%, -50%);
+}
+
+@keyframes particleUp {
+    0% {
+        transform: translate(-50%, 0) scale(0) rotate(0deg);
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 1;
+    }
+
+    100% {
+        transform: translate(calc(-50% + var(--x)), var(--y)) scale(1.5) rotate(var(--r));
+        opacity: 0;
+    }
+}
+
+/* --- Responsive Layouts --- */
 @media (max-width: 768px) {
     .lobby-content {
         flex-direction: column;
@@ -1059,8 +1255,8 @@ video {
     }
 
     .local-view-container {
-        width: 100px;
-        height: 130px;
+        width: 110px;
+        height: 150px;
         top: 20px;
         bottom: auto;
         right: 15px;
@@ -1073,42 +1269,31 @@ video {
         gap: 10px;
         padding: 10px;
         justify-content: space-around;
-        backdrop-filter: blur(24px);
     }
 
     .secondary-controls {
         right: 15px;
-        transform: none;
         bottom: 140px;
-        /* Stacked above the code bubble */
-    }
-
-    .control-left,
-    .control-right {
-        display: flex;
     }
 
     #meetingCodeContainer {
         position: fixed;
-        bottom: 85px;
-        /* Just above the control bar */
+        bottom: 80px;
+        /* Above control bar */
         right: 15px;
         top: auto;
         left: auto;
+        transform: none;
         z-index: 250;
+        width: fit-content;
     }
 
     .meeting-code-bubble {
-        padding: 10px 16px;
-        font-size: 0.85rem;
-        background: rgba(15, 23, 42, 0.7);
-        border: 1px solid rgba(59, 130, 246, 0.5);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-    }
-
-    .meeting-code {
-        display: none;
-        /* Hide old class if used */
+        padding: 6px 12px;
+        font-size: 0.75rem;
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid var(--glass-border);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
     }
 
     .control-btn {
@@ -1121,110 +1306,45 @@ video {
         right: -100%;
         border-radius: 24px 24px 0 0;
         top: 10%;
-        bottom: 0;
     }
 
     .side-panel.open {
         transform: translateX(-100%);
     }
 
+    /* Better Stacked Overlays for mobile */
     .caption-overlay {
-        width: 90%;
-        font-size: 0.9rem;
-    }
-
-    #prediction-overlay {
-        bottom: 190px;
+        width: 94%;
+        max-width: 400px;
+        font-size: 0.8rem;
+        padding: 8px 14px;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
     }
 
     .stt-overlay {
-        bottom: 130px;
+        bottom: 145px !important;
+        /* Stacked above Code Bubble */
+    }
+
+    #prediction-overlay {
+        bottom: 205px !important;
+        /* Stacked above STT */
     }
 
     #remote-caption-overlay {
-        bottom: 250px;
+        bottom: 265px !important;
+        /* Stacked above Prediction */
     }
 }
 
 @media (max-width: 480px) {
     .lobby-left h1 {
-        font-size: 2rem;
+        font-size: 1.8rem;
     }
 
     .control-btn {
-        width: 38px;
-        height: 38px;
-    }
-}
-
-/* --- Accessibility Styles --- */
-.userInfo {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.volume-meter {
-    width: 6px;
-    height: 18px;
-    background: var(--primary-color);
-    border-radius: 4px;
-    opacity: 0.3;
-    transition: transform 0.1s;
-}
-
-.volume-active {
-    opacity: 1;
-    background: #00ff00;
-    box-shadow: 0 0 10px #00ff00;
-}
-
-.stt-overlay {
-    bottom: 160px;
-    max-width: 80%;
-    text-align: center;
-    font-style: italic;
-    background: rgba(15, 23, 42, 0.85);
-    border-color: rgba(59, 130, 246, 0.4);
-}
-
-#stttext {
-    font-size: 1.1rem;
-    color: #e2e8f0;
-}
-
-/* Emoji Animations */
-#particles-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 1000;
-    overflow: hidden;
-}
-
-.particle {
-    position: absolute;
-    font-size: 2rem;
-    pointer-events: none;
-    animation: particleUp 2s ease-out forwards;
-    transform: translate(-50%, -50%);
-}
-
-@keyframes particleUp {
-    0% {
-        transform: translate(-50%, 0) scale(0) rotate(0deg);
-        opacity: 0;
-    }
-
-    10% {
-        opacity: 1;
-    }
-
-    100% {
-        transform: translate(calc(-50% + var(--x)), var(--y)) scale(1.5) rotate(var(--r));
-        opacity: 0;
+        width: 40px;
+        height: 40px;
     }
 }
