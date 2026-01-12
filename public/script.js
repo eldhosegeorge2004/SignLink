@@ -430,6 +430,19 @@ if (modeSelect) {
     });
 }
 
+function updateModelStatusUI() {
+    const statusEl = document.getElementById('model-status');
+    if (!statusEl) return;
+
+    if (model) {
+        statusEl.innerText = `Model: Active (${currentMode})`;
+        statusEl.style.color = "#4db6ac";
+    } else {
+        statusEl.innerText = `Model: Missing (Train in settings)`;
+        statusEl.style.color = "#ef4444";
+    }
+}
+
 function loadSavedLabels() {
     try {
         const stored = localStorage.getItem(localStorageLabelKey);
@@ -624,10 +637,13 @@ async function loadSavedModel() {
         } else {
             console.warn("Model loaded but uniqueLabels is empty (or model is null).");
             trainStatusDiv.innerText = "Model found, but labels missing.";
+            model = null; // Invalidate if labels are missing
         }
     } catch (e) {
         console.log("No saved model found for this mode yet.");
+        model = null;
     }
+    updateModelStatusUI();
 }
 loadSavedModel();
 
@@ -937,6 +953,7 @@ trainBtn.addEventListener('click', async () => {
     });
 
     model = newModel;
+    updateModelStatusUI();
     trainStatusDiv.innerText = "Training Done!";
     trainBtn.disabled = false;
     if (saveBtn) saveBtn.disabled = false;

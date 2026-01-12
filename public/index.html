@@ -157,7 +157,11 @@
 
             <div id="prediction-overlay" class="caption-overlay">
                 <span class="material-icons">front_hand</span>
-                <span id="prediction">Waiting for sign...</span>
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <span id="prediction">Waiting for sign...</span>
+                    <span id="model-status" style="font-size: 0.65rem; opacity: 0.6; font-weight: 400;">Checking AI
+                        Model...</span>
+                </div>
             </div>
 
             <!-- Speech to Text Overlay -->
