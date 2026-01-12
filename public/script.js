@@ -114,10 +114,13 @@ let isMicOn = true;
 let isCamOn = true;
 let isTTSOn = true;
 let isSTTOn = false;
-let lastSpokenLabel = "";
 let lastSpokenTime = 0;
-let lastRemoteSpokenText = "";
 let lastRemoteSpokenTime = 0;
+const localWordLastSpoken = {};    // NEW: Per-word cooldown for local signs
+const remoteWordLastSpoken = {};   // NEW: Per-word cooldown for remote signs
+let lastSpokenLabel = "";
+let lastRemoteSpokenText = "";
+let speakTimeout = null;           // NEW: Track pending speech to avoid race conditions
 let iceCandidatesBuffer = []; // Buffer for ICE candidates
 
 // Accessibility Feature States
@@ -143,9 +146,53 @@ const rtcConfig = {
         { urls: "stun:stun1.l.google.com:19302" },
         { urls: "stun:stun2.l.google.com:19302" },
         { urls: "stun:stun3.l.google.com:19302" },
-        { urls: "stun:stun4.l.google.com:19302" }
-    ]
+        { urls: "stun:stun4.l.google.com:19302" },
+        // Free TURN server for testing (Note: For production, use a paid service like Twilio or Metered.ca)
+        {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        }
+    ],
+    iceCandidatePoolSize: 10,
+    bundlePolicy: "balanced"
 };
+
+// Helper to limit bitrate in SDP (prevents "poor connection" lag)
+function setMaxBitrate(sdp, maxBitrateKbps) {
+    const lines = sdp.split('\r\n');
+    let lineIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].indexOf('m=video') !== -1) {
+            lineIndex = i;
+            break;
+        }
+    }
+    if (lineIndex === -1) return sdp;
+
+    // Check if there's already a 'b=' line
+    lineIndex++;
+    while (lines[lineIndex] && (lines[lineIndex].indexOf('i=') === 0 || lines[lineIndex].indexOf('c=') === 0)) {
+        lineIndex++;
+    }
+
+    if (lines[lineIndex] && lines[lineIndex].indexOf('b=AS') === 0) {
+        lines[lineIndex] = 'b=AS:' + maxBitrateKbps;
+    } else {
+        lines.splice(lineIndex, 0, 'b=AS:' + maxBitrateKbps);
+    }
+    return lines.join('\r\n');
+}
 
 // --- Clock Utility ---
 function updateClock() {
@@ -273,6 +320,13 @@ async function initAudioAnalysis(stream) {
         if (audioContext.state === 'suspended') {
             console.log("Resuming suspended AudioContext...");
             await audioContext.resume();
+        }
+
+        if (micSource) {
+            try { micSource.disconnect(); } catch (e) { }
+        }
+        if (analyser) {
+            try { analyser.disconnect(); } catch (e) { }
         }
 
         analyser = audioContext.createAnalyser();
@@ -578,7 +632,11 @@ async function loadSavedModel() {
 loadSavedModel();
 
 // --- Camera & Hand Tracking ---
+let isCameraStarted = false;
 async function startCamera() {
+    if (isCameraStarted) return;
+    isCameraStarted = true;
+
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert("Browser API navigator.mediaDevices.getUserMedia not available. Please ensure you are using a modern browser and running on localhost or HTTPS.");
         return;
@@ -588,14 +646,15 @@ async function startCamera() {
         try {
             console.log("Requesting camera and microphone...");
             const constraints = {
-                video: true,
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    frameRate: { ideal: 24, max: 30 }
+                },
                 audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                    sampleRate: 48000,
-                    sampleSize: 16,
-                    channelCount: 1
+                    echoCancellation: { ideal: true },
+                    noiseSuppression: { ideal: true },
+                    autoGainControl: { ideal: true }
                 }
             };
             localStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -624,11 +683,9 @@ async function startCamera() {
                             console.log("Retrying microphone access...");
                             const audioConstraints = {
                                 audio: {
-                                    echoCancellation: true,
-                                    noiseSuppression: true,
-                                    autoGainControl: true,
-                                    sampleRate: 48000,
-                                    channelCount: 1
+                                    echoCancellation: { ideal: true },
+                                    noiseSuppression: { ideal: true },
+                                    autoGainControl: { ideal: true }
                                 }
                             };
                             const newStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
@@ -663,10 +720,16 @@ async function startCamera() {
         }
         localVideo.srcObject = localStream;
 
+        let frameCount = 0;
         const camera = new Camera(localVideo, {
             onFrame: async () => {
                 if (isCamOn) {
-                    await hands.send({ image: localVideo });
+                    // CPU Optimization: Only run AI tracking every 3rd frame (roughly 10-15 FPS)
+                    // This keeps the video call smooth while still detecting signs effectively.
+                    frameCount++;
+                    if (frameCount % 3 === 0) {
+                        await hands.send({ image: localVideo });
+                    }
                 }
             },
         });
@@ -734,25 +797,28 @@ function onResults(results) {
     ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
 
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        for (const landmarks of results.multiHandLandmarks) {
-            // 1. Draw landmarks ONLY if overlay is ON
-            if (isOverlayOn && typeof drawConnectors !== 'undefined') {
-                drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
-                drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 2 });
-            }
+        // ALWAYS use the first hand for prediction to avoid "Double Speak" from two hands
+        const landmarks = results.multiHandLandmarks[0];
 
-            // 2. Preprocess for AI (Normalization is Scale/Translation invariant)
-            const flatLandmarks = preprocessLandmarks(landmarks);
-
-            // 3. Handle Collection or Prediction
-            if (isCollecting) {
-                const label = labelInput.value.trim();
-                if (label) {
-                    saveGesture(label, flatLandmarks);
-                }
-            } else {
-                runPrediction(flatLandmarks);
+        // Handle Hand Overlay Drawing
+        if (isOverlayOn && typeof drawConnectors !== 'undefined') {
+            for (const hand of results.multiHandLandmarks) {
+                drawConnectors(ctx, hand, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
+                drawLandmarks(ctx, hand, { color: '#FF0000', lineWidth: 2 });
             }
+        }
+
+        // Preprocess for AI (Normalization is Scale/Translation invariant)
+        const flatLandmarks = preprocessLandmarks(landmarks);
+
+        // Handle Collection or Prediction
+        if (isCollecting) {
+            const label = labelInput.value.trim();
+            if (label) {
+                saveGesture(label, flatLandmarks);
+            }
+        } else {
+            runPrediction(flatLandmarks);
         }
     } else {
         predictionDiv.innerText = "Waiting for hands...";
@@ -775,10 +841,18 @@ function runPrediction(flatLandmarks) {
                 const smoothLabel = getSmoothedPrediction(label);
                 predictionDiv.innerText = `Sign: ${smoothLabel} (${Math.round(conf * 100)}%)`;
 
-                // Always emit prediction to remote so they see the caption
-                if (smoothLabel !== lastSpokenLabel || (Date.now() - lastSpokenTime > 4000)) {
+                const now = Date.now();
+                const wordLastSpoken = localWordLastSpoken[smoothLabel] || 0;
+                const timeSinceAny = now - lastSpokenTime;
+                const timeSinceSame = now - wordLastSpoken;
+
+                // 1. Same word must wait 4 seconds (Prevents accidental double-triggers/stutter)
+                // 2. Global inter-word gap of 800ms for "fluent" sentences (prevents flicker)
+                if (timeSinceSame > 4000 && timeSinceAny > 800) {
                     lastSpokenLabel = smoothLabel;
-                    lastSpokenTime = Date.now();
+                    lastSpokenTime = now;
+                    localWordLastSpoken[smoothLabel] = now;
+
                     socket.emit("sign-message", { room: roomName, text: smoothLabel });
 
                     if (isTTSOn) speak(smoothLabel);
@@ -908,6 +982,8 @@ socket.on("user-joined", async (id) => {
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
     });
+    // Set max bitrate to 1000kbps (stable for 480p)
+    offer.sdp = setMaxBitrate(offer.sdp, 1000);
     await pc.setLocalDescription(offer);
     console.log("Sending offer to peer...");
     socket.emit("offer", { room: roomName, sdp: offer });
@@ -936,6 +1012,8 @@ socket.on("offer", async (data) => {
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
     });
+    // Set max bitrate to 1000kbps (stable for 480p)
+    answer.sdp = setMaxBitrate(answer.sdp, 1000);
     await pc.setLocalDescription(answer);
     console.log("Sending answer...");
     socket.emit("answer", { room: roomName, sdp: answer });
@@ -978,11 +1056,18 @@ socket.on("sign-message", data => {
     remoteCaptionOverlay.classList.remove('hidden');
     setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
 
-    // Prevent repeating the same word too quickly for TTS
-    if (isTTSOn && (data.text !== lastRemoteSpokenText || Date.now() - lastRemoteSpokenTime > 4000)) {
+    const now = Date.now();
+    const wordLastSpoken = remoteWordLastSpoken[data.text] || 0;
+    const timeSinceAny = now - lastRemoteSpokenTime;
+    const timeSinceSame = now - wordLastSpoken;
+
+    // Symmetric logic for remote signs to avoid redundant peer-side chatter
+    // Same rule: 4s for same-word repeat, 800ms for fluent different-word sequence
+    if (isTTSOn && timeSinceSame > 4000 && timeSinceAny > 800) {
         speak(data.text);
         lastRemoteSpokenText = data.text;
-        lastRemoteSpokenTime = Date.now();
+        lastRemoteSpokenTime = now;
+        remoteWordLastSpoken[data.text] = now;
     }
 });
 
@@ -1114,10 +1199,37 @@ ttsBtn.addEventListener('click', () => {
 
 function speak(text) {
     if (!window.speechSynthesis) return;
+
+    // 1. Hardware-level safety: Unified temporal debounce (500ms)
+    // This prevents double-speaking if local prediction and remote socket fire at once,
+    // or if MediaPipe triggers multiple results in the same event loop.
+    const now = Date.now();
+    if (now - (window._lastSystemSpeakTime || 0) < 500) {
+        console.log("Speech suppressed: debounce active.");
+        return;
+    }
+    window._lastSystemSpeakTime = now;
+
+    // 2. Clear any pending speak operation to avoid the setTimeout race condition
+    if (speakTimeout) {
+        clearTimeout(speakTimeout);
+        speakTimeout = null;
+    }
+
+    // 3. Cancel current speech and queue the new one
+    // We use a small delay because window.speechSynthesis.cancel() is often asynchronous 
+    // on the OS level and needs a moment to clear hardware buffers.
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    window.speechSynthesis.speak(utterance);
+
+    speakTimeout = setTimeout(() => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+
+        window.speechSynthesis.speak(utterance);
+        speakTimeout = null;
+    }, 50);
 }
 
 // --- Chat Logic ---

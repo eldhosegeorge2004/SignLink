@@ -1264,11 +1264,12 @@ video {
     }
 
     .control-bar {
-        width: 95%;
+        width: fit-content;
+        max-width: 95%;
         bottom: 15px;
         gap: 10px;
-        padding: 10px;
-        justify-content: space-around;
+        padding: 8px 16px;
+        justify-content: center;
     }
 
     .secondary-controls {
@@ -1276,16 +1277,19 @@ video {
         bottom: 140px;
     }
 
+    .main-stage {
+        padding: 10px;
+        gap: 10px;
+    }
+
     #meetingCodeContainer {
+        display: block !important;
         position: fixed;
-        bottom: 80px;
-        /* Above control bar */
-        right: 15px;
-        top: auto;
-        left: auto;
-        transform: none;
+        bottom: 68px;
+        right: 20px;
         z-index: 250;
         width: fit-content;
+        transform: none;
     }
 
     .meeting-code-bubble {
@@ -1314,27 +1318,30 @@ video {
 
     /* Better Stacked Overlays for mobile */
     .caption-overlay {
-        width: 94%;
-        max-width: 400px;
+        width: 90%;
+        max-width: 360px;
         font-size: 0.8rem;
-        padding: 8px 14px;
+        padding: 10px 16px;
         left: 50% !important;
         transform: translateX(-50%) !important;
+        bottom: auto;
     }
 
     .stt-overlay {
-        bottom: 145px !important;
-        /* Stacked above Code Bubble */
+        bottom: 130px !important;
     }
 
     #prediction-overlay {
-        bottom: 205px !important;
-        /* Stacked above STT */
+        bottom: 185px !important;
     }
 
     #remote-caption-overlay {
-        bottom: 265px !important;
-        /* Stacked above Prediction */
+        bottom: 240px !important;
+    }
+
+    /* Hide Remote User label in bottom left for mobile */
+    .remote-view-container .userInfo {
+        display: none !important;
     }
 }
 
