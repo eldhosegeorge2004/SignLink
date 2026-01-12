@@ -2,9 +2,19 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http, {
-    cors: { origin: "*" }
+    cors: { origin: "*" },
+    transports: ['websocket', 'polling'] // Prioritize websockets
 });
 const path = require('path');
+
+// --- Production Middleware ---
+// Redirect HTTP to HTTPS (Required for Camera/Mic/Speech to work)
+app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] === 'http') {
+        return res.redirect(`https://${req.headers.host}${req.url}`);
+    }
+    next();
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 
