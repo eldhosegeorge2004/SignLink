@@ -122,6 +122,7 @@ let lastSpokenLabel = "";
 let lastRemoteSpokenText = "";
 let speakTimeout = null;           // NEW: Track pending speech to avoid race conditions
 let iceCandidatesBuffer = []; // Buffer for ICE candidates
+let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actually running
 
 // Accessibility Feature States
 let recognition;
@@ -209,7 +210,7 @@ function initSTT() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
         console.warn("Speech Recognition not supported in this browser.");
-        sttToggleBtn.style.display = 'none';
+        if (sttToggleBtn) sttToggleBtn.style.display = 'none';
         return;
     }
 
@@ -218,25 +219,23 @@ function initSTT() {
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
-    recognition.onresult = (event) => {
-        let finalTranscript = '';
-        let interimTranscript = '';
+    recognition.onstart = () => {
+        isRecognitionActive = true;
+        console.log("STT: Recognition started.");
+    };
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
-            } else {
-                interimTranscript += event.results[i][0].transcript;
-            }
+    recognition.onresult = (event) => {
+        let fullTranscript = '';
+        // Iterate through all results to build the full "live" transcript
+        for (let i = 0; i < event.results.length; ++i) {
+            fullTranscript += event.results[i][0].transcript;
         }
 
-        const textToShow = finalTranscript || interimTranscript;
-        if (textToShow.trim()) {
-            // Send to remote peer
-            socket.emit('speech-message', { room: roomName, text: textToShow });
-            // Show locally in a "caption" way? 
-            // Optionally show your own speech too
-            showSTT(textToShow, true);
+        if (fullTranscript.trim()) {
+            // Send the accumulated transcript to remote peer
+            socket.emit('speech-message', { room: roomName, text: fullTranscript });
+            // Show locally
+            showSTT(fullTranscript, true);
         }
     };
 
@@ -246,11 +245,23 @@ function initSTT() {
             alert("Speech recognition permission denied.");
             isSTTOn = false;
             updateSTTUI();
+        } else if (event.error === 'network') {
+            console.warn("STT Network error. Will attempt restart.");
         }
     };
 
     recognition.onend = () => {
-        if (isSTTOn) recognition.start(); // Keep listening if toggled on
+        isRecognitionActive = false;
+        console.log("STT: Recognition ended.");
+        // Auto-restart only if user still wants it on and it wasn't a hard error
+        if (isSTTOn) {
+            console.log("STT: Attempting auto-restart...");
+            try {
+                recognition.start();
+            } catch (e) {
+                console.error("STT Restart Error:", e);
+            }
+        }
     };
 }
 
@@ -273,13 +284,25 @@ updateTTSUI(); // Sync at startup
 sttToggleBtn.addEventListener('click', () => {
     isSTTOn = !isSTTOn;
     updateSTTUI();
+
     if (isSTTOn) {
         if (!recognition) initSTT();
-        recognition.start();
-        sttOverlay.classList.remove('hidden');
-        sttText.innerText = "Listening to you...";
+
+        if (!isRecognitionActive) {
+            try {
+                recognition.start();
+                sttOverlay.classList.remove('hidden');
+                sttText.innerText = "Listening to you...";
+            } catch (e) {
+                console.error("Failed to start Recognition:", e);
+                isSTTOn = false;
+                updateSTTUI();
+            }
+        }
     } else {
-        if (recognition) recognition.stop();
+        if (recognition && isRecognitionActive) {
+            recognition.stop();
+        }
         sttOverlay.classList.add('hidden');
     }
 });
@@ -871,7 +894,10 @@ function runPrediction(flatLandmarks) {
 
                     socket.emit("sign-message", { room: roomName, text: smoothLabel });
 
-                    if (isTTSOn) speak(smoothLabel);
+                    // We removed the local speak(smoothLabel) call here 
+                    // so that the person signing doesn't hear their own signs repeated back.
+                    // The remote user will still hear it via the socket message.
+                    // if (isTTSOn) speak(smoothLabel); 
 
                     // Check for Emoji Shortcuts
                     if (EMOJI_MAP[smoothLabel.toUpperCase()]) {
