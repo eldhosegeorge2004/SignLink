@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SignLink - Live Translation</title>
+    <!-- Reusing existing styles -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;700;800&display=swap"
+        rel="stylesheet">
+    <style>
+        /* Specific overrides for translation page */
+        .translation-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .back-btn {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            text-decoration: none;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px 20px;
+            border-radius: 30px;
+            transition: background 0.3s;
+        }
+
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .placeholder-content {
+            background: #161b22;
+            padding: 40px;
+            border-radius: 20px;
+            border: 1px solid #30363d;
+            max-width: 600px;
+        }
+
+        .coming-soon-icon {
+            font-size: 64px;
+            color: #2f81f7;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <a href="index.html" class="back-btn">
+        <span class="material-icons">arrow_back</span>
+        Back to Home
+    </a>
+
+    <div class="translation-container">
+        <div class="placeholder-content">
+            <span class="material-icons coming-soon-icon">engineering</span>
+            <h1>Live Translation Mode</h1>
+            <p style="color: #8b949e; margin-top: 10px; font-size: 1.1rem;">
+                This feature is currently under construction. <br>
+                It will allow you to translate sign language in real-time without joining a video call.
+            </p>
+        </div>
+    </div>
+
+</body>
+
+</html>

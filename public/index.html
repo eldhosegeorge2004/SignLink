@@ -4,325 +4,205 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign Language Link</title> <!-- Branding Name -->
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="modal.css">
-
-    <!-- Icons -->
+    <title>SignLink - Choose Your Mode</title>
+    <!-- Use existing styles for fonts and general reset, but we will add specific inline styles for this unique page -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;700;800&display=swap"
         rel="stylesheet">
-
-    <!-- Dependencies -->
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
-        crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
-        crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-
-    <!-- Firebase SDKs (Modular via CDN) -->
-    <script type="importmap">
-      {
-        "imports": {
-          "firebase/app": "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js",
-          "firebase/analytics": "https://www.gstatic.com/firebasejs/9.22.0/firebase-analytics.js",
-          "firebase/firestore": "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"
+    <style>
+        :root {
+            --primary: #2f81f7;
+            --bg-dark: #0d1117;
+            --text-main: #e6edf3;
+            --text-muted: #8b949e;
+            --card-bg: #161b22;
+            --border-color: #30363d;
         }
-      }
-    </script>
-    <script type="module" src="firebase-config.js"></script>
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* Ambient Background similar to main app */
+        body::before {
+            content: "";
+            position: absolute;
+            width: 150vw;
+            height: 150vh;
+            background: radial-gradient(circle at 50% 50%, rgba(47, 129, 247, 0.15) 0%, transparent 50%);
+            z-index: -1;
+            animation: pulse-glow 10s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulse-glow {
+            0% {
+                opacity: 0.5;
+                transform: scale(0.9);
+            }
+
+            100% {
+                opacity: 0.8;
+                transform: scale(1.1);
+            }
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            z-index: 2;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #fff 0%, #a5d6ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.subtitle {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            max-width: 600px;
+        }
+
+        .cards-container {
+            display: flex;
+            gap: 40px;
+            z-index: 2;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 30px;
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            position: relative;
+            overflow: hidden;
+            text-decoration: none;
+            /* For the anchor tag wrap */
+            color: var(--text-main);
+        }
+
+        .card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 0 2px var(--primary);
+            border-color: transparent;
+        }
+
+        .card-image-wrapper {
+            width: 100%;
+            height: 200px;
+            margin-bottom: 25px;
+            border-radius: 16px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card-image-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+
+        .card:hover .card-image-wrapper img {
+            transform: scale(1.1);
+        }
+
+        .card h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+
+        .card p {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .card-icon {
+            margin-top: 20px;
+            background: rgba(47, 129, 247, 0.1);
+            color: var(--primary);
+            padding: 10px;
+            border-radius: 50%;
+            transition: background 0.3s;
+        }
+
+        .card:hover .card-icon {
+            background: var(--primary);
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            .cards-container {
+                flex-direction: column;
+                gap: 20px;
+            }
+        }
+    </style>
 </head>
 
 <body>
 
-    <!-- Join Screen / Lobby -->
-    <!-- Join Screen / Home Page -->
-    <div id="join-screen" class="screen active">
-        <header>
-            <div class="logo">
-                <span class="material-icons" style="color: #2f81f7; font-size: 32px;">video_camera_front</span>
-                <span>SignLink</span>
-            </div>
-            <div class="header-right">
-                <span id="clock" class="clock">--:--</span>
-            </div>
-        </header>
+    <header>
+        <h1>Welcome to SignLink</h1>
+        <p class="subtitle">Choose how you want to connect today.</p>
+    </header>
 
-        <div class="lobby-content">
-            <div class="lobby-left">
-                <h1>Break down barriers <br> with <span style="color: #2f81f7">SignLink</span>.</h1>
-                <p>Experience the future of communication. Real-time video calls powered by advanced AI sign language
-                    recognition. Connect, gesture, and be understood.</p>
+    <div class="cards-container">
+        <!-- Card 1: Video Call -->
+        <a href="videocall.html" class="card">
+            <div class="card-image-wrapper">
+                <!-- Placeholder for the image I made -->
+                <img src="videocall_card.png" alt="Video Call Illustration">
+            </div>
+            <h2>Video Call</h2>
+            <p>Connect with others in real-time with integrated sign language detection.</p>
+            <span class="material-icons card-icon">video_camera_front</span>
+        </a>
 
-                <div class="join-box">
-                    <div class="input-group" style="margin-bottom: 10px;">
-                        <span class="material-icons input-icon">translate</span>
-                        <select id="modeSelect" class="mode-select">
-                            <option value="ISL">Indian Sign Language (ISL)</option>
-                            <option value="ASL">American Sign Language (ASL)</option>
-                        </select>
-                    </div>
-                    <button class="btn-primary" id="newMeetingBtn">
-                        <span class="material-icons">add_link</span>
-                        Start New Meeting
-                    </button>
-                    <div class="input-group">
-                        <span class="material-icons input-icon">keyboard</span>
-                        <input type="text" id="startRoomInput" placeholder="Enter code or link">
-                    </div>
-                    <button id="joinBtn" class="btn-text" disabled>Join</button>
-                </div>
-                <div id="status" class="status-text">Ready to connect</div>
+        <!-- Card 2: Live Translation -->
+        <a href="translation.html" class="card">
+            <div class="card-image-wrapper">
+                <!-- Placeholder for the image I made -->
+                <img src="translation_card.png" alt="Live Translation Illustration">
             </div>
-
-            <div class="lobby-right">
-                <div class="hero-visual">
-                    <div class="floating-card c1">
-                        <span class="material-icons">front_hand</span>
-                        <span>AI Detection</span>
-                    </div>
-                    <div class="floating-card c2">
-                        <span class="material-icons">translate</span>
-                        <span>Real-time Text</span>
-                    </div>
-                    <div class="floating-card c3">
-                        <span class="material-icons">video_chat</span>
-                        <span>HD Video</span>
-                    </div>
-                    <div class="glow-effect"></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="features-grid">
-            <div class="feature-item">
-                <span class="material-icons f-icon">back_hand</span>
-                <h3>Gesture Recognition</h3>
-                <p>Our AI translates sign language into text instantly during your video calls.</p>
-            </div>
-            <div class="feature-item">
-                <span class="material-icons f-icon">security</span>
-                <h3>Secure & Private</h3>
-                <p>Peer-to-peer encryption ensures your conversations stay private.</p>
-            </div>
-            <div class="feature-item">
-                <span class="material-icons f-icon">speed</span>
-                <h3>Low Latency</h3>
-                <p>Optimized for speed, ensuring smooth communication even on slow networks.</p>
-            </div>
-        </div>
-
-        <footer>
-            <p>&copy; 2025 SignLink. Bridging the gap.</p>
-        </footer>
+            <h2>Live Translation</h2>
+            <p>Convert sign language to text and speech instantly without a call.</p>
+            <span class="material-icons card-icon">translate</span>
+        </a>
     </div>
 
-    <!-- Main Meeting Room -->
-    <div id="meeting-room" class="screen">
-        <div class="main-stage">
-
-            <!-- Remoter User (Main View) -->
-            <div class="remote-view-container">
-                <video id="remoteVideo" autoplay playsinline></video>
-                <div class="userInfo">
-                    <div class="volume-meter" id="remoteVolume"></div>
-                    <span>Remote User</span>
-                </div>
-            </div>
-
-            <!-- Local User (PiP) -->
-            <div class="local-view-container" id="localContainer">
-                <video id="localVideo" autoplay playsinline muted></video>
-                <canvas id="localCanvas"></canvas> <!-- Hand Tracking Overlay -->
-                <div class="userInfo">
-                    <div class="volume-meter" id="localVolume"></div>
-                    <span>You</span>
-                </div>
-            </div>
-
-            <!-- Prediction Overlay (Toast style) -->
-            <div id="remote-caption-overlay" class="caption-overlay hidden">
-                <span class="material-icons" style="color: #4db6ac;">record_voice_over</span>
-                <span class="remote-says-label">Remote User Says:</span>
-                <span id="remotePrediction"></span>
-            </div>
-
-            <div id="prediction-overlay" class="caption-overlay">
-                <span class="material-icons">front_hand</span>
-                <span id="prediction">Waiting for sign...</span>
-            </div>
-
-            <!-- Speech to Text Overlay -->
-            <div id="stt-overlay" class="caption-overlay stt-overlay hidden">
-                <span class="material-icons" style="color: #3b82f6;">graphic_eq</span>
-                <span id="stttext">Listening...</span>
-            </div>
-
-            <!-- Particle Container for Emoji Animations -->
-            <div id="particles-container"></div>
-
-        </div>
-
-        <!-- Bottom Control Bar -->
-        <div class="control-bar">
-            <div class="control-left" id="meetingCodeContainer">
-                <div class="meeting-code-bubble" id="copyCodeBtn" title="Click to copy code">
-                    <span id="meetingCodeDisplay">abc-def-ghi</span>
-                    <span class="material-icons small-icon">content_copy</span>
-                </div>
-            </div>
-
-            <div class="control-center">
-                <button class="control-btn" id="micBtn" title="Turn off microphone">
-                    <span class="material-icons">mic</span>
-                </button>
-                <button class="control-btn" id="camBtn" title="Turn off camera">
-                    <span class="material-icons">videocam</span>
-                </button>
-                <button class="control-btn" id="ttsBtn" title="Toggle Text-to-Speech">
-                    <span class="material-icons">volume_up</span>
-                </button>
-                <button class="control-btn" id="sttToggleBtn" title="Toggle Speech-to-Text">
-                    <span class="material-icons">interpreter_mode</span>
-                </button>
-                <button class="control-btn red-btn" id="hangupBtn" title="Leave call">
-                    <span class="material-icons">call_end</span>
-                </button>
-            </div>
-
-            <div class="control-right">
-                <!-- moved secondary-controls group -->
-                <div id="secondary-controls" class="secondary-controls">
-                    <button class="control-btn" id="trainToggleBtn" title="Training Mode">
-                        <span class="material-icons">model_training</span>
-                    </button>
-                    <button class="control-btn" id="overlayBtn" title="Toggle Hand Overlay">
-                        <span class="material-icons" style="color: #4db6ac;">layers</span>
-                    </button>
-                    <!-- Newly added to dropdown -->
-                    <button class="control-btn" title="Info">
-                        <span class="material-icons">info</span>
-                    </button>
-                    <button class="control-btn" title="People">
-                        <span class="material-icons">group</span>
-                    </button>
-                </div>
-
-                <button class="control-btn small-btn" id="moreBtn" title="More options">
-                    <span class="material-icons">more_vert</span>
-                </button>
-
-                <button class="control-btn small-btn" id="chatToggleBtn" title="Chat">
-                    <span class="material-icons">chat</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- Side Panel for Training (Hidden by default) -->
-        <div id="side-panel" class="side-panel">
-            <div class="panel-header">
-                <h3>Training Data</h3>
-                <button class="close-btn" id="closePanelBtn"><span class="material-icons">close</span></button>
-            </div>
-            <div class="panel-content">
-                <div class="training-controls">
-                    <p>Teach the model new signs.</p>
-                    <input type="text" id="labelInput" placeholder="Label name (e.g. Thanks)">
-
-                    <button id="collectBtn" class="action-btn">
-                        <span class="material-icons">fingerprint</span>
-                        Hold to Collect
-                    </button>
-
-                    <div id="dataCount" class="data-stat">Samples: 0</div>
-
-                    <div id="signList" class="sign-list">
-                        <!-- Signs will appear here -->
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <button id="trainBtn" class="action-btn primary">
-                        <span class="material-icons">school</span>
-                        Train Model
-                    </button>
-
-                    <div id="trainStatus" class="status-msg">Idle</div>
-
-                    <div class="divider"></div>
-
-                    <button id="saveBtn" class="action-btn secondary" disabled>
-                        <span class="material-icons">save</span>
-                        Save Model
-                    </button>
-                    <button id="clearBtn" class="action-btn danger">
-                        <span class="material-icons">delete</span>
-                        Clear Data
-                    </button>
-
-                    <div class="divider"></div>
-
-                    <input type="file" id="uploadInput" accept=".json" style="display: none;">
-                    <button id="uploadBtn" class="action-btn">
-                        <span class="material-icons">upload_file</span>
-                        Upload Dataset
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Chat Panel (Right Side) -->
-        <div id="chat-panel" class="side-panel chat-panel">
-            <div class="panel-header">
-                <h3>In-call messages</h3>
-                <button class="close-btn" id="closeChatBtn"><span class="material-icons">close</span></button>
-            </div>
-            <div class="chat-messages" id="chatMessages">
-                <!-- Messages go here -->
-                <div class="chat-intro">
-                    <p>Messages can only be seen by people in the call and are deleted when the call ends.</p>
-                </div>
-            </div>
-            <div class="chat-input-area">
-                <input type="text" id="chatInput" placeholder="Send a message..." autocomplete="off">
-                <button id="sendChatBtn" class="send-btn" disabled>
-                    <span class="material-icons">send</span>
-                </button>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- Diagnostics Modal -->
-    <div id="mic-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-icon">
-                <span class="material-icons" style="font-size: 64px;">mic_off</span>
-            </div>
-            <h2>Microphone Not Found</h2>
-            <p>Your browser cannot find any microphone connected to this computer. We searched, but found 0 audio
-                devices.</p>
-
-            <div class="modal-steps">
-                <ol>
-                    <li>Check if your microphone is securely plugged in.</li>
-                    <li>Go to <strong>Windows Settings > Privacy > Microphone</strong> and ensure access is ON.</li>
-                    <li>Check if the website blocked access (Lock icon in URL bar).</li>
-                </ol>
-            </div>
-
-            <div class="modal-actions">
-                <button class="btn-secondary" id="modalDismissBtn">Continue Without Mic</button>
-                <button class="btn-primary" id="modalRetryBtn">I Fixed It, Try Again</button>
-            </div>
-        </div>
-    </div>
-
-    <script type="module" src="script.js"></script>
 </body>
 
 </html>
