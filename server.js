@@ -2,9 +2,19 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http, {
-    cors: { origin: "*" }
+    cors: { origin: "*" },
+    transports: ['websocket', 'polling'] // Prioritize websockets
 });
 const path = require('path');
+
+// --- Production Middleware ---
+// Redirect HTTP to HTTPS (Required for Camera/Mic/Speech to work)
+app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] === 'http') {
+        return res.redirect(`https://${req.headers.host}${req.url}`);
+    }
+    next();
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -13,7 +23,8 @@ io.on("connection", socket => {
 
     socket.on("join-room", room => {
         socket.join(room);
-        console.log(`User ${socket.id} joined room ${room}`);
+        const clients = io.sockets.adapter.rooms.get(room) ? io.sockets.adapter.rooms.get(room).size : 0;
+        console.log(`User ${socket.id} joined room ${room}. Total clients: ${clients}`);
         socket.to(room).emit("user-joined", socket.id);
     });
 
@@ -50,6 +61,14 @@ io.on("connection", socket => {
 
     socket.on("emoji-pop", data => {
         socket.to(data.room).emit("emoji-pop", data);
+    });
+
+    socket.on("disconnecting", () => {
+        socket.rooms.forEach(room => {
+            if (room !== socket.id) {
+                socket.to(room).emit("user-left", socket.id);
+            }
+        });
     });
 
     socket.on("disconnect", () => {
