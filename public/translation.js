@@ -20,6 +20,14 @@ let localStream = null;
 let camera = null;
 let recognition = null; // For Speech to Text
 
+// --- Spelling Mode State ---
+let accumulatedWord = "";
+let lastLetterTime = 0;
+let lastAddedLetter = null;
+let spellingInterval = null;
+
+
+
 // --- Model & State ---
 let model = null;
 let uniqueLabels = [];
@@ -134,10 +142,19 @@ function runPrediction(flatLandmarks) {
             if (conf > 0.75) {
                 const label = uniqueLabels[pIndex];
                 const smoothLabel = getSmoothedPrediction(label);
-                sttResult.innerText = `Sign: ${smoothLabel} (${Math.round(conf * 100)}%)`;
 
-                // Trigger Speech
-                speakText(smoothLabel);
+                console.log(`Prediction: "${smoothLabel}" (Length: ${smoothLabel.length})`); // DEBUG
+
+                // Check if it's a single letter (A-Z) or a full word
+                if (smoothLabel.length === 1 && /^[a-zA-Z]$/.test(smoothLabel)) {
+                    console.log("Triggering spelling for:", smoothLabel); // DEBUG
+                    handleSpelling(smoothLabel);
+                } else {
+                    // It's a full word/phrase
+                    sttResult.innerText = `Sign: ${smoothLabel} (${Math.round(conf * 100)}%)`;
+                    // Trigger Speech for word
+                    speakText(smoothLabel);
+                }
             }
             // else { sttResult.innerText = "..."; }
         });
@@ -174,6 +191,11 @@ function onResults(results) {
         // Don't overwrite error messages if model is missing
         if (model) {
             // sttResult.innerText = "Waiting for signs...";
+        }
+
+        // Reset state on hand loss
+        if (lastAddedLetter !== null) {
+            lastAddedLetter = null;
         }
     }
     canvasCtx.restore();
@@ -254,18 +276,86 @@ ttsBtn.addEventListener('click', () => {
 });
 
 function speakText(text) {
-    if (!isTTSOn || !text) return;
+    if (isTTSOn && text) {
+        // Cross-tab debounce using localStorage
+        const now = Date.now();
+        const lastGlobalSpeak = parseInt(localStorage.getItem('lastGlobalSpeakTime') || '0');
 
-    // Simple debounce: Don't repeat same word too fast (3 seconds)
+        if (now - lastGlobalSpeak < 500) {
+            console.log("Speech suppressed: global debounce active (translation.js).");
+            return;
+        }
+        localStorage.setItem('lastGlobalSpeakTime', now.toString());
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+    }
+}
+
+// --- Spelling Logic ---
+function handleSpelling(letter) {
     const now = Date.now();
-    if (text === lastSpokenLabel && now - lastSpokenTime < 3000) return;
 
-    lastSpokenLabel = text;
-    lastSpokenTime = now;
+    // Update timestamp to keep the session alive
+    lastLetterTime = now;
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    window.speechSynthesis.speak(utterance);
+    // Simple Debounce: Don't add the same letter repeatedly within 1.5 seconds
+    if (letter === lastAddedLetter) {
+        return;
+    }
+
+    lastAddedLetter = letter;
+    accumulatedWord += letter;
+
+    // Speak the letter immediately
+    if (isTTSOn) speakText(letter.toLowerCase());
+
+    updateSpellingDisplay();
+}
+
+function updateSpellingDisplay() {
+    const overlay = document.getElementById('spelling-overlay');
+    const textEl = document.getElementById('spelling-text');
+
+    console.log("Update Display. Word:", accumulatedWord); // DEBUG
+
+    if (accumulatedWord.length > 0) {
+        overlay.style.display = 'block';
+        textEl.innerText = accumulatedWord;
+    } else {
+        overlay.style.display = 'none';
+        textEl.innerText = "";
+    }
+}
+
+// Check for 3-second silence to finish the word
+setInterval(() => {
+    if (accumulatedWord.length > 0) {
+        const now = Date.now();
+        if (now - lastLetterTime > 3000) {
+            // 3 seconds passed since last letter
+            finishSpelling();
+        }
+    }
+}, 500);
+
+function finishSpelling() {
+    console.log("Spelling finished:", accumulatedWord);
+
+    // Convert to Title Case
+    const wordToSpeak = accumulatedWord.charAt(0).toUpperCase() + accumulatedWord.slice(1).toLowerCase();
+
+    // Speak the whole word
+    speakText(wordToSpeak);
+
+    // Show in main result area
+    sttResult.innerText = `Spelled: ${wordToSpeak}`;
+
+    // Reset
+    accumulatedWord = "";
+    lastAddedLetter = null;
+    updateSpellingDisplay();
 }
 
 // --- Speech Recognition Logic (Speech to Sign) ---
