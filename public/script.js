@@ -3,7 +3,7 @@ import { collection, addDoc, getDocs, deleteDoc, doc } from "firebase/firestore"
 
 const socket = io();
 
-// --- Persistence Configuration (Firestore) ---
+// --- Persistence Configuration (Firestore) sdfsdfsdfsdfsdfsdfdsf---
 // Default to ISL
 let currentMode = 'ISL';
 let dbCollection = 'gestures';
