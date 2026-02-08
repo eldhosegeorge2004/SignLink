@@ -3,7 +3,7 @@ import numpy as np
 import os
 
 # Placeholder for loading data
-# You need to populate X and y with your datasetasdasdsadsa
+# You need to populate X and y with your dataset
 # X shape: (samples, 63) -> 21 landmarks * 3 coordinates (x,y,z)
 # y shape: (samples, num_classes) -> One-hot encoded labels
 
