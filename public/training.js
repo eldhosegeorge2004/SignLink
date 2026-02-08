@@ -30,6 +30,7 @@ const STORAGE_KEYS = {
 
 // --- Initialization ---
 function init() {
+    console.log("Initializing Training Studio...");
     startCamera();
     loadDataFromStorage();
     renderDataList();
@@ -58,16 +59,33 @@ hands.setOptions({
 hands.onResults(onResults);
 
 // --- Camera ---
-const camera = new Camera(videoElement, {
-    onFrame: async () => {
-        await hands.send({ image: videoElement });
-    },
-    width: 1280,
-    height: 720
-});
+let camera;
+try {
+    if (typeof Camera === 'undefined' || typeof Hands === 'undefined') {
+        throw new Error("MediaPipe libraries not loaded. Please check your internet connection.");
+    }
+
+    camera = new Camera(videoElement, {
+        onFrame: async () => {
+            await hands.send({ image: videoElement });
+        },
+        width: 1280,
+        height: 720
+    });
+} catch (e) {
+    alert(e.message);
+    console.error(e);
+}
 
 async function startCamera() {
-    await camera.start();
+    try {
+        console.log("Starting camera...");
+        await camera.start();
+        console.log("Camera started successfully.");
+    } catch (err) {
+        console.error("Camera failed to start:", err);
+        alert("Camera failed to start: " + err.message + ". Ensure you have granted permission.");
+    }
 }
 
 // --- Logic ---
@@ -113,18 +131,32 @@ function saveDataPoint(label, landmarks) {
 }
 
 // --- Data Management ---
-function loadDataFromStorage() {
-    // We are implementing a simplified localstorage persistence for DATA
-    // Note: Live Translation usually only reads the MODEL and LABELS.
-    // Ideally we should store the raw data too so users can resume training.
-    const raw = localStorage.getItem(STORAGE_KEYS[currentLang].data);
-    if (raw) {
-        collectedData = JSON.parse(raw);
+async function loadDataFromStorage() {
+    // Fetch from server instead of localStorage
+    try {
+        const response = await fetch(`/api/data?lang=${currentLang}`);
+        if (response.ok) {
+            collectedData = await response.json();
+            updateUIStats();
+        } else {
+            console.error("Failed to load data from server");
+        }
+    } catch (err) {
+        console.error("Error loading data:", err);
     }
 }
 
-function saveToLocalStorage() {
-    localStorage.setItem(STORAGE_KEYS[currentLang].data, JSON.stringify(collectedData));
+async function saveData() {
+    // Save to server
+    try {
+        await fetch(`/api/data?lang=${currentLang}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(collectedData)
+        });
+    } catch (err) {
+        console.error("Error saving data:", err);
+    }
 }
 
 function updateUIStats() {
@@ -160,7 +192,7 @@ function renderDataList() {
 window.deleteLabel = (label) => {
     if (confirm(`Delete all samples for "${label}"?`)) {
         collectedData = collectedData.filter(d => d.label !== label);
-        saveToLocalStorage();
+        saveData();
         renderDataList();
     }
 };
@@ -168,7 +200,7 @@ window.deleteLabel = (label) => {
 clearAllBtn.addEventListener('click', () => {
     if (confirm("Delete ALL collected data? This cannot be undone.")) {
         collectedData = [];
-        saveToLocalStorage();
+        saveData();
         renderDataList();
     }
 });
@@ -190,7 +222,7 @@ captureBtn.addEventListener('mousedown', () => {
         isCollecting = false;
         recIndicator.style.display = 'none';
         captureBtn.classList.remove('active');
-        saveToLocalStorage(); // Auto-save on release
+        saveData(); // Auto-save on release
         renderDataList();
     });
 });
@@ -270,7 +302,7 @@ uploadInput.addEventListener('change', (e) => {
                 const valid = imported.every(d => d.label && d.landmarks && d.landmarks.length === 63);
                 if (valid) {
                     collectedData = collectedData.concat(imported);
-                    saveToLocalStorage();
+                    saveData();
                     renderDataList();
                     alert(`Imported ${imported.length} samples successfully.`);
                 } else {
