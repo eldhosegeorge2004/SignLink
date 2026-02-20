@@ -21,8 +21,14 @@ let camera = null;
 let recognition = null; // For Speech to Text
 
 // --- Model & State ---
-let model = null;
-let uniqueLabels = [];
+// Hybrid Model Approaches:
+// 1. Server Model (Pre-trained ISL Dataset)
+// 2. Local Model (User Generated via AI Training)
+let serverModel = null;
+let serverLabels = [];
+let localModel = null;
+let localLabels = [];
+
 const predictionBuffer = [];
 let localStorageModelKey = 'my-isl-model'; // Default
 let localStorageLabelKey = 'isl_labels';
@@ -36,39 +42,106 @@ if (langSelect) {
             localStorageModelKey = 'my-isl-model';
             localStorageLabelKey = 'isl_labels';
         } else {
+            // For ASL or others, we might only have local models for now
+            // or different server models. For now, assume mainly local for ASL.
             localStorageModelKey = 'my-asl-model';
             localStorageLabelKey = 'asl_labels';
         }
-        sttResult.innerText = `Switched to ${lang}. Loading model...`;
+        sttResult.innerText = `Switched to ${lang}. Loading models...`;
         loadSavedModelAndLabels();
     });
 }
 
-// Load Model and Labels
+// Load Models and Labels (Hybrid)
 async function loadSavedModelAndLabels() {
     try {
-        uniqueLabels = JSON.parse(localStorage.getItem(localStorageLabelKey)) || [];
+        // Reset State
+        serverModel = null;
+        serverLabels = [];
+        localModel = null;
+        localLabels = [];
+        predictionBuffer.length = 0;
 
-        // TF.js load
-        try {
-            model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}`);
-            console.log(`Model (${localStorageModelKey}) loaded successfully.`);
+        const promises = [];
 
-            if (uniqueLabels.length > 0) {
-                sttResult.innerText = "Model loaded! Start signing.";
-            } else {
-                sttResult.innerText = "Model loaded, but labels are missing!";
+        // 1. Load Server Model (ISL Only for now)
+        if (localStorageModelKey === 'my-isl-model') {
+            const serverLoad = async () => {
+                console.log("Attempting to load Server Model...");
+                try {
+                    const response = await fetch('labels.json');
+                    if (response.ok) {
+                        serverLabels = await response.json();
+                        serverModel = await tf.loadLayersModel('model/model.json');
+                        console.log(`Server Model loaded (${serverLabels.length} labels)`);
+                    } else {
+                        console.warn("labels.json not found.");
+                    }
+                } catch (e) {
+                    console.warn("Server model load failed:", e);
+                }
+            };
+            promises.push(serverLoad());
+        }
+
+        // 2. Load Local Model (Always try, based on keys)
+        const localLoad = async () => {
+            console.log("Attempting to load Local Model...");
+            try {
+                const localLabelData = localStorage.getItem(localStorageLabelKey);
+                if (localLabelData) {
+                    localLabels = JSON.parse(localLabelData);
+                    try {
+                        localModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}`);
+                        console.log(`Local Model loaded (${localLabels.length} labels)`);
+                    } catch (e) {
+                        console.warn("Local model weights not found in localStorage.");
+                        localModel = null; // Ensure null if load fails
+                    }
+                }
+            } catch (e) {
+                console.warn("Local model load failed:", e);
             }
+        };
+        promises.push(localLoad());
 
-        } catch (modelErr) {
-            console.warn("Failed to load model:", modelErr);
-            sttResult.innerText = "Model not found. Please train it in Video Call mode first.";
-            model = null; // Ensure null if failed
+        // Wait for both
+        await Promise.all(promises);
+
+        // 3. UI Feedback
+        let statusMsg = "";
+        if (serverModel && localModel) {
+            statusMsg = "Hybrid Mode: Server & Local Models Loaded.";
+        } else if (serverModel) {
+            statusMsg = "Server Model Loaded.";
+        } else if (localModel) {
+            statusMsg = "Local Model Loaded.";
+        } else {
+            statusMsg = "No models found. Please train in AI Training mode.";
+        }
+        sttResult.innerText = statusMsg;
+
+        // "Go to Training" button if absolutely nothing
+        if (!serverModel && !localModel) {
+            if (!document.getElementById('goto-training-btn')) {
+                const btn = document.createElement('button');
+                btn.id = 'goto-training-btn';
+                btn.innerText = "Go to AI Training";
+                btn.className = "control-btn";
+                // ... styling ...
+                btn.style.marginTop = "10px";
+                btn.style.background = "#3b82f6";
+                btn.onclick = () => window.location.href = 'training.html';
+                sttResult.parentElement.appendChild(btn);
+            }
+        } else {
+            const btn = document.getElementById('goto-training-btn');
+            if (btn) btn.remove();
         }
 
     } catch (e) {
-        console.error("Error loading model/labels:", e);
-        sttResult.innerText = "Error loading system.";
+        console.error("Error in hybrid load:", e);
+        sttResult.innerText = "Error loading systems.";
     }
 }
 loadSavedModelAndLabels();
@@ -90,23 +163,22 @@ hands.onResults(onResults);
 function preprocessLandmarks(landmarks) {
     const wrist = landmarks[0];
 
-    // 1. Translation Invariance: Shift all points relative to the wrist (0,0,0)
+    // 1. Translation Invariance
     let shifted = landmarks.map(p => ({
         x: p.x - wrist.x,
         y: p.y - wrist.y,
         z: p.z - wrist.z
     }));
 
-    // 2. Scale Invariance: Calculate "hand size" (distance from wrist to index finger MCP)
-    // Index MCP is landmark 5
+    // 2. Scale Invariance
     const indexMCP = shifted[5];
     const distance = Math.sqrt(
         Math.pow(indexMCP.x, 2) +
         Math.pow(indexMCP.y, 2) +
         Math.pow(indexMCP.z, 2)
-    ) || 1e-6; // Avoid division by zero
+    ) || 1e-6;
 
-    // 3. Normalize all coordinates by this distance
+    // 3. Normalize
     return shifted.flatMap(p => [
         p.x / distance,
         p.y / distance,
@@ -116,41 +188,95 @@ function preprocessLandmarks(landmarks) {
 
 function getSmoothedPrediction(predLabel) {
     predictionBuffer.push(predLabel);
-    if (predictionBuffer.length > 15) predictionBuffer.shift();
+    if (predictionBuffer.length > 10) predictionBuffer.shift(); // Slightly faster response
     const counts = {};
     predictionBuffer.forEach(l => counts[l] = (counts[l] || 0) + 1);
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
 }
 
-function runPrediction(flatLandmarks) {
-    if (model && uniqueLabels.length > 0) {
-        // Use tf.tidy to prevent memory leaks
-        tf.tidy(() => {
-            const input = tf.tensor2d([flatLandmarks]);
-            const prediction = model.predict(input);
-            const pIndex = prediction.argMax(-1).dataSync()[0];
-            const conf = prediction.max().dataSync()[0];
 
-            if (conf > 0.75) {
-                const label = uniqueLabels[pIndex];
-                const smoothLabel = getSmoothedPrediction(label);
-                sttResult.innerText = `Sign: ${smoothLabel} (${Math.round(conf * 100)}%)`;
+function flipLandmarks(landmarks) {
+    return landmarks.map(p => ({
+        x: 1 - p.x,
+        y: p.y,
+        z: p.z
+    }));
+}
 
-                // Trigger Speech
-                speakText(smoothLabel);
-            }
-            // else { sttResult.innerText = "..."; }
-        });
-    } else {
-        if (!model) {
-            // Already handled in load
+// Helper to run a single model prediction
+function predictSingleModel(modelInstance, labels, tensor) {
+    if (!modelInstance || !labels.length) return { label: null, conf: 0 };
+
+    const pred = modelInstance.predict(tensor);
+    const conf = pred.max().dataSync()[0];
+    const idx = pred.argMax(-1).dataSync()[0];
+
+    // Cleanup happens in tf.tidy in caller
+    return { label: labels[idx], conf: conf };
+}
+
+function runPrediction(landmarks) {
+    // We need at least one model
+    if (!serverModel && !localModel) return;
+
+    tf.tidy(() => {
+        // Prepare Inputs
+        const flatNormal = preprocessLandmarks(landmarks);
+        const tensorNormal = tf.tensor2d([flatNormal]);
+
+        const flipped = flipLandmarks(landmarks);
+        const flatFlipped = preprocessLandmarks(flipped);
+        const tensorFlipped = tf.tensor2d([flatFlipped]);
+
+        // We will collect candidates from all available models + mirror states
+        // Structure: { label, conf, source }
+        let candidates = [];
+
+        // 1. Query Server Model
+        if (serverModel && serverLabels.length) {
+            const pNorm = predictSingleModel(serverModel, serverLabels, tensorNormal);
+            candidates.push({ ...pNorm, source: 'Server' });
+
+            const pFlip = predictSingleModel(serverModel, serverLabels, tensorFlipped);
+            // Optional: Penalize flipped slightly if needed, or treat equally
+            candidates.push({ ...pFlip, source: 'Server(M)' });
         }
-        else if (uniqueLabels.length === 0) sttResult.innerText = "No labels found.";
-    }
+
+        // 2. Query Local Model
+        if (localModel && localLabels.length) {
+            const pNorm = predictSingleModel(localModel, localLabels, tensorNormal);
+            candidates.push({ ...pNorm, source: 'Local' });
+
+            const pFlip = predictSingleModel(localModel, localLabels, tensorFlipped);
+            candidates.push({ ...pFlip, source: 'Local(M)' });
+        }
+
+        // 3. Find Best Candidate
+        // Sort by confidence descending
+        candidates.sort((a, b) => b.conf - a.conf);
+        const best = candidates[0];
+
+        // 4. Threshold & Display
+        if (best && best.conf > 0.6) { // Global threshold
+            const smoothLabel = getSmoothedPrediction(best.label);
+
+            // UI Feedback
+            // sttResult.innerText = `Sign: ${smoothLabel} (${Math.round(best.conf * 100)}%)`;
+            // Optional: Show source for debug?
+            // sttResult.innerText = `${best.source}: ${smoothLabel} (${Math.round(best.conf * 100)}%)`; 
+
+            // Clean UI:
+            sttResult.innerText = `Sign: ${smoothLabel}`;
+
+            speakText(smoothLabel);
+        } else {
+            sttResult.innerText = "Listening...";
+        }
+    });
 }
 
 function onResults(results) {
-    // Resize canvas to match video
+    // Resize canvas
     if (canvasElement.width !== videoElement.videoWidth || canvasElement.height !== videoElement.videoHeight) {
         canvasElement.width = videoElement.videoWidth;
         canvasElement.height = videoElement.videoHeight;
@@ -159,21 +285,11 @@ function onResults(results) {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-    // Draw landmarks
     if (results.multiHandLandmarks) {
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
-
-            // Run Prediction Logic using the ported method
-            const flatLandmarks = preprocessLandmarks(landmarks);
-            runPrediction(flatLandmarks);
-        }
-    } else {
-        // sttResult.innerText = "Waiting for signs..."; 
-        // Don't overwrite error messages if model is missing
-        if (model) {
-            // sttResult.innerText = "Waiting for signs...";
+            runPrediction(landmarks);
         }
     }
     canvasCtx.restore();
@@ -185,7 +301,6 @@ async function startCamera() {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true });
         videoElement.srcObject = localStream;
 
-        // Initialize MediaPipe Camera Utils
         camera = new Camera(videoElement, {
             onFrame: async () => {
                 if (isSignToTextMode && isCamOn) {
@@ -225,13 +340,12 @@ camBtn.addEventListener('click', () => {
         camBtn.innerHTML = '<span class="material-icons">videocam_off</span>';
         camBtn.classList.add('red-btn');
 
-        // UI Updates for Off State
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        videoElement.srcObject = null; // Explicitly clear source
-        videoElement.style.opacity = '0'; // Hide video element
+        videoElement.srcObject = null;
+        videoElement.style.opacity = '0';
         if (placeholder) placeholder.style.display = 'flex';
 
-        if (model) sttResult.innerText = "Camera is off.";
+        sttResult.innerText = "Camera is off.";
     }
 });
 
@@ -240,9 +354,8 @@ ttsBtn.addEventListener('click', () => {
     isTTSOn = !isTTSOn;
     if (isTTSOn) {
         ttsBtn.innerHTML = '<span class="material-icons">volume_up</span>';
-        ttsBtn.style.color = '#3b82f6'; // Active color
+        ttsBtn.style.color = '#3b82f6';
 
-        // Priming for mobile browsers
         if (window.speechSynthesis) {
             window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
         }
@@ -256,7 +369,6 @@ ttsBtn.addEventListener('click', () => {
 function speakText(text) {
     if (!isTTSOn || !text) return;
 
-    // Simple debounce: Don't repeat same word too fast (3 seconds)
     const now = Date.now();
     if (text === lastSpokenLabel && now - lastSpokenTime < 3000) return;
 
@@ -291,7 +403,6 @@ function initSpeechRecognition() {
 
         if (finalTranscript) {
             listeningText.innerText = `Heard: "${finalTranscript}"`;
-            // Trigger Sign Card Display (Placeholder)
             displaySignCards(finalTranscript);
         }
     };
@@ -305,7 +416,6 @@ function displaySignCards(text) {
     const cardArea = document.querySelector('.sign-cards-area');
     // Simple visual feedback
     cardArea.innerHTML = `<h2 style="color: white;">Displaying signs for: ${text}</h2>`;
-    // In a real app, we would map words to sign images.
 }
 
 // --- Mode Switching ---
@@ -313,47 +423,30 @@ modeBtn.addEventListener('click', () => {
     isSignToTextMode = !isSignToTextMode;
 
     if (isSignToTextMode) {
-        // Switch to Sign-to-Text
-        signView.style.display = 'flex'; // Use flex to center
+        signView.style.display = 'flex';
         speechView.classList.remove('active');
-        modeText.innerText = "Switch to Live Speech"; // The button logic is "Switch TO the other mode"
+        modeText.innerText = "Switch to Live Speech";
 
-        // Restart camera if it should be on
         if (isCamOn) startCamera();
-
-        // Stop speech recognition
         if (recognition) recognition.stop();
 
     } else {
-        // Switch to Speech-to-Sign
         signView.style.display = 'none';
         speechView.classList.add('active');
         modeText.innerText = "Switch to Sign Translator";
 
-        // Stop camera to save resources
-        // if(isCamOn) stopCamera(); 
-
-        // Start speech recognition
         if (!recognition) initSpeechRecognition();
-
-        // Add small delay to ensure recognition is ready
         setTimeout(() => {
             if (recognition) {
                 try {
                     recognition.start();
                 } catch (e) {
-                    // Already started
                 }
             }
         }, 500);
 
     }
 });
-
-
-// Add red-btn style if not present in CSS (handled in style.css or inline)
-// reuse existing red-btn class if available, else standard toggle
-// style.css has .red-btn
 
 // Initialize
 startCamera();
