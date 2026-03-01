@@ -20,6 +20,12 @@ let localStream = null;
 let camera = null;
 let recognition = null; // For Speech to Text
 
+// --- Spelling Mode State ---
+let accumulatedWord = "";
+let lastLetterTime = 0;
+let lastAddedLetter = null;
+let spellingInterval = null;
+
 // --- Model & State ---
 // Hybrid Model Approaches:
 // 1. Server Model (Pre-trained ISL Dataset)
@@ -260,15 +266,14 @@ function runPrediction(landmarks) {
         if (best && best.conf > 0.6) { // Global threshold
             const smoothLabel = getSmoothedPrediction(best.label);
 
-            // UI Feedback
-            // sttResult.innerText = `Sign: ${smoothLabel} (${Math.round(best.conf * 100)}%)`;
-            // Optional: Show source for debug?
-            // sttResult.innerText = `${best.source}: ${smoothLabel} (${Math.round(best.conf * 100)}%)`; 
-
-            // Clean UI:
-            sttResult.innerText = `Sign: ${smoothLabel}`;
-
-            speakText(smoothLabel);
+            // Check if it's a single letter (A-Z)
+            if (smoothLabel.length === 1 && /^[a-zA-Z]$/.test(smoothLabel)) {
+                handleSpelling(smoothLabel);
+                sttResult.innerText = `Sign: ${smoothLabel} (${Math.round(best.conf * 100)}%)`;
+            } else {
+                sttResult.innerText = `Sign: ${smoothLabel}`;
+                speakText(smoothLabel);
+            }
         } else {
             sttResult.innerText = "Listening...";
         }
@@ -291,8 +296,70 @@ function onResults(results) {
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
             runPrediction(landmarks);
         }
+    } else {
+        // Reset state on hand loss
+        if (lastAddedLetter !== null) {
+            lastAddedLetter = null;
+        }
     }
     canvasCtx.restore();
+}
+
+// --- Spelling Logic ---
+function handleSpelling(letter) {
+    const now = Date.now();
+    lastLetterTime = now;
+
+    // Strict State-Based Filtering:
+    if (letter === lastAddedLetter) {
+        return;
+    }
+
+    lastAddedLetter = letter;
+    accumulatedWord += letter;
+
+    // Speak the letter immediately
+    if (isTTSOn) speakText(letter.toLowerCase());
+
+    updateSpellingDisplay();
+}
+
+function updateSpellingDisplay() {
+    const overlay = document.getElementById('spelling-overlay');
+    const textEl = document.getElementById('spelling-text');
+
+    if (accumulatedWord.length > 0) {
+        if(overlay) overlay.style.display = 'block';
+        if(textEl) textEl.innerText = accumulatedWord;
+    } else {
+        if(overlay) overlay.style.display = 'none';
+        if(textEl) textEl.innerText = "";
+    }
+}
+
+// Check for 3-second silence to finish the word
+setInterval(() => {
+    if (accumulatedWord.length > 0) {
+        const now = Date.now();
+        if (now - lastLetterTime > 3000) {
+            finishSpelling();
+        }
+    }
+}, 500);
+
+function finishSpelling() {
+    const wordToSpeak = accumulatedWord.charAt(0).toUpperCase() + accumulatedWord.slice(1).toLowerCase();
+
+    // Speak the whole word
+    speakText(wordToSpeak);
+
+    // Show in main result area
+    sttResult.innerText = `Spelled: ${wordToSpeak}`;
+
+    // Reset
+    accumulatedWord = "";
+    lastAddedLetter = null;
+    updateSpellingDisplay();
 }
 
 // --- Camera Logic ---
@@ -367,17 +434,21 @@ ttsBtn.addEventListener('click', () => {
 });
 
 function speakText(text) {
-    if (!isTTSOn || !text) return;
+    if (isTTSOn && text) {
+        // Cross-tab debounce using localStorage
+        const now = Date.now();
+        const lastGlobalSpeak = parseInt(localStorage.getItem('lastGlobalSpeakTime') || '0');
 
-    const now = Date.now();
-    if (text === lastSpokenLabel && now - lastSpokenTime < 3000) return;
+        if (now - lastGlobalSpeak < 500) {
+            console.log("Speech suppressed: global debounce active (translation.js).");
+            return;
+        }
+        localStorage.setItem('lastGlobalSpeakTime', now.toString());
 
-    lastSpokenLabel = text;
-    lastSpokenTime = now;
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    window.speechSynthesis.speak(utterance);
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+    }
 }
 
 // --- Speech Recognition Logic (Speech to Sign) ---
