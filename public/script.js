@@ -16,6 +16,9 @@ let serverLabels = [];
 let model = null; // local model reference (used earlier)
 let uniqueLabels = [];
 
+// prediction buffer must exist before any model loading/prediction logic
+const predictionBuffer = [];
+
 // Spelling hold state (same feature added in translation.js)
 const minimumHoldDuration = 1000; // ms
 let holdStartTime = 0;
