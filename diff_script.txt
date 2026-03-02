@@ -1,0 +1,187 @@
+diff --git a/public/script.js b/public/script.js
+index 4e3d21b..74a50a5 100644
+--- a/public/script.js
++++ b/public/script.js
+@@ -124,6 +124,14 @@ let speakTimeout = null;           // NEW: Track pending speech to avoid race co
+ let iceCandidatesBuffer = []; // Buffer for ICE candidates
+ let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actually running
+ 
++// --- Spelling Mode State ---
++let accumulatedWord = "";
++let lastLetterTime = 0;
++let lastAddedLetter = null; // Track the actual last ACCEPTED letter
++let spellingInterval = null;
++
++
++
+ // Accessibility Feature States
+ let recognition;
+ let audioContext;
+@@ -862,6 +870,13 @@ function onResults(results) {
+     } else {
+         predictionDiv.innerText = "Waiting for hands...";
+         predictionBuffer.length = 0;
++
++        // Reset the last added letter so user can sign the same letter again if they lift their hand
++        // e.g. "Apple" requires P -> lift -> P
++        if (lastAddedLetter !== null) {
++            console.log("Hands removed, resetting lastAddedLetter");
++            lastAddedLetter = null;
++        }
+     }
+     ctx.restore();
+ }
+@@ -878,31 +893,34 @@ function runPrediction(flatLandmarks) {
+             if (conf > 0.75) {
+                 const label = uniqueLabels[pIndex];
+                 const smoothLabel = getSmoothedPrediction(label);
+-                predictionDiv.innerText = `Sign: ${smoothLabel} (${Math.round(conf * 100)}%)`;
+-
+-                const now = Date.now();
+-                const wordLastSpoken = localWordLastSpoken[smoothLabel] || 0;
+-                const timeSinceAny = now - lastSpokenTime;
+-                const timeSinceSame = now - wordLastSpoken;
+-
+-                // 1. Same word must wait 4 seconds (Prevents accidental double-triggers/stutter)
+-                // 2. Global inter-word gap of 800ms for "fluent" sentences (prevents flicker)
+-                if (timeSinceSame > 4000 && timeSinceAny > 800) {
+-                    lastSpokenLabel = smoothLabel;
+-                    lastSpokenTime = now;
+-                    localWordLastSpoken[smoothLabel] = now;
+-
+-                    socket.emit("sign-message", { room: roomName, text: smoothLabel });
+-
+-                    // We removed the local speak(smoothLabel) call here 
+-                    // so that the person signing doesn't hear their own signs repeated back.
+-                    // The remote user will still hear it via the socket message.
+-                    // if (isTTSOn) speak(smoothLabel); 
+-
+-                    // Check for Emoji Shortcuts
+-                    if (EMOJI_MAP[smoothLabel.toUpperCase()]) {
+-                        popEmojis(EMOJI_MAP[smoothLabel.toUpperCase()]);
+-                        socket.emit("emoji-pop", { room: roomName, emoji: EMOJI_MAP[smoothLabel.toUpperCase()] });
++
++                // Check if it's a single letter (A-Z)
++                if (smoothLabel.length === 1 && /^[a-zA-Z]$/.test(smoothLabel)) {
++                    handleSpelling(smoothLabel);
++                    // Also show current letter in main toast for immediate feedback
++                    predictionDiv.innerText = `Sign: ${smoothLabel} (${Math.round(conf * 100)}%)`;
++                } else {
++                    predictionDiv.innerText = `Sign: ${smoothLabel} (${Math.round(conf * 100)}%)`;
++
++                    const now = Date.now();
++                    const wordLastSpoken = localWordLastSpoken[smoothLabel] || 0;
++                    const timeSinceAny = now - lastSpokenTime;
++                    const timeSinceSame = now - wordLastSpoken;
++
++                    // 1. Same word must wait 4 seconds (Prevents accidental double-triggers/stutter)
++                    // 2. Global inter-word gap of 800ms for "fluent" sentences (prevents flicker)
++                    if (timeSinceSame > 4000 && timeSinceAny > 800) {
++                        lastSpokenLabel = smoothLabel;
++                        lastSpokenTime = now;
++                        localWordLastSpoken[smoothLabel] = now;
++
++                        socket.emit("sign-message", { room: roomName, text: smoothLabel });
++
++                        // Check for Emoji Shortcuts
++                        if (EMOJI_MAP[smoothLabel.toUpperCase()]) {
++                            popEmojis(EMOJI_MAP[smoothLabel.toUpperCase()]);
++                            socket.emit("emoji-pop", { room: roomName, emoji: EMOJI_MAP[smoothLabel.toUpperCase()] });
++                        }
+                     }
+                 }
+             }
+@@ -910,6 +928,70 @@ function runPrediction(flatLandmarks) {
+     }
+ }
+ 
++// --- Spelling Logic ---
++function handleSpelling(letter) {
++    const now = Date.now();
++    lastLetterTime = now;
++
++    // Strict State-Based Filtering:
++    // Only add if it's DIFFERENT from the last added letter.
++    // To add double letters (like 'PP' in Apple), the user must lift their hand (resetting lastAddedLetter)
++    // or sign a different letter in between.
++    if (letter === lastAddedLetter) {
++        return;
++    }
++
++    lastAddedLetter = letter;
++    accumulatedWord += letter;
++
++    // Speak the letter immediately
++    if (isTTSOn) speak(letter.toLowerCase()); // Lowercase often sounds more natural for letters
++
++    updateSpellingDisplay();
++}
++
++function updateSpellingDisplay() {
++    const overlay = document.getElementById('spelling-overlay');
++    const textEl = document.getElementById('spelling-text');
++
++    if (accumulatedWord.length > 0) {
++        overlay.style.display = 'block';
++        textEl.innerText = accumulatedWord;
++    } else {
++        overlay.style.display = 'none';
++        textEl.innerText = "";
++    }
++}
++
++// Check for 3-second silence to finish the word
++setInterval(() => {
++    if (accumulatedWord.length > 0) {
++        const now = Date.now();
++        if (now - lastLetterTime > 3000) {
++            finishSpelling();
++        }
++    }
++}, 500);
++
++function finishSpelling() {
++    // Convert to Title Case to encourage TTS to say it as a word, not spell it (e.g. "Saurav" vs "SAURAV")
++    const wordToSpeak = accumulatedWord.charAt(0).toUpperCase() + accumulatedWord.slice(1).toLowerCase();
++
++    // Speak locally if TTS is on
++    if (isTTSOn) speak(wordToSpeak);
++
++    // Send to remote user (send original uppercase or title case? Let's send Title Case for them too)
++    socket.emit("sign-message", { room: roomName, text: wordToSpeak });
++
++    // Show in local toast
++    predictionDiv.innerText = `Spelled: ${wordToSpeak}`;
++
++    // Reset
++    accumulatedWord = "";
++    lastAddedLetter = null;
++    updateSpellingDisplay();
++}
++
+ // --- Training Logic ---
+ function saveToLocal() {
+     // This helper updates the UI and stats after local data modification
+@@ -1244,14 +1326,18 @@ function speak(text) {
+     if (!window.speechSynthesis) return;
+ 
+     // 1. Hardware-level safety: Unified temporal debounce (500ms)
+-    // This prevents double-speaking if local prediction and remote socket fire at once,
+-    // or if MediaPipe triggers multiple results in the same event loop.
++    // We use localStorage to coordinate across multiple tabs (e.g. if user has translation.html AND videocall.html open)
+     const now = Date.now();
+-    if (now - (window._lastSystemSpeakTime || 0) < 500) {
+-        console.log("Speech suppressed: debounce active.");
++    const lastGlobalSpeak = parseInt(localStorage.getItem('lastGlobalSpeakTime') || '0');
++
++    if (now - lastGlobalSpeak < 500) {
++        console.log("Speech suppressed: global debounce active.");
+         return;
+     }
++
++    // Update both memory and storage trackers
+     window._lastSystemSpeakTime = now;
++    localStorage.setItem('lastGlobalSpeakTime', now.toString());
+ 
+     // 2. Clear any pending speak operation to avoid the setTimeout race condition
+     if (speakTimeout) {

@@ -10,7 +10,21 @@ let dbCollection = 'gestures';
 let localStorageModelKey = 'my-isl-model';
 let localStorageLabelKey = 'isl_labels';
 
-function updateModeVariables() {
+// Hybrid model support (same as translation.js)
+let serverModel = null;
+let serverLabels = [];
+let model = null; // local model reference (used earlier)
+let uniqueLabels = [];
+
+// prediction buffer must exist before any model loading/prediction logic
+const predictionBuffer = [];
+
+// Spelling hold state (same feature added in translation.js)
+const minimumHoldDuration = 1000; // ms
+let holdStartTime = 0;
+let heldLetter = null;
+
+async function updateModeVariables() {
     if (currentMode === 'ISL') {
         dbCollection = 'gestures';
         localStorageModelKey = 'my-isl-model';
@@ -21,6 +35,8 @@ function updateModeVariables() {
         localStorageLabelKey = 'asl_labels';
     }
     console.log(`Switched to ${currentMode} mode. DB: ${dbCollection}`);
+    // whenever the language mode changes, reload available models
+    await loadModelsAndLabels();
 }
 
 // Helper to load from Firestore
@@ -42,7 +58,9 @@ async function loadFromFirestore() {
 // Global State
 let collectedData = [];
 let batchQueue = []; // New data waiting to be uploaded
-let uniqueLabels = [];
+
+// Note: uniqueLabels is now maintained by loadModelsAndLabels so ensure
+// the variable exists earlier. (declared above with models)
 
 // --- DOM Elements ---
 const joinScreen = document.getElementById('join-screen');
@@ -123,6 +141,12 @@ let lastRemoteSpokenText = "";
 let speakTimeout = null;           // NEW: Track pending speech to avoid race conditions
 let iceCandidatesBuffer = []; // Buffer for ICE candidates
 let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actually running
+
+// --- Spelling Mode State ---
+let accumulatedWord = "";
+let lastLetterTime = 0;
+let lastAddedLetter = null; // Track the actual last ACCEPTED letter
+let spellingInterval = null;
 
 // Accessibility Feature States
 let recognition;
@@ -311,15 +335,29 @@ function showSTT(text, isSelf = false) {
     sttOverlay.classList.remove('hidden');
     sttText.innerText = (isSelf ? "You: " : "Remote: ") + text;
 
+    // also display sign cards for this transcript
+    displaySignCards(text);
+
     // Clear after some silence/timeout
     clearTimeout(window.sttTimeout);
     window.sttTimeout = setTimeout(() => {
         if (isSTTOn) {
             sttText.innerText = "Listening...";
+            // hide cards when we're back to listening
+            const cardArea = document.querySelector('.sign-cards-area');
+            if (cardArea) cardArea.innerHTML = "";
         } else {
             sttOverlay.classList.add('hidden');
         }
     }, 4000);
+}
+
+// helper to render sign cards (used during STT)
+function displaySignCards(text) {
+    const cardArea = document.querySelector('.sign-cards-area');
+    if (!cardArea) return;
+    // for now we simply mimic translation page behaviour; later it can show rich images
+    cardArea.innerHTML = `<h2 style="color: white; font-size: 1.2rem; text-align:center;">Displaying signs for: ${text}</h2>`;
 }
 
 // 2. Visual Audio Feedback (Volume Meter)
@@ -441,15 +479,15 @@ startRoomInput.addEventListener('input', (e) => {
 if (modeSelect) {
     modeSelect.addEventListener('change', async (e) => {
         currentMode = e.target.value;
-        updateModeVariables();
+        await updateModeVariables();
 
         // Reload everything
-        model = null; // Clear current model
+        model = null; // Clear current model (will be reset by loader)
         trainStatusDiv.innerText = "Model cleared (Switching mode).";
 
         await loadFromFirestore(); // Reload data
-        loadSavedLabels(); // Reload labels
-        await loadSavedModel(); // Try loading model for new mode
+        // new loader handles both server & local models
+        await loadModelsAndLabels();
     });
 }
 
@@ -566,11 +604,13 @@ hands.setOptions({
 
 hands.onResults(onResults);
 
-let model = null;
 let isCollecting = false;
 // Initial Load
 if (modeSelect) modeSelect.value = currentMode;
-updateModeVariables();
+// updateModeVariables is async now, so wait for it and then load models
+updateModeVariables().then(() => {
+    loadModelsAndLabels();
+});
 loadSavedLabels();
 loadFromFirestore();
 
@@ -645,30 +685,69 @@ function saveGesture(label, landmarks) {
     updateDataStats();
 }
 
-async function loadSavedModel() {
+// --- Model Loading ---
+// This replaces the old `loadSavedModel` and pulls together both server
+// model (pre-trained dataset) and any locally trained model for the
+// selected language.
+async function loadModelsAndLabels() {
+    // reset state
+    serverModel = null;
+    serverLabels = [];
+    model = null;
+    uniqueLabels = [];
+    predictionBuffer.length = 0;
+
+    // load server model for ISL only
+    if (currentMode === 'ISL') {
+        try {
+            const response = await fetch('labels.json');
+            if (response.ok) {
+                serverLabels = await response.json();
+                serverModel = await tf.loadLayersModel('model/model.json');
+                console.log(`Server model loaded (${serverLabels.length} labels)`);
+            } else {
+                console.warn('labels.json not found for server model.');
+            }
+        } catch (e) {
+            console.warn('Server model load failed:', e);
+        }
+    }
+
+    // load local model if available
     try {
-        console.log(`Attempting to load model: ${localStorageModelKey}`);
-        model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}`);
-
-        // Also load labels associated with this mode
-        loadSavedLabels();
-
-        if (model && uniqueLabels.length > 0) {
-            console.log("Model and labels loaded safely from local storage.");
-            trainStatusDiv.innerText = "Saved model loaded.";
-            if (saveBtn) saveBtn.disabled = false;
-        } else {
-            console.warn("Model loaded but uniqueLabels is empty (or model is null).");
-            trainStatusDiv.innerText = "Model found, but labels missing.";
-            model = null; // Invalidate if labels are missing
+        const localLabelData = localStorage.getItem(localStorageLabelKey);
+        if (localLabelData) {
+            uniqueLabels = JSON.parse(localLabelData);
+            try {
+                model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}`);
+                console.log(`Local model loaded (${uniqueLabels.length} labels)`);
+            } catch (e) {
+                console.warn('Local model weights not found in localStorage.');
+                model = null;
+            }
         }
     } catch (e) {
-        console.log("No saved model found for this mode yet.");
-        model = null;
+        console.warn('Local model load failed:', e);
     }
-    updateModelStatusUI();
+
+    // update training UI
+    if (model && uniqueLabels.length > 0) {
+        trainStatusDiv.innerText = 'Saved model loaded.';
+        if (saveBtn) saveBtn.disabled = false;
+    } else {
+        trainStatusDiv.innerText = 'No saved local model.';
+    }
+
+    console.log('loadModelsAndLabels completed', {
+        serverModel: !!serverModel,
+        serverLabelsLen: serverLabels.length,
+        localModel: !!model,
+        uniqueLabelsLen: uniqueLabels.length
+    });
 }
-loadSavedModel();
+
+// initial load
+loadModelsAndLabels();
 
 // --- Camera & Hand Tracking ---
 let isCameraStarted = false;
@@ -769,6 +848,8 @@ async function startCamera() {
                     if (frameCount % 3 === 0) {
                         await hands.send({ image: localVideo });
                     }
+                } else {
+                    console.debug('onFrame: camera disabled');
                 }
             },
         });
@@ -817,7 +898,6 @@ function preprocessLandmarks(landmarks) {
     ]);
 }
 
-const predictionBuffer = [];
 function getSmoothedPrediction(predLabel) {
     predictionBuffer.push(predLabel);
     if (predictionBuffer.length > 15) predictionBuffer.shift();
@@ -827,6 +907,9 @@ function getSmoothedPrediction(predLabel) {
 }
 
 function onResults(results) {
+    console.debug('onResults invoked', {
+        hands: results.multiHandLandmarks ? results.multiHandLandmarks.length : 0
+    });
     if (localCanvas.width !== localVideo.videoWidth || localCanvas.height !== localVideo.videoHeight) {
         localCanvas.width = localVideo.videoWidth;
         localCanvas.height = localVideo.videoHeight;
@@ -862,52 +945,165 @@ function onResults(results) {
     } else {
         predictionDiv.innerText = "Waiting for hands...";
         predictionBuffer.length = 0;
+
+        // Reset the last added letter so user can sign the same letter again if they lift their hand
+        // e.g. "Apple" requires P -> lift -> P
+        if (lastAddedLetter !== null) {
+            console.log("Hands removed, resetting lastAddedLetter");
+            lastAddedLetter = null;
+        }
+        // also clear hold tracking
+        heldLetter = null;
+        holdStartTime = 0;
     }
     ctx.restore();
 }
 
 function runPrediction(flatLandmarks) {
-    if (model && uniqueLabels.length > 0) {
-        // Use tf.tidy to prevent memory leaks
-        tf.tidy(() => {
-            const input = tf.tensor2d([flatLandmarks]);
-            const prediction = model.predict(input);
-            const pIndex = prediction.argMax(-1).dataSync()[0];
-            const conf = prediction.max().dataSync()[0];
+    // require either server or local model to be present
+    if ((!serverModel || serverLabels.length === 0) && (!model || uniqueLabels.length === 0)) {
+        // no models available yet
+        // console.debug('runPrediction aborted: no models');
+        return;
+    }
 
+    tf.tidy(() => {
+        const input = tf.tensor2d([flatLandmarks]);
+        let candidates = [];
+
+        // server predictions (ISL only)
+        if (serverModel && serverLabels.length) {
+            const pred = serverModel.predict(input);
+            const conf = pred.max().dataSync()[0];
+            const idx = pred.argMax(-1).dataSync()[0];
+            if (conf > 0.6) { // server uses slightly lower threshold
+                candidates.push({ label: serverLabels[idx], conf });
+            }
+        }
+
+        // local predictions
+        if (model && uniqueLabels.length) {
+            const pred = model.predict(input);
+            const conf = pred.max().dataSync()[0];
+            const idx = pred.argMax(-1).dataSync()[0];
             if (conf > 0.75) {
-                const label = uniqueLabels[pIndex];
-                const smoothLabel = getSmoothedPrediction(label);
-                predictionDiv.innerText = `Sign: ${smoothLabel} (${Math.round(conf * 100)}%)`;
+                candidates.push({ label: uniqueLabels[idx], conf });
+            }
+        }
 
-                const now = Date.now();
-                const wordLastSpoken = localWordLastSpoken[smoothLabel] || 0;
-                const timeSinceAny = now - lastSpokenTime;
-                const timeSinceSame = now - wordLastSpoken;
+        if (candidates.length === 0) {
+            // nothing met threshold
+            console.debug('runPrediction: no candidate exceeded threshold');
+            predictionDiv.innerText = 'No confident sign';
+            return;
+        }
 
-                // 1. Same word must wait 4 seconds (Prevents accidental double-triggers/stutter)
-                // 2. Global inter-word gap of 800ms for "fluent" sentences (prevents flicker)
-                if (timeSinceSame > 4000 && timeSinceAny > 800) {
-                    lastSpokenLabel = smoothLabel;
-                    lastSpokenTime = now;
-                    localWordLastSpoken[smoothLabel] = now;
+        candidates.sort((a, b) => b.conf - a.conf);
+        const best = candidates[0];
+        console.debug('runPrediction candidates', candidates);
+        const smoothLabel = getSmoothedPrediction(best.label);
 
-                    socket.emit("sign-message", { room: roomName, text: smoothLabel });
+        // Check if it's a single letter
+        if (smoothLabel.length === 1 && /^[a-zA-Z]$/.test(smoothLabel)) {
+            processPredictedLetter(smoothLabel);
+            predictionDiv.innerText = `Sign: ${smoothLabel} (${Math.round(best.conf * 100)}%)`;
+        } else {
+            predictionDiv.innerText = `Sign: ${smoothLabel} (${Math.round(best.conf * 100)}%)`;
 
-                    // We removed the local speak(smoothLabel) call here 
-                    // so that the person signing doesn't hear their own signs repeated back.
-                    // The remote user will still hear it via the socket message.
-                    // if (isTTSOn) speak(smoothLabel); 
+            const now = Date.now();
+            const wordLastSpoken = localWordLastSpoken[smoothLabel] || 0;
+            const timeSinceAny = now - lastSpokenTime;
+            const timeSinceSame = now - wordLastSpoken;
 
-                    // Check for Emoji Shortcuts
-                    if (EMOJI_MAP[smoothLabel.toUpperCase()]) {
-                        popEmojis(EMOJI_MAP[smoothLabel.toUpperCase()]);
-                        socket.emit("emoji-pop", { room: roomName, emoji: EMOJI_MAP[smoothLabel.toUpperCase()] });
-                    }
+            if (timeSinceSame > 4000 && timeSinceAny > 800) {
+                lastSpokenLabel = smoothLabel;
+                lastSpokenTime = now;
+                localWordLastSpoken[smoothLabel] = now;
+
+                socket.emit("sign-message", { room: roomName, text: smoothLabel });
+
+                if (EMOJI_MAP[smoothLabel.toUpperCase()]) {
+                    popEmojis(EMOJI_MAP[smoothLabel.toUpperCase()]);
+                    socket.emit("emoji-pop", { room: roomName, emoji: EMOJI_MAP[smoothLabel.toUpperCase()] });
                 }
             }
-        });
+        }
+    });
+}
+
+// --- Spelling Logic ---
+// Use same hold-based filtering as translation page
+function handleSpelling(letter) {
+    const now = Date.now();
+    lastLetterTime = now;
+
+    if (letter === lastAddedLetter) {
+        return;
     }
+
+    lastAddedLetter = letter;
+    accumulatedWord += letter;
+
+    if (isTTSOn) speak(letter.toLowerCase());
+    updateSpellingDisplay();
+}
+
+function processPredictedLetter(letter) {
+    const now = Date.now();
+
+    if (letter === heldLetter) {
+        if (holdStartTime === 0) holdStartTime = now;
+        if (now - holdStartTime >= minimumHoldDuration) {
+            handleSpelling(letter);
+            heldLetter = null;
+            holdStartTime = 0;
+        }
+    } else {
+        heldLetter = letter;
+        holdStartTime = now;
+    }
+}
+
+function updateSpellingDisplay() {
+    const overlay = document.getElementById('spelling-overlay');
+    const textEl = document.getElementById('spelling-text');
+
+    if (accumulatedWord.length > 0) {
+        if (overlay) overlay.style.display = 'block';
+        if (textEl) textEl.innerText = accumulatedWord;
+    } else {
+        if (overlay) overlay.style.display = 'none';
+        if (textEl) textEl.innerText = "";
+    }
+}
+
+// Check for 3-second silence to finish the word
+setInterval(() => {
+    if (accumulatedWord.length > 0) {
+        const now = Date.now();
+        if (now - lastLetterTime > 3000) {
+            finishSpelling();
+        }
+    }
+}, 500);
+
+function finishSpelling() {
+    // Convert to Title Case to encourage TTS to say it as a word, not spell it (e.g. "Saurav" vs "SAURAV")
+    const wordToSpeak = accumulatedWord.charAt(0).toUpperCase() + accumulatedWord.slice(1).toLowerCase();
+
+    // Speak locally if TTS is on
+    if (isTTSOn) speak(wordToSpeak);
+
+    // Send to remote user (send original uppercase or title case? Let's send Title Case for them too)
+    socket.emit("sign-message", { room: roomName, text: wordToSpeak });
+
+    // Show in local toast
+    predictionDiv.innerText = `Spelled: ${wordToSpeak}`;
+
+    // Reset
+    accumulatedWord = "";
+    lastAddedLetter = null;
+    updateSpellingDisplay();
 }
 
 // --- Training Logic ---
@@ -1244,14 +1440,18 @@ function speak(text) {
     if (!window.speechSynthesis) return;
 
     // 1. Hardware-level safety: Unified temporal debounce (500ms)
-    // This prevents double-speaking if local prediction and remote socket fire at once,
-    // or if MediaPipe triggers multiple results in the same event loop.
+    // We use localStorage to coordinate across multiple tabs (e.g. if user has translation.html AND videocall.html open)
     const now = Date.now();
-    if (now - (window._lastSystemSpeakTime || 0) < 500) {
-        console.log("Speech suppressed: debounce active.");
+    const lastGlobalSpeak = parseInt(localStorage.getItem('lastGlobalSpeakTime') || '0');
+
+    if (now - lastGlobalSpeak < 500) {
+        console.log("Speech suppressed: global debounce active.");
         return;
     }
+
+    // Update both memory and storage trackers
     window._lastSystemSpeakTime = now;
+    localStorage.setItem('lastGlobalSpeakTime', now.toString());
 
     // 2. Clear any pending speak operation to avoid the setTimeout race condition
     if (speakTimeout) {
