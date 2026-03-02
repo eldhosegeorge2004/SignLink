@@ -898,7 +898,6 @@ function preprocessLandmarks(landmarks) {
     ]);
 }
 
-const predictionBuffer = [];
 function getSmoothedPrediction(predLabel) {
     predictionBuffer.push(predLabel);
     if (predictionBuffer.length > 15) predictionBuffer.shift();
