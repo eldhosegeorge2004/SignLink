@@ -268,7 +268,8 @@ function runPrediction(landmarks) {
 
             // Check if it's a single letter (A-Z)
             if (smoothLabel.length === 1 && /^[a-zA-Z]$/.test(smoothLabel)) {
-                handleSpelling(smoothLabel);
+                // letters require a stable hold before being added
+                processPredictedLetter(smoothLabel);
                 sttResult.innerText = `Sign: ${smoothLabel} (${Math.round(best.conf * 100)}%)`;
             } else {
                 sttResult.innerText = `Sign: ${smoothLabel}`;
@@ -301,16 +302,27 @@ function onResults(results) {
         if (lastAddedLetter !== null) {
             lastAddedLetter = null;
         }
+        // also clear hold tracking so letters don't accumulate after a break
+        heldLetter = null;
+        holdStartTime = 0;
     }
     canvasCtx.restore();
 }
 
 // --- Spelling Logic ---
+// We introduce a hold-based filter: a letter sign must be held for at least
+// `minimumHoldDuration` before it is actually added. This prevents quick
+// hand movements from being misinterpreted as multiple letters.
+const minimumHoldDuration = 1000; // milliseconds (~1 second)
+let holdStartTime = 0;
+let heldLetter = null;
+
 function handleSpelling(letter) {
+    // This helper is now only called after the hold check succeeds.
     const now = Date.now();
     lastLetterTime = now;
 
-    // Strict State-Based Filtering:
+    // Strict State-Based Filtering: avoid duplicates
     if (letter === lastAddedLetter) {
         return;
     }
@@ -318,10 +330,37 @@ function handleSpelling(letter) {
     lastAddedLetter = letter;
     accumulatedWord += letter;
 
-    // Speak the letter immediately
+    // Speak the letter immediately if TTS is enabled
     if (isTTSOn) speakText(letter.toLowerCase());
 
     updateSpellingDisplay();
+}
+
+// Called from the prediction loop instead of handleSpelling directly.
+// Ensures the same letter is being observed continuously for the required
+// duration before committing it. If the visible prediction changes, the
+// timer resets.
+function processPredictedLetter(letter) {
+    const now = Date.now();
+
+    if (letter === heldLetter) {
+        // continue holding the same letter
+        if (holdStartTime === 0) {
+            holdStartTime = now;
+        }
+
+        if (now - holdStartTime >= minimumHoldDuration) {
+            // enough time has passed; actually add the letter if it's new
+            handleSpelling(letter);
+            // reset so a fresh hold is required for the next addition
+            heldLetter = null;
+            holdStartTime = 0;
+        }
+    } else {
+        // sign changed: start a new hold timer
+        heldLetter = letter;
+        holdStartTime = now;
+    }
 }
 
 function updateSpellingDisplay() {
