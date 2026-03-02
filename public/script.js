@@ -734,6 +734,13 @@ async function loadModelsAndLabels() {
     } else {
         trainStatusDiv.innerText = 'No saved local model.';
     }
+
+    console.log('loadModelsAndLabels completed', {
+        serverModel: !!serverModel,
+        serverLabelsLen: serverLabels.length,
+        localModel: !!model,
+        uniqueLabelsLen: uniqueLabels.length
+    });
 }
 
 // initial load
@@ -947,7 +954,11 @@ function onResults(results) {
 
 function runPrediction(flatLandmarks) {
     // require either server or local model to be present
-    if ((!serverModel || serverLabels.length === 0) && (!model || uniqueLabels.length === 0)) return;
+    if ((!serverModel || serverLabels.length === 0) && (!model || uniqueLabels.length === 0)) {
+        // no models available yet
+        // console.debug('runPrediction aborted: no models');
+        return;
+    }
 
     tf.tidy(() => {
         const input = tf.tensor2d([flatLandmarks]);
@@ -974,11 +985,15 @@ function runPrediction(flatLandmarks) {
         }
 
         if (candidates.length === 0) {
+            // nothing met threshold
+            console.debug('runPrediction: no candidate exceeded threshold');
+            predictionDiv.innerText = 'No confident sign';
             return;
         }
 
         candidates.sort((a, b) => b.conf - a.conf);
         const best = candidates[0];
+        console.debug('runPrediction candidates', candidates);
         const smoothLabel = getSmoothedPrediction(best.label);
 
         // Check if it's a single letter
