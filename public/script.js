@@ -845,6 +845,8 @@ async function startCamera() {
                     if (frameCount % 3 === 0) {
                         await hands.send({ image: localVideo });
                     }
+                } else {
+                    console.debug('onFrame: camera disabled');
                 }
             },
         });
