@@ -317,15 +317,29 @@ function showSTT(text, isSelf = false) {
     sttOverlay.classList.remove('hidden');
     sttText.innerText = (isSelf ? "You: " : "Remote: ") + text;
 
+    // also display sign cards for this transcript
+    displaySignCards(text);
+
     // Clear after some silence/timeout
     clearTimeout(window.sttTimeout);
     window.sttTimeout = setTimeout(() => {
         if (isSTTOn) {
             sttText.innerText = "Listening...";
+            // hide cards when we're back to listening
+            const cardArea = document.querySelector('.sign-cards-area');
+            if (cardArea) cardArea.innerHTML = "";
         } else {
             sttOverlay.classList.add('hidden');
         }
     }, 4000);
+}
+
+// helper to render sign cards (used during STT)
+function displaySignCards(text) {
+    const cardArea = document.querySelector('.sign-cards-area');
+    if (!cardArea) return;
+    // for now we simply mimic translation page behaviour; later it can show rich images
+    cardArea.innerHTML = `<h2 style="color: white; font-size: 1.2rem; text-align:center;">Displaying signs for: ${text}</h2>`;
 }
 
 // 2. Visual Audio Feedback (Volume Meter)
