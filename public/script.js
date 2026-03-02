@@ -903,6 +903,9 @@ function getSmoothedPrediction(predLabel) {
 }
 
 function onResults(results) {
+    console.debug('onResults invoked', {
+        hands: results.multiHandLandmarks ? results.multiHandLandmarks.length : 0
+    });
     if (localCanvas.width !== localVideo.videoWidth || localCanvas.height !== localVideo.videoHeight) {
         localCanvas.width = localVideo.videoWidth;
         localCanvas.height = localVideo.videoHeight;
