@@ -18,6 +18,7 @@ let lastSpokenLabel = "";
 let lastSpokenTime = 0;
 let localStream = null;
 let camera = null;
+let cameraLoopId = null;
 let recognition = null; // For Speech to Text
 
 // --- Spelling Mode State ---
@@ -676,19 +677,45 @@ function finishSpelling(forceSpeak = false) {
 // --- Camera Logic ---
 async function startCamera() {
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        // Stop any previous stream/loop before starting a new one
+        stopCamera();
+
+        localStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: 'user',
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                aspectRatio: { ideal: 16 / 9 },
+                resizeMode: 'none'
+            }
+        });
         videoElement.srcObject = localStream;
 
-        camera = new Camera(videoElement, {
-            onFrame: async () => {
-                if (isSignToTextMode && isCamOn) {
-                    await hands.send({ image: videoElement });
-                }
-            },
-            width: 1280,
-            height: 720
-        });
-        camera.start();
+        await videoElement.play();
+
+        // Match container ratio to actual camera stream for full, uncropped view
+        const videoContainer = document.querySelector('.video-container');
+        const track = localStream.getVideoTracks()[0];
+        const settings = track ? track.getSettings() : null;
+        const actualWidth = settings?.width || videoElement.videoWidth;
+        const actualHeight = settings?.height || videoElement.videoHeight;
+        if (videoContainer && actualWidth && actualHeight) {
+            videoContainer.style.aspectRatio = `${actualWidth} / ${actualHeight}`;
+        }
+
+        const processFrame = async () => {
+            if (!isCamOn || !localStream) {
+                return;
+            }
+
+            if (isSignToTextMode) {
+                await hands.send({ image: videoElement });
+            }
+
+            cameraLoopId = requestAnimationFrame(processFrame);
+        };
+
+        cameraLoopId = requestAnimationFrame(processFrame);
 
     } catch (err) {
         console.error("Error accessing camera:", err);
@@ -697,6 +724,20 @@ async function startCamera() {
 }
 
 function stopCamera() {
+    if (cameraLoopId) {
+        cancelAnimationFrame(cameraLoopId);
+        cameraLoopId = null;
+    }
+
+    if (camera) {
+        try {
+            camera.stop();
+        } catch (e) {
+            // ignore
+        }
+        camera = null;
+    }
+
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
