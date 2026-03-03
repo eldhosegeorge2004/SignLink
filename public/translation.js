@@ -159,19 +159,16 @@ async function loadSavedModelAndLabels() {
         // Wait for all
         await Promise.all(promises);
 
-        // 4. UI Feedback
-        let statusMsg = "Models loaded: ";
+        // 4. UI Feedback - only show error if no models found
         const loadedModels = [];
         if (serverModel) loadedModels.push("Server");
         if (localModel) loadedModels.push("Local Static");
         if (localModelDynamic) loadedModels.push("Local Dynamic");
         
-        if (loadedModels.length > 0) {
-            statusMsg += loadedModels.join(", ");
-        } else {
-            statusMsg = "No models found. Please train in AI Training mode.";
+        // Don't show models loaded message - keep display clear
+        if (loadedModels.length === 0) {
+            sttResult.innerText = "No models found. Please train in AI Training mode.";
         }
-        sttResult.innerText = statusMsg;
 
         // "Go to Training" button if absolutely nothing
         if (!serverModel && !localModel && !localModelDynamic) {
