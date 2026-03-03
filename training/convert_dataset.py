@@ -7,7 +7,14 @@ import random
 import shutil
 
 # --- CONFIGURATION ---
-DATASET_PATH = r"..\datasets\American" 
+# NOTE: This script is for converting pre-existing IMAGE datasets (like Kaggle ASL/ISL datasets)
+# For dynamic signs recorded through the training interface, data is already in the correct format
+# and this script is not needed. The training.js handles dynamic recording directly.
+
+# UPDATE THIS PATH to where your dataset folder is located
+# For ASL: r"..\\datasets\\American"
+# For ISL: r"C:\\Users\\path\\to\\Indian"
+DATASET_PATH = r"..\datasets\American"
 OUTPUT_JSON = "../public/dataset.json"
 OUTPUT_X = "X.npy"
 OUTPUT_Y = "y.npy"
