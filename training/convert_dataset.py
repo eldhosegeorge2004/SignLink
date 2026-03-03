@@ -5,6 +5,10 @@ import numpy as np
 import json
 
 # --- CONFIGURATION ---
+# NOTE: This script is for converting pre-existing IMAGE datasets (like Kaggle ISL dataset)
+# For dynamic signs recorded through the training interface, data is already in the correct format
+# and this script is not needed. The training.js handles dynamic recording directly.
+
 # UPDATE THIS PATH to where your "Indian" folder is located
 DATASET_PATH = r"C:\Users\shali\OneDrive\Desktop\Shalin\Project Phase 2\archive\Indian" 
 

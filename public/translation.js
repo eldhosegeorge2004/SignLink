@@ -35,6 +35,24 @@ let serverLabels = [];
 let localModel = null;
 let localLabels = [];
 
+// Dynamic sign support
+let localModelDynamic = null;
+let localLabelsDynamic = [];
+let dynamicFrameBuffer = [];
+const MAX_DYNAMIC_FRAMES = 30;
+const DYNAMIC_ANALYZE_MS = 1500;
+let dynamicBufferStartTime = 0;
+const BIG_MOTION_CHANGE_THRESHOLD = 0.06;
+let lastDisplayedPrediction = null;
+let lastDisplayedFrame = null;
+const STATIC_STILL_DURATION_MS = 1000;
+const MOTION_THRESHOLD = 0.02;
+let previousMotionFrame = null;
+let staticStillStartTime = 0;
+const NO_HANDS_TIMEOUT_MS = 2000;
+let lastHandDetectedTime = Date.now();
+let noHandsTimeoutId = null;
+
 const predictionBuffer = [];
 let localStorageModelKey = 'my-isl-model'; // Default
 let localStorageLabelKey = 'isl_labels';
@@ -66,7 +84,13 @@ async function loadSavedModelAndLabels() {
         serverLabels = [];
         localModel = null;
         localLabels = [];
+        localModelDynamic = null;
+        localLabelsDynamic = [];
         predictionBuffer.length = 0;
+        dynamicFrameBuffer = [];
+        dynamicBufferStartTime = 0;
+        lastDisplayedPrediction = null;
+        lastDisplayedFrame = null;
 
         const promises = [];
 
@@ -90,51 +114,72 @@ async function loadSavedModelAndLabels() {
             promises.push(serverLoad());
         }
 
-        // 2. Load Local Model (Always try, based on keys)
+        // 2. Load Local Static Model
         const localLoad = async () => {
-            console.log("Attempting to load Local Model...");
+            console.log("Attempting to load Local Static Model...");
             try {
-                const localLabelData = localStorage.getItem(localStorageLabelKey);
+                const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
                 if (localLabelData) {
                     localLabels = JSON.parse(localLabelData);
                     try {
-                        localModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}`);
-                        console.log(`Local Model loaded (${localLabels.length} labels)`);
+                        localModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
+                        console.log(`Local Static Model loaded (${localLabels.length} labels)`);
                     } catch (e) {
-                        console.warn("Local model weights not found in localStorage.");
-                        localModel = null; // Ensure null if load fails
+                        console.warn("Local static model weights not found in localStorage.");
+                        localModel = null;
                     }
                 }
             } catch (e) {
-                console.warn("Local model load failed:", e);
+                console.warn("Local static model load failed:", e);
             }
         };
         promises.push(localLoad());
 
-        // Wait for both
+        // 3. Load Local Dynamic Model
+        const dynamicLoad = async () => {
+            console.log("Attempting to load Local Dynamic Model...");
+            try {
+                const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
+                if (dynamicLabelData) {
+                    localLabelsDynamic = JSON.parse(dynamicLabelData);
+                    try {
+                        localModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
+                        console.log(`Local Dynamic Model loaded (${localLabelsDynamic.length} labels)`);
+                    } catch (e) {
+                        console.warn("Local dynamic model weights not found in localStorage.");
+                        localModelDynamic = null;
+                    }
+                }
+            } catch (e) {
+                console.warn("Local dynamic model load failed:", e);
+            }
+        };
+        promises.push(dynamicLoad());
+
+        // Wait for all
         await Promise.all(promises);
 
-        // 3. UI Feedback
-        let statusMsg = "";
-        if (serverModel && localModel) {
-            statusMsg = "Hybrid Mode: Server & Local Models Loaded.";
-        } else if (serverModel) {
-            statusMsg = "Server Model Loaded.";
-        } else if (localModel) {
-            statusMsg = "Local Model Loaded.";
+        // 4. UI Feedback
+        let statusMsg = "Models loaded: ";
+        const loadedModels = [];
+        if (serverModel) loadedModels.push("Server");
+        if (localModel) loadedModels.push("Local Static");
+        if (localModelDynamic) loadedModels.push("Local Dynamic");
+        
+        if (loadedModels.length > 0) {
+            statusMsg += loadedModels.join(", ");
         } else {
             statusMsg = "No models found. Please train in AI Training mode.";
         }
         sttResult.innerText = statusMsg;
 
         // "Go to Training" button if absolutely nothing
-        if (!serverModel && !localModel) {
+        if (!serverModel && !localModel && !localModelDynamic) {
             if (!document.getElementById('goto-training-btn')) {
                 const btn = document.createElement('button');
                 btn.id = 'goto-training-btn';
                 btn.innerText = "Go to AI Training";
                 btn.className = "control-btn";
-                // ... styling ...
                 btn.style.marginTop = "10px";
                 btn.style.background = "#3b82f6";
                 btn.onclick = () => window.location.href = 'training.html';
@@ -200,6 +245,60 @@ function getSmoothedPrediction(predLabel) {
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
 }
 
+function updateMotionState(currentFrame) {
+    const now = Date.now();
+
+    if (!previousMotionFrame) {
+        previousMotionFrame = [...currentFrame];
+        staticStillStartTime = now;
+        return { isStillFrame: false, stillForMs: 0 };
+    }
+
+    let totalDelta = 0;
+    for (let i = 0; i < currentFrame.length; i++) {
+        totalDelta += Math.abs(currentFrame[i] - previousMotionFrame[i]);
+    }
+
+    const motionScore = totalDelta / currentFrame.length;
+    const isStillFrame = motionScore < MOTION_THRESHOLD;
+
+    if (isStillFrame) {
+        if (staticStillStartTime === 0) staticStillStartTime = now;
+    } else {
+        staticStillStartTime = 0;
+    }
+
+    previousMotionFrame = [...currentFrame];
+    const stillForMs = staticStillStartTime ? (now - staticStillStartTime) : 0;
+    return { isStillFrame, stillForMs };
+}
+
+function resetMotionState() {
+    previousMotionFrame = null;
+    staticStillStartTime = 0;
+}
+
+function getFrameDifference(frameA, frameB) {
+    if (!frameA || !frameB || frameA.length !== frameB.length) return Infinity;
+
+    let totalDelta = 0;
+    for (let i = 0; i < frameA.length; i++) {
+        totalDelta += Math.abs(frameA[i] - frameB[i]);
+    }
+    return totalDelta / frameA.length;
+}
+
+function updateDisplayedPrediction(label, conf, isDynamic, currentFrame) {
+    lastDisplayedPrediction = { label, conf, isDynamic };
+    lastDisplayedFrame = [...currentFrame];
+}
+
+function shouldKeepLastPrediction(currentFrame) {
+    if (!lastDisplayedPrediction || !lastDisplayedFrame) return false;
+    const diff = getFrameDifference(currentFrame, lastDisplayedFrame);
+    return diff < BIG_MOTION_CHANGE_THRESHOLD;
+}
+
 
 function flipLandmarks(landmarks) {
     return landmarks.map(p => ({
@@ -223,33 +322,53 @@ function predictSingleModel(modelInstance, labels, tensor) {
 
 function runPrediction(landmarks) {
     // We need at least one model
-    if (!serverModel && !localModel) return;
+    if (!serverModel && !localModel && !localModelDynamic) return;
 
     tf.tidy(() => {
-        // Prepare Inputs
+        // Prepare Inputs for static models
         const flatNormal = preprocessLandmarks(landmarks);
+        const motionState = updateMotionState(flatNormal);
+        const staticAllowed = motionState.stillForMs >= STATIC_STILL_DURATION_MS;
+
+        if (!staticAllowed) {
+            predictionBuffer.length = 0;
+            heldLetter = null;
+            holdStartTime = 0;
+        }
+
         const tensorNormal = tf.tensor2d([flatNormal]);
 
         const flipped = flipLandmarks(landmarks);
         const flatFlipped = preprocessLandmarks(flipped);
         const tensorFlipped = tf.tensor2d([flatFlipped]);
 
-        // We will collect candidates from all available models + mirror states
-        // Structure: { label, conf, source }
+        // Collect candidates from all available models
         let candidates = [];
+        
+        // Debug: Log which models are active (only once per 100 frames)
+        if (!window.debugFrameCount) window.debugFrameCount = 0;
+        window.debugFrameCount++;
+        if (window.debugFrameCount % 100 === 0) {
+            console.log('Active models:', {
+                server: !!serverModel,
+                localStatic: !!localModel,
+                localDynamic: !!localModelDynamic,
+                dynamicLabels: localLabelsDynamic,
+                bufferSize: dynamicFrameBuffer.length
+            });
+        }
 
-        // 1. Query Server Model
-        if (serverModel && serverLabels.length) {
+        // 1. Query Server Model (Static only when hand is still)
+        if (staticAllowed && serverModel && serverLabels.length) {
             const pNorm = predictSingleModel(serverModel, serverLabels, tensorNormal);
             candidates.push({ ...pNorm, source: 'Server' });
 
             const pFlip = predictSingleModel(serverModel, serverLabels, tensorFlipped);
-            // Optional: Penalize flipped slightly if needed, or treat equally
             candidates.push({ ...pFlip, source: 'Server(M)' });
         }
 
-        // 2. Query Local Model
-        if (localModel && localLabels.length) {
+        // 2. Query Local Static Model (only when hand is still)
+        if (staticAllowed && localModel && localLabels.length) {
             const pNorm = predictSingleModel(localModel, localLabels, tensorNormal);
             candidates.push({ ...pNorm, source: 'Local' });
 
@@ -257,26 +376,95 @@ function runPrediction(landmarks) {
             candidates.push({ ...pFlip, source: 'Local(M)' });
         }
 
-        // 3. Find Best Candidate
+        // 3. Query Dynamic Model with frame buffer
+        if (localModelDynamic && localLabelsDynamic.length) {
+            if (dynamicBufferStartTime === 0) {
+                dynamicBufferStartTime = Date.now();
+            }
+
+            // Add current frame to buffer
+            dynamicFrameBuffer.push(flatNormal);
+            
+            // Keep buffer at fixed size
+            if (dynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
+                dynamicFrameBuffer.shift();
+            }
+            
+            const dynamicReady = (Date.now() - dynamicBufferStartTime) >= DYNAMIC_ANALYZE_MS;
+
+            // Wait at least 1 second to analyze motion before predicting dynamic signs
+            if (dynamicFrameBuffer.length >= 1 && dynamicReady) {
+                // Pad to MAX_DYNAMIC_FRAMES
+                const paddedFrames = [...dynamicFrameBuffer];
+                const lastFrame = paddedFrames[paddedFrames.length - 1];
+                while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
+                    paddedFrames.push(lastFrame);
+                }
+                
+                const tensorDynamic = tf.tensor3d([paddedFrames]);
+                const predDynamic = localModelDynamic.predict(tensorDynamic);
+                const conf = predDynamic.max().dataSync()[0];
+                const idx = predDynamic.argMax(-1).dataSync()[0];
+                
+                // Give dynamic predictions higher priority by boosting confidence
+                candidates.push({ 
+                    label: localLabelsDynamic[idx], 
+                    conf: Math.min(conf * 1.2, 1.0), // Boost confidence by 20%
+                    source: 'Dynamic',
+                    isDynamic: true
+                });
+                
+                tensorDynamic.dispose();
+                predDynamic.dispose();
+            }
+        }
+
+        // 4. Find Best Candidate
         // Sort by confidence descending
         candidates.sort((a, b) => b.conf - a.conf);
         const best = candidates[0];
 
-        // 4. Threshold & Display
-        if (best && best.conf > 0.6) { // Global threshold
-            const smoothLabel = getSmoothedPrediction(best.label);
+        // 5. Threshold & Display
+        if (best) {
+            const outputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
+            updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatNormal);
 
-            // Check if it's a single letter (A-Z)
-            if (smoothLabel.length === 1 && /^[a-zA-Z]$/.test(smoothLabel)) {
-                // letters require a stable hold before being added
-                processPredictedLetter(smoothLabel);
-                sttResult.innerText = `Sign: ${smoothLabel} (${Math.round(best.conf * 100)}%)`;
+            // If dynamic sign detected, show immediately with special indicator
+            if (best.isDynamic && best.conf > 0.60) { // Lower threshold for dynamic
+                sttResult.innerText = `Sign: ${outputLabel} 🔄 (${Math.round(best.conf * 100)}%)`;
+                
+                // Debounce speech: only speak if different sign or 4+ seconds have passed
+                const now = Date.now();
+                const timeSinceLast = now - lastSpokenTime;
+                const isDifferentSign = outputLabel !== lastSpokenLabel;
+
+                if (isDifferentSign || timeSinceLast > 4000) {
+                    speakText(outputLabel);
+                    lastSpokenLabel = outputLabel;
+                    lastSpokenTime = now;
+                }
+                
+                // Clear buffer after confident detection
+                setTimeout(() => {
+                    dynamicFrameBuffer = [];
+                    dynamicBufferStartTime = 0;
+                }, 500); // Small delay before clearing
+            } else if (outputLabel.length === 1 && /^[a-zA-Z]$/.test(outputLabel)) {
+                // Single letters require stable hold
+                processPredictedLetter(outputLabel);
+                sttResult.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
             } else {
-                sttResult.innerText = `Sign: ${smoothLabel}`;
-                speakText(smoothLabel);
+                sttResult.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
+                speakText(outputLabel);
             }
         } else {
-            sttResult.innerText = "Listening...";
+            // No confident prediction - keep showing last displayed sign if it exists
+            if (lastDisplayedPrediction) {
+                const last = lastDisplayedPrediction;
+                const displayText = last.isDynamic ? `${last.label} 🔄` : last.label;
+                sttResult.innerText = `Sign: ${displayText} (${Math.round(last.conf * 100)}%)`;
+            }
+            // Don't show "Listening..." - just keep previous prediction or blank
         }
     });
 }
@@ -292,12 +480,27 @@ function onResults(results) {
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
     if (results.multiHandLandmarks) {
+        // Hands detected - clear the timeout
+        lastHandDetectedTime = Date.now();
+        if (noHandsTimeoutId) {
+            clearTimeout(noHandsTimeoutId);
+            noHandsTimeoutId = null;
+        }
+        
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
             runPrediction(landmarks);
         }
     } else {
+        // No hands detected - set timeout for "Waiting for hands"
+        if (!noHandsTimeoutId) {
+            noHandsTimeoutId = setTimeout(() => {
+                sttResult.innerText = "Waiting for hands...";
+                noHandsTimeoutId = null;
+            }, NO_HANDS_TIMEOUT_MS);
+        }
+        
         // Reset state on hand loss
         if (lastAddedLetter !== null) {
             lastAddedLetter = null;
@@ -305,6 +508,10 @@ function onResults(results) {
         // also clear hold tracking so letters don't accumulate after a break
         heldLetter = null;
         holdStartTime = 0;
+        predictionBuffer.length = 0;
+        dynamicFrameBuffer = [];
+        dynamicBufferStartTime = 0;
+        resetMotionState();
     }
     canvasCtx.restore();
 }
