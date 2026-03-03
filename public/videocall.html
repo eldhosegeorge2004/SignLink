@@ -8,11 +8,11 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="modal.css">
     <style>
-        /* YouTube-style caption bar — sits at bottom of .main-stage */
+        /* YouTube-style caption bar — sits above control bar */
         #vc-caption-bar {
             display: none;
-            position: absolute;
-            bottom: 0;
+            position: fixed;
+            bottom: 120px;
             left: 50%;
             transform: translateX(-50%);
             width: 90%;
@@ -21,7 +21,7 @@
             border-radius: 12px 12px 0 0;
             padding: 12px 28px 16px;
             box-sizing: border-box;
-            z-index: 90;
+            z-index: 105;
             pointer-events: none;
         }
 
@@ -192,14 +192,14 @@
                 <span id="remotePrediction"></span>
             </div>
 
-            <div id="prediction-overlay" class="caption-overlay">
+            <div id="prediction-overlay" class="caption-overlay" style="display: none;">
                 <span class="material-icons">front_hand</span>
                 <span id="prediction">Waiting for sign...</span>
             </div>
 
             <!-- YouTube-style Speech Caption Bar -->
             <div id="vc-caption-bar">
-                <div id="vc-caption-line-a" class="vc-caption-line dim"></div>
+                <div id="vc-caption-line-a" class="vc-caption-line"></div>
                 <div id="vc-caption-line-b" class="vc-caption-line"></div>
             </div>
 
