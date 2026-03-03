@@ -307,6 +307,29 @@
             background: #da3633;
             border-radius: 50%;
         }
+
+        .mode-toggle-btn.active {
+            background: #238636 !important;
+            color: white !important;
+            border-color: #238636 !important;
+        }
+
+        .mode-toggle-btn {
+            flex: 1;
+            background: transparent;
+            color: #8b949e;
+            border: 1px solid #30363d;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .mode-toggle-btn:not(.active):hover {
+            background: #21262d;
+            border-color: #58a6ff;
+        }
     </style>
 
     <!-- Dependencies -->
@@ -341,7 +364,23 @@
                 </select>
             </div>
 
-            <!-- 2. Sign Labelling -->
+            <!-- 2. Recording Mode -->
+            <div class="panel-section">
+                <div class="section-title">Recording Mode</div>
+                <div style="display: flex; gap: 10px; background: #0d1117; padding: 5px; border-radius: 8px;">
+                    <button id="staticModeBtn" class="mode-toggle-btn active" data-mode="static">
+                        Static
+                    </button>
+                    <button id="dynamicModeBtn" class="mode-toggle-btn" data-mode="dynamic">
+                        Dynamic
+                    </button>
+                </div>
+                <p id="modeDescription" style="font-size: 0.75rem; color: #8b949e; margin-top: 8px;">
+                    Static: Single pose signs (A, B, Hello, etc.)
+                </p>
+            </div>
+
+            <!-- 3. Sign Labelling -->
             <div class="panel-section">
                 <div class="section-title">New Sign Details</div>
                 <div class="input-group-vertical">
@@ -392,7 +431,25 @@
             <button id="captureBtn" class="capture-fab" title="Hold to Record">
                 <div class="capture-inner"></div>
             </button>
-            <p style="margin-top: 15px; color: #8b949e; font-size: 0.9rem;">Hold button to record samples</p>
+            <p id="captureHint" style="margin-top: 15px; color: #8b949e; font-size: 0.9rem;">Hold button to record samples</p>
+            
+            <!-- Dynamic Recording Controls (hidden by default) -->
+            <div id="dynamicControls" style="display: none; margin-top: 20px; text-align: center;">
+                <button id="startRecordBtn" class="primary-btn" style="width: 200px; display: inline-flex; margin-bottom: 10px;">
+                    <span class="material-icons">fiber_manual_record</span>
+                    Start Recording
+                </button>
+                <button id="stopRecordBtn" class="secondary-btn" style="width: 200px; display: none; margin-bottom: 10px;">
+                    <span class="material-icons">stop</span>
+                    Stop Recording
+                </button>
+                <div id="frameCounter" style="color: #58a6ff; font-size: 1.2rem; font-weight: 600; margin-top: 5px; display: none;">
+                    Frames: <span id="frameCount">0</span> / 30
+                </div>
+                <div id="recordingProgress" style="width: 200px; height: 4px; background: #21262d; border-radius: 2px; margin: 10px auto; overflow: hidden; display: none;">
+                    <div id="progressBar" style="height: 100%; background: #238636; width: 0%; transition: width 0.1s;"></div>
+                </div>
+            </div>
         </div>
 
 
