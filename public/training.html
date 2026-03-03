@@ -314,6 +314,18 @@
             border-color: #238636 !important;
         }
 
+        .mode-toggle-btn {
+            flex: 1;
+            background: transparent;
+            color: #8b949e;
+            border: 1px solid #30363d;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
         .mode-toggle-btn:not(.active):hover {
             background: #21262d;
             border-color: #58a6ff;
@@ -356,10 +368,10 @@
             <div class="panel-section">
                 <div class="section-title">Recording Mode</div>
                 <div style="display: flex; gap: 10px; background: #0d1117; padding: 5px; border-radius: 8px;">
-                    <button id="staticModeBtn" class="mode-toggle-btn active" data-mode="static" style="flex: 1; background: #238636; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s;">
+                    <button id="staticModeBtn" class="mode-toggle-btn active" data-mode="static">
                         Static
                     </button>
-                    <button id="dynamicModeBtn" class="mode-toggle-btn" data-mode="dynamic" style="flex: 1; background: transparent; color: #8b949e; border: 1px solid #30363d; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s;">
+                    <button id="dynamicModeBtn" class="mode-toggle-btn" data-mode="dynamic">
                         Dynamic
                     </button>
                 </div>
