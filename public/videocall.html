@@ -7,6 +7,47 @@
     <title>Sign Language Link</title> <!-- Branding Name -->
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="modal.css">
+    <style>
+        /* YouTube-style caption bar — sits above control bar */
+        #vc-caption-bar {
+            display: none;
+            position: fixed;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 900px;
+            background: rgba(0, 0, 0, 0.72);
+            border-radius: 12px 12px 0 0;
+            padding: 12px 28px 16px;
+            box-sizing: border-box;
+            z-index: 105;
+            pointer-events: none;
+        }
+
+        #vc-caption-bar.active {
+            display: block;
+        }
+
+        #vc-caption-bar .vc-caption-line {
+            font-size: 1.25rem;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            color: white;
+            min-height: 1.7rem;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        #vc-caption-bar .vc-caption-line.dim {
+            color: rgba(255, 255, 255, 0.42);
+        }
+
+        #vc-caption-bar .vc-interim {
+            color: rgba(255, 255, 255, 0.55);
+        }
+    </style>
 
     <!-- Icons -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -151,21 +192,15 @@
                 <span id="remotePrediction"></span>
             </div>
 
-            <div id="prediction-overlay" class="caption-overlay">
+            <div id="prediction-overlay" class="caption-overlay" style="display: none;">
                 <span class="material-icons">front_hand</span>
                 <span id="prediction">Waiting for sign...</span>
             </div>
 
-            <!-- Speech to Text Overlay -->
-            <div id="stt-overlay" class="caption-overlay stt-overlay hidden">
-                <span class="material-icons" style="color: #3b82f6;">graphic_eq</span>
-                <span id="stttext">Listening...</span>
-
-                <!-- Sign cards area (mirrors translation page) -->
-                <div class="sign-cards-area" style="margin-top:10px;">
-                    <!-- JS will inject cards here when speech is detected -->
-                    <p>Sign Language Cards Display</p>
-                </div>
+            <!-- YouTube-style Speech Caption Bar -->
+            <div id="vc-caption-bar">
+                <div id="vc-caption-line-a" class="vc-caption-line"></div>
+                <div id="vc-caption-line-b" class="vc-caption-line"></div>
             </div>
 
             <!-- Particle Container for Emoji Animations -->

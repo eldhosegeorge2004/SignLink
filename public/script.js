@@ -114,9 +114,10 @@ const trainBtn = document.getElementById('trainBtn');
 const saveBtn = document.getElementById('saveBtn');
 const clearBtn = document.getElementById('clearBtn');
 const trainStatusDiv = document.getElementById('trainStatus');
-const sttOverlay = document.getElementById('stt-overlay');
-const sttText = document.getElementById('stttext');
 const sttToggleBtn = document.getElementById('sttToggleBtn');
+const vcCaptionBar = document.getElementById('vc-caption-bar');
+const vcLineA = document.getElementById('vc-caption-line-a');
+const vcLineB = document.getElementById('vc-caption-line-b');
 const localVolumeMeter = document.getElementById('localVolume');
 const remoteVolumeMeter = document.getElementById('remoteVolume');
 
@@ -159,6 +160,11 @@ let lastRemoteSpokenText = "";
 let speakTimeout = null;           // NEW: Track pending speech to avoid race conditions
 let iceCandidatesBuffer = []; // Buffer for ICE candidates
 let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actually running
+
+// --- YouTube-style Caption State (Video Call) ---
+let vcCaptionLineA = '';
+let vcCaptionLineB = '';
+const VC_CAPTION_MAX_CHARS = 50; // slightly wider than translation page (wider video layout)
 
 // --- Spelling Mode State ---
 let accumulatedWord = "";
@@ -268,17 +274,26 @@ function initSTT() {
     };
 
     recognition.onresult = (event) => {
-        let fullTranscript = '';
-        // Iterate through all results to build the full "live" transcript
-        for (let i = 0; i < event.results.length; ++i) {
-            fullTranscript += event.results[i][0].transcript;
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const t = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += t;
+            } else {
+                interimTranscript += t;
+            }
         }
 
-        if (fullTranscript.trim()) {
-            // Send the accumulated transcript to remote peer
-            socket.emit('speech-message', { room: roomName, text: fullTranscript });
-            // Show locally
-            showSTT(fullTranscript, true);
+        if (finalTranscript) {
+            const trimmed = finalTranscript.trim();
+            appendVCCaption(trimmed);
+            // Send finalized text to remote peer
+            socket.emit('speech-message', { room: roomName, text: trimmed });
+        } else {
+            // Show interim words in real-time
+            updateVCCaptionDisplay(interimTranscript.trim());
         }
     };
 
@@ -330,12 +345,11 @@ sttToggleBtn.addEventListener('click', () => {
 
     if (isSTTOn) {
         if (!recognition) initSTT();
-
         if (!isRecognitionActive) {
             try {
                 recognition.start();
-                sttOverlay.classList.remove('hidden');
-                sttText.innerText = "Listening to you...";
+                vcCaptionBar.classList.add('active');
+                resetVCCaptions();
             } catch (e) {
                 console.error("Failed to start Recognition:", e);
                 isSTTOn = false;
@@ -343,40 +357,42 @@ sttToggleBtn.addEventListener('click', () => {
             }
         }
     } else {
-        if (recognition && isRecognitionActive) {
-            recognition.stop();
-        }
-        sttOverlay.classList.add('hidden');
+        if (recognition && isRecognitionActive) recognition.stop();
+        vcCaptionBar.classList.remove('active');
     }
 });
 
-function showSTT(text, isSelf = false) {
-    sttOverlay.classList.remove('hidden');
-    sttText.innerText = (isSelf ? "You: " : "Remote: ") + text;
-
-    // also display sign cards for this transcript
-    displaySignCards(text);
-
-    // Clear after some silence/timeout
-    clearTimeout(window.sttTimeout);
-    window.sttTimeout = setTimeout(() => {
-        if (isSTTOn) {
-            sttText.innerText = "Listening...";
-            // hide cards when we're back to listening
-            const cardArea = document.querySelector('.sign-cards-area');
-            if (cardArea) cardArea.innerHTML = "";
-        } else {
-            sttOverlay.classList.add('hidden');
-        }
-    }, 4000);
+// --- YouTube-Style Caption Helpers (Video Call) ---
+function updateVCCaptionDisplay(interimText = '') {
+    if (!vcLineA || !vcLineB) return;
+    vcLineA.textContent = vcCaptionLineA;
+    if (interimText) {
+        vcLineB.innerHTML =
+            (vcCaptionLineB ? document.createTextNode(vcCaptionLineB + ' ').textContent : '') +
+            `<span class="vc-interim">${interimText}</span>`;
+    } else {
+        vcLineB.textContent = vcCaptionLineB;
+    }
 }
 
-// helper to render sign cards (used during STT)
-function displaySignCards(text) {
-    const cardArea = document.querySelector('.sign-cards-area');
-    if (!cardArea) return;
-    // for now we simply mimic translation page behaviour; later it can show rich images
-    cardArea.innerHTML = `<h2 style="color: white; font-size: 1.2rem; text-align:center;">Displaying signs for: ${text}</h2>`;
+function appendVCCaption(finalText) {
+    const words = finalText.trim().split(/\s+/).filter(Boolean);
+    for (const word of words) {
+        const proposed = vcCaptionLineB ? vcCaptionLineB + ' ' + word : word;
+        if (proposed.length > VC_CAPTION_MAX_CHARS && vcCaptionLineB) {
+            vcCaptionLineA = vcCaptionLineB;
+            vcCaptionLineB = word;
+        } else {
+            vcCaptionLineB = proposed;
+        }
+    }
+    updateVCCaptionDisplay();
+}
+
+function resetVCCaptions() {
+    vcCaptionLineA = '';
+    vcCaptionLineB = '';
+    updateVCCaptionDisplay();
 }
 
 // 2. Visual Audio Feedback (Volume Meter)
@@ -1027,7 +1043,7 @@ function onResults(results) {
             clearTimeout(noHandsTimeoutId);
             noHandsTimeoutId = null;
         }
-        
+
         // ALWAYS use the first hand for prediction to avoid "Double Speak" from two hands
         const landmarks = results.multiHandLandmarks[0];
 
@@ -1064,7 +1080,7 @@ function onResults(results) {
                 noHandsTimeoutId = null;
             }, NO_HANDS_TIMEOUT_MS);
         }
-        
+
         predictionBuffer.length = 0;
         dynamicFrameBuffer = [];
         dynamicBufferStartTime = 0;
@@ -1085,8 +1101,8 @@ function onResults(results) {
 
 function runPrediction(flatLandmarks) {
     // require either server or local model to be present
-    if ((!serverModel || serverLabels.length === 0) && 
-        (!model || uniqueLabels.length === 0) && 
+    if ((!serverModel || serverLabels.length === 0) &&
+        (!model || uniqueLabels.length === 0) &&
         (!modelDynamic || uniqueLabelsDynamic.length === 0)) {
         return;
     }
@@ -1131,11 +1147,11 @@ function runPrediction(flatLandmarks) {
             }
 
             dynamicFrameBuffer.push(flatLandmarks);
-            
+
             if (dynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
                 dynamicFrameBuffer.shift();
             }
-            
+
             const dynamicReady = (Date.now() - dynamicBufferStartTime) >= DYNAMIC_ANALYZE_MS;
 
             if (dynamicFrameBuffer.length >= 1 && dynamicReady) {
@@ -1144,21 +1160,21 @@ function runPrediction(flatLandmarks) {
                 while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
                     paddedFrames.push(lastFrame);
                 }
-                
+
                 const tensorDynamic = tf.tensor3d([paddedFrames]);
                 const predDynamic = modelDynamic.predict(tensorDynamic);
                 const conf = predDynamic.max().dataSync()[0];
                 const idx = predDynamic.argMax(-1).dataSync()[0];
-                
+
                 // Boost confidence for dynamic signs to compete with static scores
                 const boostedConf = Math.min(conf * 1.2, 1.0);
-                candidates.push({ 
-                    label: uniqueLabelsDynamic[idx], 
-                    conf: boostedConf, 
+                candidates.push({
+                    label: uniqueLabelsDynamic[idx],
+                    conf: boostedConf,
                     source: 'dynamic',
                     isDynamic: true
                 });
-                
+
                 tensorDynamic.dispose();
                 predDynamic.dispose();
             }
@@ -1210,7 +1226,7 @@ function runPrediction(flatLandmarks) {
 
             // Debounce speech: only speak if different sign or 4+ seconds have passed
             const isDifferentSign = outputLabel !== lastSpokenLabel;
-            const shouldSpeak = best.isDynamic 
+            const shouldSpeak = best.isDynamic
                 ? (isDifferentSign || timeSinceAny > 4000)
                 : (timeSinceSame > 4000 && timeSinceAny > 800);
 
@@ -1510,7 +1526,13 @@ socket.on("sign-message", data => {
 });
 
 socket.on("speech-message", data => {
-    showSTT(data.text, false);
+    // Show remote STT text in the caption bar (auto-shows if STT is on)
+    if (data.text && data.text.trim()) {
+        if (!vcCaptionBar.classList.contains('active')) {
+            vcCaptionBar.classList.add('active');
+        }
+        appendVCCaption(data.text.trim());
+    }
 });
 
 socket.on("volume-level", data => {
@@ -1564,9 +1586,6 @@ function createPeerConnection() {
                 console.log("Autoplay success!");
             }).catch(error => {
                 console.warn("Autoplay was prevented. User must interact with page first.");
-                // We show this via the STT overlay as a hint
-                if (sttText) sttText.innerText = "Click anywhere to enable remote sound!";
-                sttOverlay.classList.remove('hidden');
             });
         }
     };
