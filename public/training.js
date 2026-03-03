@@ -50,9 +50,9 @@ const STORAGE_KEYS = {
 };
 
 // --- Initialization ---
-function init() {
+async function init() {
     startCamera();
-    loadDataFromStorage();
+    await loadDataFromServer();
     checkForSavedModels(); // Check if models already exist in localStorage
     renderDataList();
     setupModeToggle();
@@ -62,7 +62,7 @@ function init() {
 function checkForSavedModels() {
     const staticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
     const dynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
-    
+
     if (staticLabels || dynamicLabels) {
         let modelInfo = "Saved models found: ";
         if (staticLabels) modelInfo += "Static ✋ ";
@@ -76,18 +76,18 @@ function checkForSavedModels() {
 function setupModeToggle() {
     staticModeBtn.addEventListener('click', () => switchMode('static'));
     dynamicModeBtn.addEventListener('click', () => switchMode('dynamic'));
-    
+
     startRecordBtn.addEventListener('click', startDynamicRecording);
     stopRecordBtn.addEventListener('click', stopDynamicRecording);
 }
 
 function switchMode(mode) {
     recordingMode = mode;
-    
+
     // Update button states
     staticModeBtn.classList.toggle('active', mode === 'static');
     dynamicModeBtn.classList.toggle('active', mode === 'dynamic');
-    
+
     // Update UI visibility
     if (mode === 'static') {
         captureBtn.style.display = 'flex';
@@ -109,11 +109,11 @@ function startDynamicRecording() {
         labelInput.focus();
         return;
     }
-    
+
     isDynamicRecording = true;
     dynamicFrameBuffer = [];
     lastFrameCaptureTime = 0;
-    
+
     // Update UI
     startRecordBtn.style.display = 'none';
     stopRecordBtn.style.display = 'inline-flex';
@@ -122,13 +122,13 @@ function startDynamicRecording() {
     recIndicator.style.display = 'flex';
     frameCount.textContent = '0';
     progressBar.style.width = '0%';
-    
+
     statusMsg.textContent = 'Recording dynamic sign...';
 }
 
 function stopDynamicRecording() {
     isDynamicRecording = false;
-    
+
     // Save the recorded sequence
     if (dynamicFrameBuffer.length >= 10) {
         const label = labelInput.value.trim();
@@ -137,7 +137,7 @@ function stopDynamicRecording() {
     } else {
         statusMsg.textContent = 'Recording too short! Need at least 10 frames.';
     }
-    
+
     // Reset UI
     startRecordBtn.style.display = 'inline-flex';
     stopRecordBtn.style.display = 'none';
@@ -147,13 +147,13 @@ function stopDynamicRecording() {
     dynamicFrameBuffer = [];
 }
 
-langSelect.addEventListener('change', (e) => {
+langSelect.addEventListener('change', async (e) => {
     currentLang = e.target.value;
     model = null; // Reset model context
     collectedData = []; // Clear current view
     saveBtn.disabled = false; // Re-enable to allow checking for saved models
     statusMsg.innerText = `Switched to ${currentLang}`;
-    loadDataFromStorage();
+    await loadDataFromServer();
     checkForSavedModels(); // Check if models exist for this language
     renderDataList();
 });
@@ -215,22 +215,22 @@ function onResults(results) {
                     saveDataPoint(label, flatLandmarks, 'static');
                 }
             }
-            
+
             // Dynamic mode recording
             if (isDynamicRecording && recordingMode === 'dynamic') {
                 const now = Date.now();
                 const frameInterval = 1000 / TARGET_FPS;
-                
+
                 if (now - lastFrameCaptureTime >= frameInterval) {
                     const flatLandmarks = preprocessLandmarks(landmarks);
                     dynamicFrameBuffer.push(flatLandmarks);
                     lastFrameCaptureTime = now;
-                    
+
                     // Update UI
                     frameCount.textContent = dynamicFrameBuffer.length;
                     const progress = (dynamicFrameBuffer.length / MAX_DYNAMIC_FRAMES) * 100;
                     progressBar.style.width = `${Math.min(progress, 100)}%`;
-                    
+
                     // Auto-stop at max frames
                     if (dynamicFrameBuffer.length >= MAX_DYNAMIC_FRAMES) {
                         stopDynamicRecording();
@@ -248,32 +248,46 @@ function saveDataPoint(label, landmarks, type = 'static') {
     updateUIStats();
 }
 
-function saveDynamicSign(label, frames) {
-    collectedData.push({ 
-        label, 
-        type: 'dynamic', 
+async function saveDynamicSign(label, frames) {
+    collectedData.push({
+        label,
+        type: 'dynamic',
         frames: frames,
         frameCount: frames.length,
         recordedAt: Date.now()
     });
     updateUIStats();
-    saveToLocalStorage();
+    await saveToServer();
     renderDataList();
 }
 
 // --- Data Management ---
-function loadDataFromStorage() {
-    // We are implementing a simplified localstorage persistence for DATA
-    // Note: Live Translation usually only reads the MODEL and LABELS.
-    // Ideally we should store the raw data too so users can resume training.
-    const raw = localStorage.getItem(STORAGE_KEYS[currentLang].data);
-    if (raw) {
-        collectedData = JSON.parse(raw);
+async function loadDataFromServer() {
+    try {
+        const res = await fetch('/api/training-data');
+        if (!res.ok) throw new Error(`Server responded ${res.status}`);
+        const allData = await res.json();
+        collectedData = allData[currentLang] || [];
+    } catch (err) {
+        console.error('Failed to load training data from server:', err);
+        collectedData = [];
     }
 }
 
-function saveToLocalStorage() {
-    localStorage.setItem(STORAGE_KEYS[currentLang].data, JSON.stringify(collectedData));
+async function saveToServer() {
+    try {
+        // Fetch the full dataset first so we don't overwrite the other language
+        const res = await fetch('/api/training-data');
+        const allData = res.ok ? await res.json() : { ISL: [], ASL: [] };
+        allData[currentLang] = collectedData;
+        await fetch('/api/training-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(allData)
+        });
+    } catch (err) {
+        console.error('Failed to save training data to server:', err);
+    }
 }
 
 function updateUIStats() {
@@ -314,18 +328,18 @@ function renderDataList() {
     totalSamplesBadge.innerText = collectedData.length;
 }
 
-window.deleteLabel = (label) => {
+window.deleteLabel = async (label) => {
     if (confirm(`Delete all samples for "${label}"?`)) {
         collectedData = collectedData.filter(d => d.label !== label);
-        saveToLocalStorage();
+        await saveToServer();
         renderDataList();
     }
 };
 
-clearAllBtn.addEventListener('click', () => {
+clearAllBtn.addEventListener('click', async () => {
     if (confirm("Delete ALL collected data? This cannot be undone.")) {
         collectedData = [];
-        saveToLocalStorage();
+        await saveToServer();
         renderDataList();
     }
 });
@@ -343,11 +357,11 @@ captureBtn.addEventListener('mousedown', () => {
 });
 
 ['mouseup', 'mouseleave'].forEach(evt => {
-    captureBtn.addEventListener(evt, () => {
+    captureBtn.addEventListener(evt, async () => {
         isCollecting = false;
         recIndicator.style.display = 'none';
         captureBtn.classList.remove('active');
-        saveToLocalStorage(); // Auto-save on release
+        await saveToServer(); // Auto-save on release
         renderDataList();
     });
 });
@@ -396,7 +410,7 @@ trainBtn.addEventListener('click', async () => {
         const modelTypes = [];
         if (model.static) modelTypes.push("Static ✋");
         if (model.dynamic) modelTypes.push("Dynamic 🔄");
-        
+
         statusMsg.innerText = `✅ Training Complete! (${modelTypes.join(', ')}) - Click 'Save to Application' to use your models.`;
         trainBtn.disabled = false;
         saveBtn.disabled = false;
@@ -413,7 +427,7 @@ async function trainStaticModel(staticData) {
     console.log(`trainStaticModel called with ${staticData.length} samples`);
     const uniqueLabels = [...new Set(staticData.map(d => d.label))];
     console.log(`Unique static labels: ${uniqueLabels.join(', ')}`);
-    
+
     if (uniqueLabels.length < 2) {
         const msg = `❌ Need at least 2 different static signs. You have: ${uniqueLabels.join(', ')}`;
         statusMsg.innerText = msg;
@@ -440,10 +454,10 @@ async function trainStaticModel(staticData) {
 
     try {
         console.log('Starting fit...');
-        
+
         // Allow UI to update before starting training
         await new Promise(resolve => setTimeout(resolve, 100));
-        
+
         await staticModel.fit(xs, ys, {
             epochs: 30, // Reduced from 50 for faster training
             batchSize: 16,
@@ -480,7 +494,7 @@ async function trainDynamicModel(dynamicData) {
     console.log(`trainDynamicModel called with ${dynamicData.length} samples`);
     const uniqueLabels = [...new Set(dynamicData.map(d => d.label))];
     console.log(`Unique dynamic labels: ${uniqueLabels.join(', ')}`);
-    
+
     if (uniqueLabels.length < 2) {
         const msg = `❌ Need at least 2 different dynamic signs. You have: ${uniqueLabels.join(', ')}`;
         statusMsg.innerText = msg;
@@ -512,16 +526,16 @@ async function trainDynamicModel(dynamicData) {
 
     const dynamicModel = tf.sequential();
     // Use glorotUniform instead of default orthogonal for faster initialization
-    dynamicModel.add(tf.layers.lstm({ 
-        units: 64, 
-        returnSequences: true, 
+    dynamicModel.add(tf.layers.lstm({
+        units: 64,
+        returnSequences: true,
         inputShape: [MAX_DYNAMIC_FRAMES, 63],
         kernelInitializer: 'glorotUniform',
         recurrentInitializer: 'glorotUniform'
     }));
     dynamicModel.add(tf.layers.dropout({ rate: 0.2 }));
-    dynamicModel.add(tf.layers.lstm({ 
-        units: 32, 
+    dynamicModel.add(tf.layers.lstm({
+        units: 32,
         returnSequences: false,
         kernelInitializer: 'glorotUniform',
         recurrentInitializer: 'glorotUniform'
@@ -532,10 +546,10 @@ async function trainDynamicModel(dynamicData) {
 
     try {
         console.log('Starting fit...');
-        
+
         // Allow UI to update before starting training
         await new Promise(resolve => setTimeout(resolve, 100));
-        
+
         await dynamicModel.fit(xs, ys, {
             epochs: 20, // Reduced from 30 for faster training
             batchSize: 8,
@@ -579,13 +593,13 @@ saveBtn.addEventListener('click', async () => {
         // If not, check if models are already saved in localStorage
         const staticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
         const dynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
-        
+
         if (staticLabels || dynamicLabels) {
             statusMsg.innerText = `✅ Models already saved! Ready to use in Live Translation.`;
             alert(`✅ Models are already saved!\n\nStatic: ${staticLabels ? '✓' : '✗'}\nDynamic: ${dynamicLabels ? '✓' : '✗'}\n\nYou can use them in Live Translation now.`);
             return;
         }
-        
+
         alert("❌ No trained model found! Please train first.");
         return;
     }
@@ -636,7 +650,7 @@ uploadInput.addEventListener('change', (e) => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
         try {
             const imported = JSON.parse(evt.target.result);
             if (Array.isArray(imported)) {
@@ -649,10 +663,10 @@ uploadInput.addEventListener('change', (e) => {
                         return d.landmarks && d.landmarks.length === 63;
                     }
                 });
-                
+
                 if (valid) {
                     collectedData = collectedData.concat(imported);
-                    saveToLocalStorage();
+                    await saveToServer();
                     renderDataList();
                     alert(`Imported ${imported.length} samples successfully.`);
                 } else {
