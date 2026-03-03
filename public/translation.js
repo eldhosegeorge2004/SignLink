@@ -63,6 +63,7 @@ let noHandsTimeoutId = null;
 const predictionBuffer = [];
 let localStorageModelKey = 'my-isl-model'; // Default
 let localStorageLabelKey = 'isl_labels';
+let currentSignLanguage = 'ISL'; // Track current language for sign cards
 
 // Language Selector Logic
 const langSelect = document.getElementById('lang-select');
@@ -78,6 +79,7 @@ if (langSelect) {
 
     langSelect.addEventListener('change', (e) => {
         const lang = e.target.value;
+        currentSignLanguage = lang; // Update language for sign cards
         if (lang === 'ISL') {
             localStorageModelKey = 'my-isl-model';
             localStorageLabelKey = 'isl_labels';
@@ -843,6 +845,7 @@ function resetCaptions() {
     captionLineA = '';
     captionLineB = '';
     updateCaptionDisplay();
+    hideSignCards();
     const lt = document.getElementById('listening-text');
     if (lt) lt.textContent = 'Listening...';
 }
@@ -876,9 +879,11 @@ function initSpeechRecognition() {
 
         if (finalTranscript) {
             appendCaptionWords(finalTranscript.trim());
+            displaySignCards(finalTranscript.trim());
         } else {
             // Show interim words in real-time without committing
             updateCaptionDisplay(interimTranscript.trim());
+            hideSignCards();
         }
     };
 
@@ -895,7 +900,40 @@ function initSpeechRecognition() {
 }
 
 function displaySignCards(text) {
-    // Reserved for future sign card display feature
+    const container = document.getElementById('sign-cards-container');
+    if (!container) return;
+    
+    container.innerHTML = ''; // Clear previous cards
+    const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+    const langFolder = currentSignLanguage.toLowerCase(); // 'isl' or 'asl'
+    
+    words.forEach(word => {
+        const card = document.createElement('div');
+        card.className = 'sign-card';
+        
+        const img = document.createElement('img');
+        img.src = `/signs-images/${langFolder}/${word}.jpg`;
+        img.alt = word;
+        img.onerror = () => {
+            // If image not found, hide it but keep the card
+            img.style.display = 'none';
+        };
+        
+        const label = document.createElement('div');
+        label.className = 'sign-card-label';
+        label.textContent = word.length > 12 ? word.substring(0, 10) + '...' : word;
+        
+        card.appendChild(img);
+        card.appendChild(label);
+        container.appendChild(card);
+    });
+}
+
+function hideSignCards() {
+    const container = document.getElementById('sign-cards-container');
+    if (container) {
+        container.innerHTML = '';
+    }
 }
 
 // --- Mode Switching ---

@@ -135,6 +135,59 @@
             flex-direction: column;
             justify-content: flex-end;
             gap: 10px;
+            order: 1;
+        }
+
+        /* Sign Cards Container */
+        #sign-cards-container {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 16px;
+            justify-content: center;
+            width: 100%;
+            max-width: 1000px;
+            order: 2;
+            margin-top: 40px;
+            min-height: 0;
+        }
+
+        .sign-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(8px);
+            transition: all 0.3s ease;
+            min-width: 110px;
+        }
+
+        .sign-card:hover {
+            background: rgba(0, 0, 0, 0.75);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: scale(1.05);
+        }
+
+        .sign-card img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .sign-card-label {
+            color: white;
+            font-size: 0.95rem;
+            font-weight: 500;
+            font-family: 'Inter', sans-serif;
+            text-align: center;
+            word-wrap: break-word;
+            max-width: 100px;
         }
 
         .caption-line {
@@ -248,9 +301,11 @@
                 <span id="listening-text">Listening...</span>
             </div>
             <div class="speech-caption-box">
-                <div id="caption-line-a" class="caption-line dim"></div>
+                <div id="caption-line-a" class="caption-line"></div>
                 <div id="caption-line-b" class="caption-line"></div>
             </div>
+            <!-- Sign Cards Display -->
+            <div id="sign-cards-container"></div>
         </div>
 
         <!-- Controls -->

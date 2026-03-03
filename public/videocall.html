@@ -47,6 +47,65 @@
         #vc-caption-bar .vc-interim {
             color: rgba(255, 255, 255, 0.55);
         }
+
+        /* Sign Cards Container (Video Call) */
+        #vc-sign-cards-container {
+            display: none;
+            position: fixed;
+            bottom: 230px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 1000px;
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: center;
+            z-index: 104;
+            pointer-events: none;
+        }
+
+        #vc-sign-cards-container.active {
+            display: flex;
+        }
+
+        .vc-sign-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(8px);
+            transition: all 0.3s ease;
+            min-width: 100px;
+        }
+
+        .vc-sign-card:hover {
+            background: rgba(0, 0, 0, 0.75);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: scale(1.05);
+        }
+
+        .vc-sign-card img {
+            width: 90px;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .vc-sign-card-label {
+            color: white;
+            font-size: 0.85rem;
+            font-weight: 500;
+            font-family: 'Inter', sans-serif;
+            text-align: center;
+            word-wrap: break-word;
+            max-width: 100px;
+        }
     </style>
 
     <!-- Icons -->
@@ -202,6 +261,9 @@
                 <div id="vc-caption-line-a" class="vc-caption-line"></div>
                 <div id="vc-caption-line-b" class="vc-caption-line"></div>
             </div>
+
+            <!-- Sign Cards Container (Video Call) -->
+            <div id="vc-sign-cards-container"></div>
 
             <!-- Particle Container for Emoji Animations -->
             <div id="particles-container"></div>
