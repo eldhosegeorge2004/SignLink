@@ -3,3 +3,13 @@ node_modules/
 firebase-debug.log
 .DS_Store
 Sign-Language2.zip
+
+# Generated Datasets and Weights
+datasets/
+*.npy
+*.h5
+public/dataset.json
+
+# Temporary Test Pages
+public/test_asl.html
+public/test_final.html

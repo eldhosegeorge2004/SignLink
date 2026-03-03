@@ -8,6 +8,13 @@ def load_data():
         print("Loading dataset from X.npy and y.npy...")
         X = np.load("X.npy")
         y = np.load("y.npy")
+        
+        # VERY IMPORTANT: Shuffle data before Keras splits for validation!
+        indices = np.arange(X.shape[0])
+        np.random.shuffle(indices)
+        X = X[indices]
+        y = y[indices]
+        
         return X, y
     else:
         print("Dataset (X.npy, y.npy) not found.")
@@ -44,7 +51,7 @@ def train_model():
     model.fit(X, y, epochs=100, batch_size=32, validation_split=0.1)
     
     # Save Keras model
-    model_save_path = "isl_model.h5"
+    model_save_path = "asl_model.h5"
     model.save(model_save_path)
     print(f"Model saved to '{model_save_path}'")
 

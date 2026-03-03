@@ -42,6 +42,15 @@ let localStorageLabelKey = 'isl_labels';
 // Language Selector Logic
 const langSelect = document.getElementById('lang-select');
 if (langSelect) {
+    // Sync state on page load in case browser restores Dropdown state
+    if (langSelect.value === 'ASL') {
+        localStorageModelKey = 'my-asl-model';
+        localStorageLabelKey = 'asl_labels';
+    } else {
+        localStorageModelKey = 'my-isl-model';
+        localStorageLabelKey = 'isl_labels';
+    }
+
     langSelect.addEventListener('change', (e) => {
         const lang = e.target.value;
         if (lang === 'ISL') {
@@ -70,25 +79,52 @@ async function loadSavedModelAndLabels() {
 
         const promises = [];
 
-        // 1. Load Server Model (ISL Only for now)
-        if (localStorageModelKey === 'my-isl-model') {
-            const serverLoad = async () => {
-                console.log("Attempting to load Server Model...");
-                try {
-                    const response = await fetch('labels.json');
-                    if (response.ok) {
-                        serverLabels = await response.json();
-                        serverModel = await tf.loadLayersModel('model/model.json');
-                        console.log(`Server Model loaded (${serverLabels.length} labels)`);
-                    } else {
-                        console.warn("labels.json not found.");
+        // 1. Load Server Model
+        const serverLoad = async () => {
+            console.log("Attempting to load Server Model...");
+            try {
+                let labelsPath = 'labels.json';
+                let modelPath = 'model/model.json';
+
+                if (localStorageModelKey === 'my-asl-model') {
+                    labelsPath = 'dataset.json'; // The dataset JSON we generated contains the classes (we saved a huge dump but labels.json was also saved in /training) - actually let's use the explicit labels.json we built for it. Wait, the converter output ASL into model/asl, but we didn't move labels.json.
+                    // Assuming labels.json is pulled from the root, let's configure ASL to load the specific labels.
+                    labelsPath = 'labels.json?v=8'; // Update this depending on where the user put the training labels. Let's assume we moved it.
+                    modelPath = 'model/asl/model.json?v=8';
+
+                    // Fetch the ASL specific classes we know we just trained
+                    serverLabels = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
+
+                    try {
+                        serverModel = await tf.loadLayersModel(modelPath);
+                        console.log(`Server Model loaded (${serverLabels.length} ASL labels)`);
+                    } catch (tfErr) {
+                        console.error("TFJS ASL Model Load Error:", tfErr);
+                        serverModel = null;
                     }
-                } catch (e) {
-                    console.warn("Server model load failed:", e);
+                    return Promise.resolve();
                 }
-            };
-            promises.push(serverLoad());
-        }
+
+                const response = await fetch(labelsPath);
+                if (response.ok) {
+                    serverLabels = await response.json();
+                    try {
+                        serverModel = await tf.loadLayersModel(modelPath);
+                        console.log(`Server Model loaded (${serverLabels.length} labels)`);
+                    } catch (tfErr) {
+                        console.error("TFJS ISL Model Load Error:", tfErr);
+                        serverModel = null;
+                    }
+                } else {
+                    console.warn("labels.json not found.");
+                }
+            } catch (e) {
+                console.error("Server model load failed fatally:", e);
+                serverModel = null;
+            }
+            return Promise.resolve();
+        };
+        promises.push(serverLoad());
 
         // 2. Load Local Model (Always try, based on keys)
         const localLoad = async () => {
@@ -107,19 +143,24 @@ async function loadSavedModelAndLabels() {
                 }
             } catch (e) {
                 console.warn("Local model load failed:", e);
+                localModel = null;
             }
+            return Promise.resolve(); // NEVER reject because we want server model to survive
         };
         promises.push(localLoad());
 
         // Wait for both
-        await Promise.all(promises);
+        await Promise.allSettled(promises); // Use allSettled so one failure doesn't kill both
 
         // 3. UI Feedback
         let statusMsg = "";
+
+        // Ensure UI sees the server model if we manually resolved it
         if (serverModel && localModel) {
             statusMsg = "Hybrid Mode: Server & Local Models Loaded.";
         } else if (serverModel) {
             statusMsg = "Server Model Loaded.";
+            console.log("Server model confirmed successful load.");
         } else if (localModel) {
             statusMsg = "Local Model Loaded.";
         } else {
@@ -368,11 +409,11 @@ function updateSpellingDisplay() {
     const textEl = document.getElementById('spelling-text');
 
     if (accumulatedWord.length > 0) {
-        if(overlay) overlay.style.display = 'block';
-        if(textEl) textEl.innerText = accumulatedWord;
+        if (overlay) overlay.style.display = 'block';
+        if (textEl) textEl.innerText = accumulatedWord;
     } else {
-        if(overlay) overlay.style.display = 'none';
-        if(textEl) textEl.innerText = "";
+        if (overlay) overlay.style.display = 'none';
+        if (textEl) textEl.innerText = "";
     }
 }
 

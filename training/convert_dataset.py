@@ -3,16 +3,20 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import json
+import random
+import shutil
 
 # --- CONFIGURATION ---
-# UPDATE THIS PATH to where your "Indian" folder is located
-DATASET_PATH = r"C:\Users\shali\OneDrive\Desktop\Shalin\Project Phase 2\archive\Indian" 
-
+DATASET_PATH = r"..\datasets\American" 
 OUTPUT_JSON = "../public/dataset.json"
 OUTPUT_X = "X.npy"
 OUTPUT_Y = "y.npy"
 OUTPUT_LABELS = "labels.json"
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'hand_landmarker.task')
+
+# Optimization: Max samples per class to speed up processing
+MAX_SAMPLES_PER_CLASS = 800
+CHECKPOINT_DIR = "temp_checkpoints"
 
 # Classes: 0-9, A-Z
 CLASSES = [str(i) for i in range(10)] + [chr(i) for i in range(65, 91)]
@@ -23,13 +27,11 @@ HandLandmarker = mp.tasks.vision.HandLandmarker
 HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
 VisionRunningMode = mp.tasks.vision.RunningMode
 
-# Check if model exists
 if not os.path.exists(MODEL_PATH):
     print(f"Error: Model file not found at {MODEL_PATH}")
     print("Please ensure 'hand_landmarker.task' is in the training directory.")
     exit(1)
 
-# Create a landmarker instance with the image mode:
 options = HandLandmarkerOptions(
     base_options=BaseOptions(model_asset_path=MODEL_PATH),
     running_mode=VisionRunningMode.IMAGE,
@@ -44,12 +46,8 @@ def preprocess_landmarks(landmarks):
     1. Translation Invariance (Shift to wrist)
     2. Scale Invariance (Normalize by hand size)
     """
-    # Landmarks is a list of objects with x, y, z
-    
-    # 1. Get Wrist
     wrist = landmarks[0]
     
-    # 2. Shift
     shifted = []
     for p in landmarks:
         shifted.append({
@@ -58,11 +56,9 @@ def preprocess_landmarks(landmarks):
             'z': p.z - wrist.z
         })
         
-    # 3. Calculate Scale (Distance from Wrist to Index MCP (id 5))
     index_mcp = shifted[5]
     distance = np.sqrt(index_mcp['x']**2 + index_mcp['y']**2 + index_mcp['z']**2) + 1e-6
     
-    # 4. Normalize and Flatten
     flat_data = []
     for p in shifted:
         flat_data.append(p['x'] / distance)
@@ -76,17 +72,20 @@ def main():
         print(f"ERROR: Dataset path not found: {DATASET_PATH}")
         return
 
-    data_for_json = [] 
-    X_data = []
-    y_data = []
-    
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
     label_map = {label: idx for idx, label in enumerate(CLASSES)}
-    
-    print(f"Scanning dataset at: {DATASET_PATH}")
-    
     processed_images = 0
     
+    print(f"Scanning dataset at: {DATASET_PATH} (Max {MAX_SAMPLES_PER_CLASS} per class)")
+    
     for label in CLASSES:
+        checkpoint_X = os.path.join(CHECKPOINT_DIR, f"X_{label}.npy")
+        checkpoint_json = os.path.join(CHECKPOINT_DIR, f"json_{label}.json")
+        
+        if os.path.exists(checkpoint_X) and os.path.exists(checkpoint_json):
+            print(f"Skipping class: {label} (Found saved checkpoint)")
+            continue
+            
         label_dir = os.path.join(DATASET_PATH, label)
         if not os.path.exists(label_dir):
             print(f"Warning: Folder for label '{label}' not found. Skipping.")
@@ -94,85 +93,101 @@ def main():
             
         print(f"Processing class: {label}...")
         
-        files = os.listdir(label_dir)
+        files = [f for f in os.listdir(label_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        random.seed(42) # Consistent sampling if re-run
+        random.shuffle(files)
+        files = files[:MAX_SAMPLES_PER_CLASS]
+        
+        class_X = []
+        class_json = []
         class_count = 0
         
         for i, file_name in enumerate(files):
-            if not file_name.lower().endswith(('.jpg', '.jpeg', '.png')):
-                continue
-                
             img_path = os.path.join(label_dir, file_name)
             image = cv2.imread(img_path)
             if image is None:
                 continue
             
-            # Convert to RGB for MediaPipe
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            
-            # Create MP Image
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
-            
-            # Detect
             detection_result = landmarker.detect(mp_image)
             
             if detection_result.hand_landmarks:
-                # Take the first hand
-                landmarks_list = detection_result.hand_landmarks[0]
-                
-                # Preprocess
-                flat_landmarks = preprocess_landmarks(landmarks_list)
-                
-                # Verify size
+                flat_landmarks = preprocess_landmarks(detection_result.hand_landmarks[0])
                 if len(flat_landmarks) == 63:
-                    X_data.append(flat_landmarks)
-                    y_data.append(label_map[label])
-                    
-                    # For JSON
-                    rounded_landmarks = [round(x, 6) for x in flat_landmarks]
-                    data_for_json.append({
+                    class_X.append(flat_landmarks)
+                    class_json.append({
                         "label": label,
-                        "landmarks": rounded_landmarks
+                        "landmarks": [round(x, 6) for x in flat_landmarks]
                     })
-                    
-                    processed_images += 1
                     class_count += 1
             
-            if i % 100 == 0:
+            if i % 50 == 0:
                 print(f"  Processed {i}/{len(files)} images...", end='\r')
-        
+                
         print(f"  Finished class {label}. Valid samples: {class_count}")
+        
+        # Save checkpoint for this class
+        np.save(checkpoint_X, np.array(class_X))
+        with open(checkpoint_json, 'w') as f:
+            json.dump(class_json, f)
 
-    print(f"\nProcessing Complete!")
-    print(f"Total valid samples: {processed_images}")
+    print("\nAll classes processed! Merging checkpoints...")
     
+    # Merge Phase
+    final_X = []
+    final_y = []
+    final_json = []
+    
+    for label in CLASSES:
+        checkpoint_X = os.path.join(CHECKPOINT_DIR, f"X_{label}.npy")
+        checkpoint_json = os.path.join(CHECKPOINT_DIR, f"json_{label}.json")
+        
+        if os.path.exists(checkpoint_X) and os.path.exists(checkpoint_json):
+            X_arr = np.load(checkpoint_X)
+            if len(X_arr) > 0:
+                final_X.extend(X_arr.tolist())
+                final_y.extend([label_map[label]] * len(X_arr))
+                
+            with open(checkpoint_json, 'r') as f:
+                data = json.load(f)
+                final_json.extend(data)
+                processed_images += len(data)
+
     if processed_images == 0:
         print("No samples collected. Exiting.")
         return
 
-    # Save NPY
-    print("Saving X.npy and y.npy...")
-    np.save(OUTPUT_X, np.array(X_data))
+    # Save NPY files
+    print("Saving final X.npy and y.npy...")
+    np.save(OUTPUT_X, np.array(final_X))
     
-    # Create One-Hot Encoding for y
-    y_indices = np.array(y_data)
+    y_indices = np.array(final_y)
     y_one_hot = np.eye(len(CLASSES))[y_indices] 
     np.save(OUTPUT_Y, y_one_hot)
     
-    # Save Labels Mapping
     with open(OUTPUT_LABELS, 'w') as f:
         json.dump(CLASSES, f)
         
     print(f"Saved numpy files in {os.getcwd()}")
     
-    # Save JSON
+    # Save the huge JSON map
     os.makedirs(os.path.dirname(OUTPUT_JSON), exist_ok=True)
     print(f"Saving {OUTPUT_JSON}...")
     try:
         with open(OUTPUT_JSON, 'w') as f:
-            json.dump(data_for_json, f)
+            json.dump(final_json, f)
         print("Saved dataset.json!")
     except Exception as e:
         print(f"Error saving JSON: {e}")
+        
+    print("Cleaning up temporary checkpoints...")
+    try:
+        shutil.rmtree(CHECKPOINT_DIR)
+    except Exception as e:
+        print(f"Warning: could not delete temp folder: {e}")
+
+    print(f"Done! Total valid samples in final dataset: {processed_images}")
 
 if __name__ == "__main__":
     main()
