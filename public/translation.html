@@ -104,28 +104,56 @@
             display: flex;
         }
 
-        .listening-indicator {
-            font-size: 2rem;
-            color: #3b82f6;
-            margin-bottom: 40px;
+        .caption-mic-bar {
             display: flex;
             align-items: center;
-            gap: 15px;
-            animation: pulse 2s infinite;
+            gap: 10px;
+            margin-bottom: 28px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.95rem;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: 0.03em;
         }
 
-        .sign-cards-area {
+        .caption-mic-bar .mic-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.7);
+        }
+
+        .speech-caption-box {
             width: 100%;
-            max-width: 800px;
-            height: 400px;
-            border: 2px dashed rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
+            max-width: 860px;
+            min-height: 110px;
+            background: rgba(0, 0, 0, 0.72);
+            border-radius: 14px;
+            padding: 20px 32px;
+            box-sizing: border-box;
             display: flex;
-            justify-content: center;
-            align-items: center;
-            background: rgba(0, 0, 0, 0.2);
-            color: rgba(255, 255, 255, 0.3);
-            font-size: 1.5rem;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .caption-line {
+            font-size: 1.55rem;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            color: white;
+            min-height: 1.9rem;
+            line-height: 1.45;
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
+
+        .caption-line.dim {
+            color: rgba(255, 255, 255, 0.45);
+        }
+
+        .caption-interim {
+            color: rgba(255, 255, 255, 0.55);
         }
 
         /* Bottom Result Overlay */
@@ -215,13 +243,13 @@
 
         <!-- Mode 2: Speech to Sign -->
         <div id="speech-view" class="speech-container">
-            <div class="listening-indicator">
-                <span class="material-icons" style="font-size: 40px;">mic</span>
+            <div class="caption-mic-bar">
+                <div class="mic-dot"></div>
                 <span id="listening-text">Listening...</span>
             </div>
-            <div class="sign-cards-area">
-                <p>Sign Language Cards Display</p>
-                <!-- Images will be injected here via JS -->
+            <div class="speech-caption-box">
+                <div id="caption-line-a" class="caption-line dim"></div>
+                <div id="caption-line-b" class="caption-line"></div>
             </div>
         </div>
 

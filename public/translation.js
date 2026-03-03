@@ -21,6 +21,11 @@ let camera = null;
 let cameraLoopId = null;
 let recognition = null; // For Speech to Text
 
+// --- YouTube-style Caption State ---
+let captionLineA = '';  // top (older, dimmer) line
+let captionLineB = '';  // bottom (current, brighter) line
+const CAPTION_MAX_CHARS = 42; // ~42 chars before wrapping to next line
+
 // --- Spelling Mode State ---
 let accumulatedWord = "";
 let lastLetterTime = 0;
@@ -210,7 +215,7 @@ async function loadSavedModelAndLabels() {
         if (serverModel) loadedModels.push("Server");
         if (localModel) loadedModels.push("Local Static");
         if (localModelDynamic) loadedModels.push("Local Dynamic");
-        
+
         // Don't show models loaded message - keep display clear
         if (loadedModels.length === 0) {
             sttResult.innerText = "No models found. Please train in AI Training mode.";
@@ -387,7 +392,7 @@ function runPrediction(landmarks) {
 
         // Collect candidates from all available models
         let candidates = [];
-        
+
         // Debug: Log which models are active (only once per 100 frames)
         if (!window.debugFrameCount) window.debugFrameCount = 0;
         window.debugFrameCount++;
@@ -428,12 +433,12 @@ function runPrediction(landmarks) {
 
             // Add current frame to buffer
             dynamicFrameBuffer.push(flatNormal);
-            
+
             // Keep buffer at fixed size
             if (dynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
                 dynamicFrameBuffer.shift();
             }
-            
+
             const dynamicReady = (Date.now() - dynamicBufferStartTime) >= DYNAMIC_ANALYZE_MS;
 
             // Wait at least 1 second to analyze motion before predicting dynamic signs
@@ -444,20 +449,20 @@ function runPrediction(landmarks) {
                 while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
                     paddedFrames.push(lastFrame);
                 }
-                
+
                 const tensorDynamic = tf.tensor3d([paddedFrames]);
                 const predDynamic = localModelDynamic.predict(tensorDynamic);
                 const conf = predDynamic.max().dataSync()[0];
                 const idx = predDynamic.argMax(-1).dataSync()[0];
-                
+
                 // Give dynamic predictions higher priority by boosting confidence
-                candidates.push({ 
-                    label: localLabelsDynamic[idx], 
+                candidates.push({
+                    label: localLabelsDynamic[idx],
                     conf: Math.min(conf * 1.2, 1.0), // Boost confidence by 20%
                     source: 'Dynamic',
                     isDynamic: true
                 });
-                
+
                 tensorDynamic.dispose();
                 predDynamic.dispose();
             }
@@ -477,7 +482,7 @@ function runPrediction(landmarks) {
             // Skip if user is actively spelling (accumulatedWord has content)
             if (best.isDynamic && best.conf > 0.60 && accumulatedWord.length === 0) { // Lower threshold for dynamic
                 sttResult.innerText = `Sign: ${outputLabel} 🔄 (${Math.round(best.conf * 100)}%)`;
-                
+
                 // Debounce speech: only speak if different sign or 4+ seconds have passed
                 const now = Date.now();
                 const timeSinceLast = now - lastSpokenTime;
@@ -488,7 +493,7 @@ function runPrediction(landmarks) {
                     lastSpokenLabel = outputLabel;
                     lastSpokenTime = now;
                 }
-                
+
                 // Clear buffer after confident detection
                 setTimeout(() => {
                     dynamicFrameBuffer = [];
@@ -543,7 +548,7 @@ function onResults(results) {
             clearTimeout(noHandsTimeoutId);
             noHandsTimeoutId = null;
         }
-        
+
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
@@ -562,7 +567,7 @@ function onResults(results) {
                 noHandsTimeoutId = null;
             }, NO_HANDS_TIMEOUT_MS);
         }
-        
+
         // Reset state on hand loss
         if (lastAddedLetter !== null) {
             lastAddedLetter = null;
@@ -598,7 +603,7 @@ function handleSpelling(letter) {
 
     lastAddedLetter = letter;
     accumulatedWord += letter;
-    
+
     // When starting to spell, reset dynamic frame buffer to avoid interference
     dynamicFrameBuffer = [];
     dynamicBufferStartTime = 0;
@@ -803,11 +808,51 @@ function speakText(text, forceSpeak = false) {
     }
 }
 
+// --- YouTube-Style Caption Helpers ---
+function updateCaptionDisplay(interimText = '') {
+    const lineAEl = document.getElementById('caption-line-a');
+    const lineBEl = document.getElementById('caption-line-b');
+    if (!lineAEl || !lineBEl) return;
+
+    lineAEl.textContent = captionLineA;
+    if (interimText) {
+        lineBEl.innerHTML =
+            (captionLineB ? document.createTextNode(captionLineB + ' ').textContent : '') +
+            `<span class="caption-interim">${interimText}</span>`;
+    } else {
+        lineBEl.textContent = captionLineB;
+    }
+}
+
+function appendCaptionWords(finalText) {
+    const words = finalText.trim().split(/\s+/).filter(Boolean);
+    for (const word of words) {
+        const proposed = captionLineB ? captionLineB + ' ' + word : word;
+        if (proposed.length > CAPTION_MAX_CHARS && captionLineB) {
+            // Current line is full — roll it up to line A, start fresh
+            captionLineA = captionLineB;
+            captionLineB = word;
+        } else {
+            captionLineB = proposed;
+        }
+    }
+    updateCaptionDisplay();
+}
+
+function resetCaptions() {
+    captionLineA = '';
+    captionLineB = '';
+    updateCaptionDisplay();
+    const lt = document.getElementById('listening-text');
+    if (lt) lt.textContent = 'Listening...';
+}
+
 // --- Speech Recognition Logic (Speech to Sign) ---
 function initSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        listeningText.innerText = "Speech Recognition not supported.";
+        const lt = document.getElementById('listening-text');
+        if (lt) lt.textContent = 'Speech recognition not supported in this browser.';
         return;
     }
 
@@ -817,28 +862,40 @@ function initSpeechRecognition() {
     recognition.lang = 'en-US';
 
     recognition.onresult = (event) => {
+        let interimTranscript = '';
         let finalTranscript = '';
+
         for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const t = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
+                finalTranscript += t;
+            } else {
+                interimTranscript += t;
             }
         }
 
         if (finalTranscript) {
-            listeningText.innerText = `Heard: "${finalTranscript}"`;
-            displaySignCards(finalTranscript);
+            appendCaptionWords(finalTranscript.trim());
+        } else {
+            // Show interim words in real-time without committing
+            updateCaptionDisplay(interimTranscript.trim());
         }
     };
 
     recognition.onerror = (event) => {
-        console.error("Speech error", event.error);
+        console.error('Speech error', event.error);
+    };
+
+    recognition.onend = () => {
+        // Auto-restart if still in speech mode
+        if (!isSignToTextMode && recognition) {
+            try { recognition.start(); } catch (e) { /* already running */ }
+        }
     };
 }
 
 function displaySignCards(text) {
-    const cardArea = document.querySelector('.sign-cards-area');
-    // Simple visual feedback
-    cardArea.innerHTML = `<h2 style="color: white;">Displaying signs for: ${text}</h2>`;
+    // Reserved for future sign card display feature
 }
 
 // --- Mode Switching ---
@@ -857,17 +914,16 @@ modeBtn.addEventListener('click', () => {
         signView.style.display = 'none';
         speechView.classList.add('active');
         modeText.innerText = "Switch to Sign Translator";
+        resetCaptions();
 
         if (!recognition) initSpeechRecognition();
         setTimeout(() => {
             if (recognition) {
                 try {
                     recognition.start();
-                } catch (e) {
-                }
+                } catch (e) { /* already running */ }
             }
-        }, 500);
-
+        }, 300);
     }
 });
 
