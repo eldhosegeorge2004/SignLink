@@ -165,6 +165,7 @@ let accumulatedWord = "";
 let lastLetterTime = 0;
 let lastAddedLetter = null; // Track the actual last ACCEPTED letter
 let spellingInterval = null;
+const SPELLING_IDLE_TIMEOUT_MS = 5000;
 
 // Accessibility Feature States
 let recognition;
@@ -1018,6 +1019,10 @@ function onResults(results) {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         // Hands detected - clear the timeout
         lastHandDetectedTime = Date.now();
+        if (accumulatedWord.length > 0) {
+            // Keep spelling window alive while user still has hands in frame
+            lastLetterTime = Date.now();
+        }
         if (noHandsTimeoutId) {
             clearTimeout(noHandsTimeoutId);
             noHandsTimeoutId = null;
@@ -1047,6 +1052,11 @@ function onResults(results) {
             runPrediction(flatLandmarks);
         }
     } else {
+        // If hand disappears while spelling, finalize immediately
+        if (accumulatedWord.length > 0) {
+            finishSpelling(true);
+        }
+
         // No hands detected - set timeout for "Waiting for hands"
         if (!noHandsTimeoutId) {
             noHandsTimeoutId = setTimeout(() => {
@@ -1111,7 +1121,11 @@ function runPrediction(flatLandmarks) {
         }
 
         // dynamic predictions with frame buffer
-        if (modelDynamic && uniqueLabelsDynamic.length) {
+        // Skip dynamic buffer accumulation if user is spelling (accumulatedWord has content)
+        if (accumulatedWord.length > 0) {
+            dynamicFrameBuffer = [];
+            dynamicBufferStartTime = 0;
+        } else if (modelDynamic && uniqueLabelsDynamic.length) {
             if (dynamicBufferStartTime === 0) {
                 dynamicBufferStartTime = Date.now();
             }
@@ -1151,8 +1165,12 @@ function runPrediction(flatLandmarks) {
         }
 
         if (candidates.length === 0) {
-            // No confident prediction - keep showing last displayed sign if it exists
-            if (lastDisplayedPrediction) {
+            // No confident prediction
+            if (accumulatedWord.length > 0) {
+                // During spelling, clear display to prevent competing outputs
+                predictionDiv.innerText = '';
+            } else if (lastDisplayedPrediction) {
+                // Only show last prediction if not spelling
                 const last = lastDisplayedPrediction;
                 const displayText = last.isDynamic ? `${last.label} 🔄` : last.label;
                 predictionDiv.innerText = `Sign: ${displayText} (${Math.round(last.conf * 100)}%)`;
@@ -1178,6 +1196,9 @@ function runPrediction(flatLandmarks) {
         if (outputLabel.length === 1 && /^[a-zA-Z]$/.test(outputLabel)) {
             processPredictedLetter(outputLabel);
             predictionDiv.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
+        } else if (accumulatedWord.length > 0) {
+            // During spelling, suppress prediction display (only show spelling overlay)
+            predictionDiv.innerText = '';
         } else {
             const displayText = best.isDynamic ? `${outputLabel} 🔄` : outputLabel;
             predictionDiv.innerText = `Sign: ${displayText} (${Math.round(best.conf * 100)}%)`;
@@ -1255,22 +1276,22 @@ function updateSpellingDisplay() {
     }
 }
 
-// Check for 3-second silence to finish the word
+// Check for spelling inactivity to finish the word
 setInterval(() => {
     if (accumulatedWord.length > 0) {
         const now = Date.now();
-        if (now - lastLetterTime > 3000) {
+        if (now - lastLetterTime > SPELLING_IDLE_TIMEOUT_MS) {
             finishSpelling();
         }
     }
 }, 500);
 
-function finishSpelling() {
+function finishSpelling(forceSpeak = false) {
     // Convert to Title Case to encourage TTS to say it as a word, not spell it (e.g. "Saurav" vs "SAURAV")
     const wordToSpeak = accumulatedWord.charAt(0).toUpperCase() + accumulatedWord.slice(1).toLowerCase();
 
     // Speak locally if TTS is on
-    if (isTTSOn) speak(wordToSpeak);
+    if (isTTSOn || forceSpeak) speak(wordToSpeak);
 
     // Send to remote user (send original uppercase or title case? Let's send Title Case for them too)
     socket.emit("sign-message", { room: roomName, text: wordToSpeak });

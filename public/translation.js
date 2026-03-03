@@ -13,7 +13,7 @@ const listeningText = document.getElementById('listening-text');
 
 let isSignToTextMode = true;
 let isCamOn = true;
-let isTTSOn = false;
+let isTTSOn = true;
 let lastSpokenLabel = "";
 let lastSpokenTime = 0;
 let localStream = null;
@@ -25,6 +25,7 @@ let accumulatedWord = "";
 let lastLetterTime = 0;
 let lastAddedLetter = null;
 let spellingInterval = null;
+const SPELLING_IDLE_TIMEOUT_MS = 5000;
 
 // --- Model & State ---
 // Hybrid Model Approaches:
@@ -74,6 +75,12 @@ if (langSelect) {
         sttResult.innerText = `Switched to ${lang}. Loading models...`;
         loadSavedModelAndLabels();
     });
+}
+
+// TTS starts enabled by default for live translation
+if (ttsBtn) {
+    ttsBtn.innerHTML = '<span class="material-icons">volume_up</span>';
+    ttsBtn.classList.remove('red-btn');
 }
 
 // Load Models and Labels (Hybrid)
@@ -374,7 +381,8 @@ function runPrediction(landmarks) {
         }
 
         // 3. Query Dynamic Model with frame buffer
-        if (localModelDynamic && localLabelsDynamic.length) {
+        // Skip dynamic detection if user is in the middle of spelling
+        if (localModelDynamic && localLabelsDynamic.length && accumulatedWord.length === 0) {
             if (dynamicBufferStartTime === 0) {
                 dynamicBufferStartTime = Date.now();
             }
@@ -427,7 +435,8 @@ function runPrediction(landmarks) {
             updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatNormal);
 
             // If dynamic sign detected, show immediately with special indicator
-            if (best.isDynamic && best.conf > 0.60) { // Lower threshold for dynamic
+            // Skip if user is actively spelling (accumulatedWord has content)
+            if (best.isDynamic && best.conf > 0.60 && accumulatedWord.length === 0) { // Lower threshold for dynamic
                 sttResult.innerText = `Sign: ${outputLabel} 🔄 (${Math.round(best.conf * 100)}%)`;
                 
                 // Debounce speech: only speak if different sign or 4+ seconds have passed
@@ -450,13 +459,21 @@ function runPrediction(landmarks) {
                 // Single letters require stable hold
                 processPredictedLetter(outputLabel);
                 sttResult.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
-            } else {
+            } else if (accumulatedWord.length === 0) {
+                // Only show non-dynamic/non-letter signs if not spelling
                 sttResult.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
                 speakText(outputLabel);
+            } else if (accumulatedWord.length > 0) {
+                // During spelling, suppress sttResult display entirely (only show spelling overlay)
+                sttResult.innerText = '';
             }
         } else {
-            // No confident prediction - keep showing last displayed sign if it exists
-            if (lastDisplayedPrediction) {
+            // No confident prediction
+            if (accumulatedWord.length > 0) {
+                // During spelling, clear sttResult to prevent competing displays
+                sttResult.innerText = '';
+            } else if (lastDisplayedPrediction) {
+                // Only show last prediction if not spelling
                 const last = lastDisplayedPrediction;
                 const displayText = last.isDynamic ? `${last.label} 🔄` : last.label;
                 sttResult.innerText = `Sign: ${displayText} (${Math.round(last.conf * 100)}%)`;
@@ -476,9 +493,13 @@ function onResults(results) {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-    if (results.multiHandLandmarks) {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         // Hands detected - clear the timeout
         lastHandDetectedTime = Date.now();
+        if (accumulatedWord.length > 0) {
+            // Keep spelling window alive while user still has hands in frame
+            lastLetterTime = Date.now();
+        }
         if (noHandsTimeoutId) {
             clearTimeout(noHandsTimeoutId);
             noHandsTimeoutId = null;
@@ -490,6 +511,11 @@ function onResults(results) {
             runPrediction(landmarks);
         }
     } else {
+        // If hand disappears while spelling, finalize immediately
+        if (accumulatedWord.length > 0) {
+            finishSpelling(true);
+        }
+
         // No hands detected - set timeout for "Waiting for hands"
         if (!noHandsTimeoutId) {
             noHandsTimeoutId = setTimeout(() => {
@@ -533,6 +559,10 @@ function handleSpelling(letter) {
 
     lastAddedLetter = letter;
     accumulatedWord += letter;
+    
+    // When starting to spell, reset dynamic frame buffer to avoid interference
+    dynamicFrameBuffer = [];
+    dynamicBufferStartTime = 0;
 
     // Speak the letter immediately if TTS is enabled
     if (isTTSOn) speakText(letter.toLowerCase());
@@ -580,21 +610,21 @@ function updateSpellingDisplay() {
     }
 }
 
-// Check for 3-second silence to finish the word
+// Check for spelling inactivity to finish the word
 setInterval(() => {
     if (accumulatedWord.length > 0) {
         const now = Date.now();
-        if (now - lastLetterTime > 3000) {
+        if (now - lastLetterTime > SPELLING_IDLE_TIMEOUT_MS) {
             finishSpelling();
         }
     }
 }, 500);
 
-function finishSpelling() {
+function finishSpelling(forceSpeak = false) {
     const wordToSpeak = accumulatedWord.charAt(0).toUpperCase() + accumulatedWord.slice(1).toLowerCase();
 
     // Speak the whole word
-    speakText(wordToSpeak);
+    speakText(wordToSpeak, forceSpeak);
 
     // Show in main result area
     sttResult.innerText = `Spelled: ${wordToSpeak}`;
@@ -664,20 +694,20 @@ ttsBtn.addEventListener('click', () => {
     isTTSOn = !isTTSOn;
     if (isTTSOn) {
         ttsBtn.innerHTML = '<span class="material-icons">volume_up</span>';
-        ttsBtn.style.color = '#3b82f6';
+        ttsBtn.classList.remove('red-btn');
 
         if (window.speechSynthesis) {
             window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
         }
     } else {
         ttsBtn.innerHTML = '<span class="material-icons">volume_off</span>';
-        ttsBtn.style.color = 'white';
+        ttsBtn.classList.add('red-btn');
         window.speechSynthesis.cancel();
     }
 });
 
-function speakText(text) {
-    if (isTTSOn && text) {
+function speakText(text, forceSpeak = false) {
+    if ((isTTSOn || forceSpeak) && text) {
         // Cross-tab debounce using localStorage
         const now = Date.now();
         const lastGlobalSpeak = parseInt(localStorage.getItem('lastGlobalSpeakTime') || '0');
