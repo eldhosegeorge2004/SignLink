@@ -6,6 +6,7 @@ const io = require('socket.io')(http, {
     transports: ['websocket', 'polling'] // Prioritize websockets
 });
 const path = require('path');
+const fs = require('fs');
 
 // --- Production Middleware ---
 // Redirect HTTP to HTTPS (Required for Camera/Mic/Speech to work)
@@ -16,7 +17,37 @@ app.use((req, res, next) => {
     next();
 });
 
+app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+const TRAINING_DATA_FILE = path.join(__dirname, 'public', 'training_data.json');
+const DEFAULT_TRAINING_DATA = { ISL: [], ASL: [] };
+
+// GET /api/training-data — read stored training data
+app.get('/api/training-data', (req, res) => {
+    try {
+        if (!fs.existsSync(TRAINING_DATA_FILE)) {
+            return res.json(DEFAULT_TRAINING_DATA);
+        }
+        const raw = fs.readFileSync(TRAINING_DATA_FILE, 'utf8');
+        res.json(JSON.parse(raw));
+    } catch (err) {
+        console.error('Error reading training data:', err);
+        res.status(500).json({ error: 'Failed to read training data' });
+    }
+});
+
+// POST /api/training-data — save training data
+app.post('/api/training-data', (req, res) => {
+    try {
+        const data = req.body;
+        fs.writeFileSync(TRAINING_DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error saving training data:', err);
+        res.status(500).json({ error: 'Failed to save training data' });
+    }
+});
 
 io.on("connection", socket => {
     console.log(`User connected: ${socket.id}`);
