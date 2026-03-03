@@ -289,11 +289,13 @@ function initSTT() {
         if (finalTranscript) {
             const trimmed = finalTranscript.trim();
             appendVCCaption(trimmed);
+            displayVCSignCards(trimmed);
             // Send finalized text to remote peer
             socket.emit('speech-message', { room: roomName, text: trimmed });
         } else {
             // Show interim words in real-time
             updateVCCaptionDisplay(interimTranscript.trim());
+            hideVCSignCards();
         }
     };
 
@@ -359,6 +361,7 @@ sttToggleBtn.addEventListener('click', () => {
     } else {
         if (recognition && isRecognitionActive) recognition.stop();
         vcCaptionBar.classList.remove('active');
+        hideVCSignCards();
     }
 });
 
@@ -393,6 +396,47 @@ function resetVCCaptions() {
     vcCaptionLineA = '';
     vcCaptionLineB = '';
     updateVCCaptionDisplay();
+    hideVCSignCards();
+}
+
+function displayVCSignCards(text) {
+    const container = document.getElementById('vc-sign-cards-container');
+    if (!container) return;
+    
+    container.innerHTML = ''; // Clear previous cards
+    const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+    const langFolder = currentMode.toLowerCase(); // 'isl' or 'asl'
+    
+    words.forEach(word => {
+        const card = document.createElement('div');
+        card.className = 'vc-sign-card';
+        
+        const img = document.createElement('img');
+        img.src = `/signs-images/${langFolder}/${word}.jpg`;
+        img.alt = word;
+        img.onerror = () => {
+            // If image not found, hide it but keep the card
+            img.style.display = 'none';
+        };
+        
+        const label = document.createElement('div');
+        label.className = 'vc-sign-card-label';
+        label.textContent = word.length > 12 ? word.substring(0, 10) + '...' : word;
+        
+        card.appendChild(img);
+        card.appendChild(label);
+        container.appendChild(card);
+    });
+    
+    container.classList.add('active');
+}
+
+function hideVCSignCards() {
+    const container = document.getElementById('vc-sign-cards-container');
+    if (container) {
+        container.classList.remove('active');
+        container.innerHTML = '';
+    }
 }
 
 // 2. Visual Audio Feedback (Volume Meter)
