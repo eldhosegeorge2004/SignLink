@@ -4,6 +4,8 @@ const canvasElement = document.getElementById('output-canvas');
 const canvasCtx = canvasElement.getContext('2d');
 const signView = document.getElementById('sign-view');
 const speechView = document.getElementById('speech-view');
+const speechPanel = document.getElementById('speech-panel');
+const speechCaptionLog = document.getElementById('speech-caption-log');
 const camBtn = document.getElementById('cam-btn');
 const ttsBtn = document.getElementById('tts-btn');
 const sttResult = document.getElementById('stt-result');
@@ -834,11 +836,29 @@ function speakText(text, forceSpeak = false) {
     }
 }
 
+function appendSpeechCaption(text) {
+    if (!speechCaptionLog || !text) return;
+
+    const cleaned = text.trim();
+    if (!cleaned) return;
+
+    const line = document.createElement('div');
+    line.className = 'speech-caption-line';
+    line.textContent = `You: ${cleaned}`;
+    speechCaptionLog.appendChild(line);
+
+    while (speechCaptionLog.children.length > 70) {
+        speechCaptionLog.removeChild(speechCaptionLog.firstChild);
+    }
+
+    speechCaptionLog.scrollTop = speechCaptionLog.scrollHeight;
+}
+
 // --- Speech Recognition Logic (Speech to Sign) ---
 function initSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        listeningText.innerText = "Speech Recognition not supported.";
+        if (listeningText) listeningText.innerText = "Speech Recognition not supported.";
         return;
     }
 
@@ -861,19 +881,20 @@ function initSpeechRecognition() {
             }
         }
 
-        // Display based on mode
         if (isSignMode) {
-            // Sign mode: display in card area (legacy behavior)
-            if (finalTranscript) {
-                listeningText.innerText = `Heard: "${finalTranscript}"`;
-                displaySignCards(finalTranscript);
-            }
-        } else {
-            // Voice mode: display as subtitles
-            const displayText = finalTranscript || interimTranscript;
-            if (displayText) {
-                voiceSubtitles.innerText = displayText;
-            }
+            return;
+        }
+
+        if (finalTranscript) {
+            const finalized = finalTranscript.trim();
+            if (listeningText) listeningText.innerText = `Heard: "${finalized}"`;
+            appendSpeechCaption(finalized);
+            displaySignCards(finalized);
+        }
+
+        const displayText = interimTranscript || finalTranscript;
+        if (displayText) {
+            voiceSubtitles.innerText = displayText.trim();
         }
     };
 
@@ -1161,8 +1182,9 @@ function bindSignVoiceToggle() {
             sttResult.style.display = 'inline-block';
             voiceSubtitles.style.display = 'none';
             voiceSubtitles.innerText = '';
+            if (speechPanel) speechPanel.classList.remove('active');
 
-            if (isCamOn) startCamera();
+            if (isCamOn && !localStream) startCamera();
             if (recognition) recognition.stop();
         } else {
             // Switch to Voice Mode
@@ -1170,7 +1192,9 @@ function bindSignVoiceToggle() {
             toggleBtn.title = 'Switch to Sign Mode';
             sttResult.style.display = 'none';
             voiceSubtitles.style.display = 'block';
-            stopCamera();
+            if (speechPanel) speechPanel.classList.add('active');
+            if (isCamOn && !localStream) startCamera();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
             if (!recognition) initSpeechRecognition();
             setTimeout(() => {
@@ -1188,6 +1212,10 @@ function bindSignVoiceToggle() {
 
 bindSignVoiceToggle();
 document.addEventListener('DOMContentLoaded', bindSignVoiceToggle, { once: true });
+
+if (speechPanel) {
+    speechPanel.classList.remove('active');
+}
 
 // --- Legacy Mode Button Removed (replaced by Sign/Voice Toggle) ---
 // The old modeBtn had two different modes (sign-to-text vs speech-to-sign)
