@@ -104,109 +104,28 @@
             display: flex;
         }
 
-        .caption-mic-bar {
+        .listening-indicator {
+            font-size: 2rem;
+            color: #3b82f6;
+            margin-bottom: 40px;
             display: flex;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 28px;
-            color: rgba(255, 255, 255, 0.6);
-            font-size: 0.95rem;
-            font-family: 'Inter', sans-serif;
-            letter-spacing: 0.03em;
+            gap: 15px;
+            animation: pulse 2s infinite;
         }
 
-        .caption-mic-bar .mic-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #ef4444;
-            box-shadow: 0 0 8px rgba(239, 68, 68, 0.7);
-        }
-
-        .speech-caption-box {
+        .sign-cards-area {
             width: 100%;
-            max-width: 860px;
-            min-height: 110px;
-            background: rgba(0, 0, 0, 0.72);
-            border-radius: 14px;
-            padding: 20px 32px;
-            box-sizing: border-box;
+            max-width: 800px;
+            height: 400px;
+            border: 2px dashed rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
             display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            gap: 10px;
-            order: 1;
-        }
-
-        /* Sign Cards Container */
-        #sign-cards-container {
-            display: flex;
-            flex-direction: row;
-            flex-wrap: wrap;
-            gap: 16px;
             justify-content: center;
-            width: 100%;
-            max-width: 1000px;
-            order: 2;
-            margin-top: 40px;
-            min-height: 0;
-        }
-
-        .sign-card {
-            display: flex;
-            flex-direction: column;
             align-items: center;
-            gap: 10px;
-            padding: 16px;
-            background: rgba(0, 0, 0, 0.6);
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(8px);
-            transition: all 0.3s ease;
-            min-width: 110px;
-        }
-
-        .sign-card:hover {
-            background: rgba(0, 0, 0, 0.75);
-            border-color: rgba(255, 255, 255, 0.4);
-            transform: scale(1.05);
-        }
-
-        .sign-card img {
-            width: 100px;
-            height: 100px;
-            object-fit: cover;
-            border-radius: 8px;
-            background: rgba(0, 0, 0, 0.3);
-        }
-
-        .sign-card-label {
-            color: white;
-            font-size: 0.95rem;
-            font-weight: 500;
-            font-family: 'Inter', sans-serif;
-            text-align: center;
-            word-wrap: break-word;
-            max-width: 100px;
-        }
-
-        .caption-line {
-            font-size: 1.55rem;
-            font-family: 'Inter', sans-serif;
-            font-weight: 500;
-            color: white;
-            min-height: 1.9rem;
-            line-height: 1.45;
-            word-break: break-word;
-            white-space: pre-wrap;
-        }
-
-        .caption-line.dim {
-            color: rgba(255, 255, 255, 0.45);
-        }
-
-        .caption-interim {
-            color: rgba(255, 255, 255, 0.55);
+            background: rgba(0, 0, 0, 0.2);
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 1.5rem;
         }
 
         /* Bottom Result Overlay */
@@ -233,6 +152,25 @@
         .control-bar {
             bottom: 40px;
             /* Adjust from default style.css if needed */
+        }
+
+        /* Subtitles for Voice Mode */
+        .voice-subtitles {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            max-width: 85%;
+            text-align: center;
+            font-size: 1rem;
+            font-family: 'Inter', sans-serif;
+            z-index: 100;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
         }
     </style>
 
@@ -272,6 +210,9 @@
                 <span id="stt-result">Translated Text Will Appear Here...</span>
             </div>
 
+            <!-- Voice Mode Subtitles -->
+            <div class="voice-subtitles" id="voice-subtitles"></div>
+
             <!-- Spelling Overlay (Top Left) -->
             <div id="spelling-overlay" style="
                 position: absolute;
@@ -296,16 +237,14 @@
 
         <!-- Mode 2: Speech to Sign -->
         <div id="speech-view" class="speech-container">
-            <div class="caption-mic-bar">
-                <div class="mic-dot"></div>
+            <div class="listening-indicator">
+                <span class="material-icons" style="font-size: 40px;">mic</span>
                 <span id="listening-text">Listening...</span>
             </div>
-            <div class="speech-caption-box">
-                <div id="caption-line-a" class="caption-line"></div>
-                <div id="caption-line-b" class="caption-line"></div>
+            <div class="sign-cards-area">
+                <p>Sign Language Cards Display</p>
+                <!-- Images will be injected here via JS -->
             </div>
-            <!-- Sign Cards Display -->
-            <div id="sign-cards-container"></div>
         </div>
 
         <!-- Controls -->
@@ -337,17 +276,15 @@
                 </select>
             </div>
 
-            <!-- Mode Toggle -->
-            <button id="mode-btn" class="control-btn" title="Switch Mode"
-                style="width: auto; padding: 0 24px; gap: 10px;">
-                <span class="material-icons">swap_horiz</span>
-                <span id="mode-text">Switch to Live Speech</span>
+            <!-- Sign/Voice Mode Toggle -->
+            <button id="sign-voice-toggle" class="control-btn" title="Switch between Sign and Voice Mode">
+                <span class="material-icons">pan_tool</span>
             </button>
         </div>
 
     </div>
 
-    <script src="translation.js?v=5"></script>
+    <script src="translation.js?v=6"></script>
 </body>
 
 </html>
