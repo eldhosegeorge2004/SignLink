@@ -95,6 +95,7 @@ const remoteVideo = document.getElementById('remoteVideo');
 const localCanvas = document.getElementById('localCanvas');
 const ctx = localCanvas.getContext('2d');
 const meetingCodeDisplay = document.getElementById('meetingCodeDisplay');
+const predictionOverlay = document.getElementById('prediction-overlay');
 const predictionDiv = document.getElementById('prediction');
 const remotePredictionDiv = document.getElementById('remotePrediction');
 const remoteCaptionOverlay = document.getElementById('remote-caption-overlay');
@@ -179,6 +180,18 @@ let audioContext;
 let analyser;
 let micSource;
 let volumeInterval;
+
+function setPredictionText(text) {
+    if (predictionOverlay) {
+        predictionOverlay.classList.remove('hidden');
+        predictionOverlay.style.display = 'flex';
+    }
+    if (predictionDiv) {
+        predictionDiv.innerText = text;
+    }
+}
+
+setPredictionText("Waiting for sign...");
 
 // Resume audio on any user interaction
 document.addEventListener('click', () => {
@@ -1120,7 +1133,7 @@ function onResults(results) {
         // No hands detected - set timeout for "Waiting for hands"
         if (!noHandsTimeoutId) {
             noHandsTimeoutId = setTimeout(() => {
-                predictionDiv.innerText = "Waiting for hands...";
+                setPredictionText("Waiting for sign...");
                 noHandsTimeoutId = null;
             }, NO_HANDS_TIMEOUT_MS);
         }
@@ -1228,12 +1241,12 @@ function runPrediction(flatLandmarks) {
             // No confident prediction
             if (accumulatedWord.length > 0) {
                 // During spelling, clear display to prevent competing outputs
-                predictionDiv.innerText = '';
+                setPredictionText('');
             } else if (lastDisplayedPrediction) {
                 // Only show last prediction if not spelling
                 const last = lastDisplayedPrediction;
                 const displayText = last.isDynamic ? `${last.label} 🔄` : last.label;
-                predictionDiv.innerText = `Sign: ${displayText} (${Math.round(last.conf * 100)}%)`;
+                setPredictionText(`Sign: ${displayText} (${Math.round(last.conf * 100)}%)`);
             }
             // Don't show "Listening..." - just keep previous prediction or blank
             return;
@@ -1255,13 +1268,13 @@ function runPrediction(flatLandmarks) {
         // Check if it's a single letter
         if (outputLabel.length === 1 && /^[a-zA-Z]$/.test(outputLabel)) {
             processPredictedLetter(outputLabel);
-            predictionDiv.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
+            setPredictionText(`Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`);
         } else if (accumulatedWord.length > 0) {
             // During spelling, suppress prediction display (only show spelling overlay)
-            predictionDiv.innerText = '';
+            setPredictionText('');
         } else {
             const displayText = best.isDynamic ? `${outputLabel} 🔄` : outputLabel;
-            predictionDiv.innerText = `Sign: ${displayText} (${Math.round(best.conf * 100)}%)`;
+            setPredictionText(`Sign: ${displayText} (${Math.round(best.conf * 100)}%)`);
 
             const now = Date.now();
             const wordLastSpoken = localWordLastSpoken[outputLabel] || 0;
@@ -1357,7 +1370,7 @@ function finishSpelling(forceSpeak = false) {
     socket.emit("sign-message", { room: roomName, text: wordToSpeak });
 
     // Show in local toast
-    predictionDiv.innerText = `Spelled: ${wordToSpeak}`;
+    setPredictionText(`Spelled: ${wordToSpeak}`);
 
     // Reset
     accumulatedWord = "";
@@ -1681,11 +1694,11 @@ camBtn.addEventListener('click', () => {
     // UI feedback for video state
     if (!isCamOn) {
         ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
-        predictionDiv.innerText = "Camera Off";
+        setPredictionText("Camera Off");
         localContainer.classList.add('video-muted');
     } else {
         localContainer.classList.remove('video-muted');
-        predictionDiv.innerText = "Waiting for sign...";
+        setPredictionText("Waiting for sign...");
     }
 
     camBtn.innerHTML = `<span class="material-icons">${isCamOn ? 'videocam' : 'videocam_off'}</span>`;
