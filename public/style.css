@@ -513,6 +513,11 @@ video {
     object-fit: cover;
 }
 
+.remote-view-container video {
+    object-fit: contain;
+    background: #000;
+}
+
 .local-view-container {
     position: absolute;
     bottom: 120px;
@@ -616,6 +621,54 @@ video {
     border-color: var(--primary-color);
 }
 
+.prediction-sign-cards-container {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 150px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    z-index: 52;
+}
+
+.prediction-sign-cards-container.active {
+    display: flex;
+}
+
+.prediction-sign-card {
+    width: 88px;
+    height: 96px;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+}
+
+.prediction-sign-card img {
+    width: 100%;
+    height: 64px;
+    object-fit: contain;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.prediction-sign-card-label {
+    margin-top: 4px;
+    color: #ffffff;
+    font-size: 0.68rem;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
 #remote-caption-overlay {
     bottom: 280px;
     background: rgba(0, 77, 64, 0.9);
@@ -627,6 +680,61 @@ video {
     font-size: 0.8rem;
     margin-right: 5px;
     opacity: 0.8;
+}
+
+.caption-log-panel {
+    position: absolute;
+    left: 20px;
+    top: 20px;
+    bottom: 120px;
+    width: 320px;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+    border-radius: 16px;
+    z-index: 65;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    backdrop-filter: blur(8px);
+}
+
+.caption-log-header {
+    padding: 10px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #ffffff;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.caption-log-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.caption-log-empty {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.78rem;
+}
+
+.caption-log-entry {
+    background: rgba(30, 41, 59, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 10px;
+    padding: 8px 10px;
+    color: #ffffff;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+.caption-log-speaker {
+    font-weight: 600;
+    color: #bfdbfe;
+    margin-right: 4px;
 }
 
 #remotePrediction {
@@ -1350,8 +1458,36 @@ video {
         bottom: 185px !important;
     }
 
+    .prediction-sign-cards-container {
+        bottom: 122px;
+    }
+
+    .prediction-sign-card {
+        width: 74px;
+        height: 84px;
+    }
+
+    .prediction-sign-card img {
+        height: 54px;
+    }
+
     #remote-caption-overlay {
         bottom: 240px !important;
+    }
+
+    .caption-log-panel {
+        width: min(45vw, 260px);
+        top: 14px;
+        bottom: 110px;
+        left: 12px;
+    }
+
+    .caption-log-header {
+        font-size: 0.76rem;
+    }
+
+    .caption-log-entry {
+        font-size: 0.74rem;
     }
 
     /* Hide Remote User label in bottom left for mobile */

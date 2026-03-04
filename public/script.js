@@ -95,7 +95,9 @@ const remoteVideo = document.getElementById('remoteVideo');
 const localCanvas = document.getElementById('localCanvas');
 const ctx = localCanvas.getContext('2d');
 const meetingCodeDisplay = document.getElementById('meetingCodeDisplay');
+const predictionOverlay = document.getElementById('prediction-overlay');
 const predictionDiv = document.getElementById('prediction');
+const predictionSignCardsContainer = document.getElementById('prediction-sign-cards-container');
 const remotePredictionDiv = document.getElementById('remotePrediction');
 const remoteCaptionOverlay = document.getElementById('remote-caption-overlay');
 
@@ -118,6 +120,7 @@ const sttToggleBtn = document.getElementById('sttToggleBtn');
 const vcCaptionBar = document.getElementById('vc-caption-bar');
 const vcLineA = document.getElementById('vc-caption-line-a');
 const vcLineB = document.getElementById('vc-caption-line-b');
+const captionLogList = document.getElementById('caption-log-list');
 const localVolumeMeter = document.getElementById('localVolume');
 const remoteVolumeMeter = document.getElementById('remoteVolume');
 
@@ -179,6 +182,14 @@ let audioContext;
 let analyser;
 let micSource;
 let volumeInterval;
+
+function setPredictionText(text) {
+    if (predictionDiv) {
+        predictionDiv.innerText = text;
+    }
+}
+
+setPredictionText("Waiting for sign...");
 
 // Resume audio on any user interaction
 document.addEventListener('click', () => {
@@ -289,6 +300,7 @@ function initSTT() {
         if (finalTranscript) {
             const trimmed = finalTranscript.trim();
             appendVCCaption(trimmed);
+            appendCaptionLog('You', trimmed);
             displayVCSignCards(trimmed);
             // Send finalized text to remote peer
             socket.emit('speech-message', { room: roomName, text: trimmed });
@@ -350,7 +362,7 @@ sttToggleBtn.addEventListener('click', () => {
         if (!isRecognitionActive) {
             try {
                 recognition.start();
-                vcCaptionBar.classList.add('active');
+                if (vcCaptionBar) vcCaptionBar.classList.add('active');
                 resetVCCaptions();
             } catch (e) {
                 console.error("Failed to start Recognition:", e);
@@ -360,7 +372,7 @@ sttToggleBtn.addEventListener('click', () => {
         }
     } else {
         if (recognition && isRecognitionActive) recognition.stop();
-        vcCaptionBar.classList.remove('active');
+        if (vcCaptionBar) vcCaptionBar.classList.remove('active');
         hideVCSignCards();
     }
 });
@@ -376,6 +388,28 @@ function updateVCCaptionDisplay(interimText = '') {
     } else {
         vcLineB.textContent = vcCaptionLineB;
     }
+}
+
+function appendCaptionLog(speaker, text) {
+    if (!captionLogList || !text) return;
+
+    const emptyState = captionLogList.querySelector('.caption-log-empty');
+    if (emptyState) emptyState.remove();
+
+    const entry = document.createElement('div');
+    entry.className = 'caption-log-entry';
+
+    const speakerLabel = document.createElement('span');
+    speakerLabel.className = 'caption-log-speaker';
+    speakerLabel.textContent = `${speaker}:`;
+
+    const dialogue = document.createElement('span');
+    dialogue.textContent = ` ${text}`;
+
+    entry.appendChild(speakerLabel);
+    entry.appendChild(dialogue);
+    captionLogList.appendChild(entry);
+    captionLogList.scrollTop = captionLogList.scrollHeight;
 }
 
 function appendVCCaption(finalText) {
@@ -400,16 +434,16 @@ function resetVCCaptions() {
 }
 
 function displayVCSignCards(text) {
-    const container = document.getElementById('vc-sign-cards-container');
+    const container = predictionSignCardsContainer;
     if (!container) return;
     
     container.innerHTML = ''; // Clear previous cards
-    const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+    const words = text.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 4);
     const langFolder = currentMode.toLowerCase(); // 'isl' or 'asl'
     
     words.forEach(word => {
         const card = document.createElement('div');
-        card.className = 'vc-sign-card';
+        card.className = 'prediction-sign-card';
         
         const img = document.createElement('img');
         img.src = `/signs-images/${langFolder}/${word}.jpg`;
@@ -420,7 +454,7 @@ function displayVCSignCards(text) {
         };
         
         const label = document.createElement('div');
-        label.className = 'vc-sign-card-label';
+        label.className = 'prediction-sign-card-label';
         label.textContent = word.length > 12 ? word.substring(0, 10) + '...' : word;
         
         card.appendChild(img);
@@ -432,7 +466,7 @@ function displayVCSignCards(text) {
 }
 
 function hideVCSignCards() {
-    const container = document.getElementById('vc-sign-cards-container');
+    const container = predictionSignCardsContainer;
     if (container) {
         container.classList.remove('active');
         container.innerHTML = '';
@@ -1120,7 +1154,7 @@ function onResults(results) {
         // No hands detected - set timeout for "Waiting for hands"
         if (!noHandsTimeoutId) {
             noHandsTimeoutId = setTimeout(() => {
-                predictionDiv.innerText = "Waiting for hands...";
+                setPredictionText("Waiting for sign...");
                 noHandsTimeoutId = null;
             }, NO_HANDS_TIMEOUT_MS);
         }
@@ -1228,12 +1262,12 @@ function runPrediction(flatLandmarks) {
             // No confident prediction
             if (accumulatedWord.length > 0) {
                 // During spelling, clear display to prevent competing outputs
-                predictionDiv.innerText = '';
+                setPredictionText('');
             } else if (lastDisplayedPrediction) {
                 // Only show last prediction if not spelling
                 const last = lastDisplayedPrediction;
                 const displayText = last.isDynamic ? `${last.label} 🔄` : last.label;
-                predictionDiv.innerText = `Sign: ${displayText} (${Math.round(last.conf * 100)}%)`;
+                setPredictionText(`Sign: ${displayText} (${Math.round(last.conf * 100)}%)`);
             }
             // Don't show "Listening..." - just keep previous prediction or blank
             return;
@@ -1255,13 +1289,13 @@ function runPrediction(flatLandmarks) {
         // Check if it's a single letter
         if (outputLabel.length === 1 && /^[a-zA-Z]$/.test(outputLabel)) {
             processPredictedLetter(outputLabel);
-            predictionDiv.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
+            setPredictionText(`Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`);
         } else if (accumulatedWord.length > 0) {
             // During spelling, suppress prediction display (only show spelling overlay)
-            predictionDiv.innerText = '';
+            setPredictionText('');
         } else {
             const displayText = best.isDynamic ? `${outputLabel} 🔄` : outputLabel;
-            predictionDiv.innerText = `Sign: ${displayText} (${Math.round(best.conf * 100)}%)`;
+            setPredictionText(`Sign: ${displayText} (${Math.round(best.conf * 100)}%)`);
 
             const now = Date.now();
             const wordLastSpoken = localWordLastSpoken[outputLabel] || 0;
@@ -1357,7 +1391,7 @@ function finishSpelling(forceSpeak = false) {
     socket.emit("sign-message", { room: roomName, text: wordToSpeak });
 
     // Show in local toast
-    predictionDiv.innerText = `Spelled: ${wordToSpeak}`;
+    setPredictionText(`Spelled: ${wordToSpeak}`);
 
     // Reset
     accumulatedWord = "";
@@ -1572,10 +1606,13 @@ socket.on("sign-message", data => {
 socket.on("speech-message", data => {
     // Show remote STT text in the caption bar (auto-shows if STT is on)
     if (data.text && data.text.trim()) {
-        if (!vcCaptionBar.classList.contains('active')) {
+        if (vcCaptionBar && !vcCaptionBar.classList.contains('active')) {
             vcCaptionBar.classList.add('active');
         }
-        appendVCCaption(data.text.trim());
+        const remoteText = data.text.trim();
+        appendVCCaption(remoteText);
+        appendCaptionLog('They', remoteText);
+        displayVCSignCards(remoteText);
     }
 });
 
@@ -1681,11 +1718,11 @@ camBtn.addEventListener('click', () => {
     // UI feedback for video state
     if (!isCamOn) {
         ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
-        predictionDiv.innerText = "Camera Off";
+        setPredictionText("Camera Off");
         localContainer.classList.add('video-muted');
     } else {
         localContainer.classList.remove('video-muted');
-        predictionDiv.innerText = "Waiting for sign...";
+        setPredictionText("Waiting for sign...");
     }
 
     camBtn.innerHTML = `<span class="material-icons">${isCamOn ? 'videocam' : 'videocam_off'}</span>`;
