@@ -168,6 +168,20 @@ let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actuall
 let vcCaptionLineA = '';
 let vcCaptionLineB = '';
 const VC_CAPTION_MAX_CHARS = 50; // slightly wider than translation page (wider video layout)
+let vcCardQueue = [];
+
+function getVCVisibleCardCapacity() {
+    if (!predictionSignCardsContainer) return 8;
+
+    const panelWidth = predictionSignCardsContainer.clientWidth;
+    if (!panelWidth) return 8;
+
+    const style = window.getComputedStyle(predictionSignCardsContainer);
+    const gap = parseInt(style.columnGap || style.gap || '10', 10) || 10;
+    const cardWidth = 76;
+    const columns = Math.max(1, Math.floor((panelWidth + gap) / (cardWidth + gap)));
+    return columns * 2;
+}
 
 // --- Spelling Mode State ---
 let accumulatedWord = "";
@@ -307,7 +321,6 @@ function initSTT() {
         } else {
             // Show interim words in real-time
             updateVCCaptionDisplay(interimTranscript.trim());
-            hideVCSignCards();
         }
     };
 
@@ -436,12 +449,23 @@ function resetVCCaptions() {
 function displayVCSignCards(text) {
     const container = predictionSignCardsContainer;
     if (!container) return;
-    
-    container.innerHTML = ''; // Clear previous cards
-    const words = text.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 4);
+
+    const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return;
+
+    for (const word of words) {
+        vcCardQueue.push(word);
+    }
+
+    const maxVisible = getVCVisibleCardCapacity();
+    if (vcCardQueue.length > maxVisible) {
+        vcCardQueue = vcCardQueue.slice(vcCardQueue.length - maxVisible);
+    }
+
+    container.innerHTML = '';
     const langFolder = currentMode.toLowerCase(); // 'isl' or 'asl'
-    
-    words.forEach(word => {
+
+    vcCardQueue.forEach(word => {
         const card = document.createElement('div');
         card.className = 'prediction-sign-card';
         
@@ -461,13 +485,14 @@ function displayVCSignCards(text) {
         card.appendChild(label);
         container.appendChild(card);
     });
-    
+
     container.classList.add('active');
 }
 
 function hideVCSignCards() {
     const container = predictionSignCardsContainer;
     if (container) {
+        vcCardQueue = [];
         container.classList.remove('active');
         container.innerHTML = '';
     }
@@ -901,12 +926,15 @@ async function startCamera() {
     try {
         try {
             console.log("Requesting camera and microphone...");
+            const videoConstraints = {
+                facingMode: 'user',
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                resizeMode: 'none',
+                frameRate: { ideal: 24, max: 30 }
+            };
             const constraints = {
-                video: {
-                    width: { ideal: 640 },
-                    height: { ideal: 480 },
-                    frameRate: { ideal: 24, max: 30 }
-                },
+                video: videoConstraints,
                 audio: {
                     echoCancellation: { ideal: true },
                     noiseSuppression: { ideal: true },
@@ -918,7 +946,15 @@ async function startCamera() {
         } catch (err) {
             if (err.name === 'NotFoundError') {
                 console.warn("Microphone not found, attempting video only.");
-                localStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        resizeMode: 'none',
+                        frameRate: { ideal: 24, max: 30 }
+                    }
+                });
                 alert("Microphone not found. Starting with camera only.");
 
                 // Disable mic state and UI physically, but allow user to TRY enabling it again.
