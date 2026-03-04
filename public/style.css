@@ -621,6 +621,54 @@ video {
     border-color: var(--primary-color);
 }
 
+.prediction-sign-cards-container {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 150px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    z-index: 52;
+}
+
+.prediction-sign-cards-container.active {
+    display: flex;
+}
+
+.prediction-sign-card {
+    width: 88px;
+    height: 96px;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+}
+
+.prediction-sign-card img {
+    width: 100%;
+    height: 64px;
+    object-fit: contain;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.prediction-sign-card-label {
+    margin-top: 4px;
+    color: #ffffff;
+    font-size: 0.68rem;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
 #remote-caption-overlay {
     bottom: 280px;
     background: rgba(0, 77, 64, 0.9);
@@ -1408,6 +1456,19 @@ video {
 
     #prediction-overlay {
         bottom: 185px !important;
+    }
+
+    .prediction-sign-cards-container {
+        bottom: 122px;
+    }
+
+    .prediction-sign-card {
+        width: 74px;
+        height: 84px;
+    }
+
+    .prediction-sign-card img {
+        height: 54px;
     }
 
     #remote-caption-overlay {

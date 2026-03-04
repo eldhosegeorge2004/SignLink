@@ -97,6 +97,7 @@ const ctx = localCanvas.getContext('2d');
 const meetingCodeDisplay = document.getElementById('meetingCodeDisplay');
 const predictionOverlay = document.getElementById('prediction-overlay');
 const predictionDiv = document.getElementById('prediction');
+const predictionSignCardsContainer = document.getElementById('prediction-sign-cards-container');
 const remotePredictionDiv = document.getElementById('remotePrediction');
 const remoteCaptionOverlay = document.getElementById('remote-caption-overlay');
 
@@ -433,16 +434,16 @@ function resetVCCaptions() {
 }
 
 function displayVCSignCards(text) {
-    const container = document.getElementById('vc-sign-cards-container');
+    const container = predictionSignCardsContainer;
     if (!container) return;
     
     container.innerHTML = ''; // Clear previous cards
-    const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+    const words = text.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 4);
     const langFolder = currentMode.toLowerCase(); // 'isl' or 'asl'
     
     words.forEach(word => {
         const card = document.createElement('div');
-        card.className = 'vc-sign-card';
+        card.className = 'prediction-sign-card';
         
         const img = document.createElement('img');
         img.src = `/signs-images/${langFolder}/${word}.jpg`;
@@ -453,7 +454,7 @@ function displayVCSignCards(text) {
         };
         
         const label = document.createElement('div');
-        label.className = 'vc-sign-card-label';
+        label.className = 'prediction-sign-card-label';
         label.textContent = word.length > 12 ? word.substring(0, 10) + '...' : word;
         
         card.appendChild(img);
@@ -465,7 +466,7 @@ function displayVCSignCards(text) {
 }
 
 function hideVCSignCards() {
-    const container = document.getElementById('vc-sign-cards-container');
+    const container = predictionSignCardsContainer;
     if (container) {
         container.classList.remove('active');
         container.innerHTML = '';
@@ -1611,6 +1612,7 @@ socket.on("speech-message", data => {
         const remoteText = data.text.trim();
         appendVCCaption(remoteText);
         appendCaptionLog('They', remoteText);
+        displayVCSignCards(remoteText);
     }
 });
 
