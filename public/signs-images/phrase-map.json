@@ -1,9 +1,6 @@
 {
   "common": {
-    "thank you": "thank-you",
-    "good morning": "good-morning",
-    "good night": "good-night",
-    "how are you": "how-are-you"
+    "thank you": "thank-you"
   },
   "asl": {},
   "isl": {}

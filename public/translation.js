@@ -1101,8 +1101,8 @@ function displaySignCards(text) {
             }
 
             const card = document.createElement('div');
-            card.style.width = '94px';
-            card.style.height = '104px';
+            card.style.width = '78px';
+            card.style.height = '88px';
             card.style.border = '1px solid rgba(148,163,184,0.35)';
             card.style.borderRadius = '10px';
             card.style.background = 'rgba(15,23,42,0.92)';
@@ -1110,14 +1110,14 @@ function displaySignCards(text) {
             card.style.flexDirection = 'column';
             card.style.alignItems = 'center';
             card.style.justifyContent = 'center';
-            card.style.padding = '6px';
+            card.style.padding = '5px';
 
             if (token.type === 'card') {
                 const img = document.createElement('img');
                 img.src = token.src;
                 img.alt = token.label;
                 img.style.width = '100%';
-                img.style.height = '66px';
+                img.style.height = '50px';
                 img.style.objectFit = 'contain';
                 img.style.borderRadius = '6px';
                 img.style.background = 'rgba(0,0,0,0.45)';
@@ -1127,9 +1127,9 @@ function displaySignCards(text) {
 
             const label = document.createElement('div');
             label.textContent = token.label;
-            label.style.fontSize = '0.72rem';
+            label.style.fontSize = '0.64rem';
             label.style.color = '#fff';
-            label.style.marginTop = '4px';
+            label.style.marginTop = '3px';
             label.style.textAlign = 'center';
             label.style.width = '100%';
             label.style.whiteSpace = 'nowrap';
