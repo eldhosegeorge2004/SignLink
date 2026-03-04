@@ -6,12 +6,12 @@ const signView = document.getElementById('sign-view');
 const speechView = document.getElementById('speech-view');
 const camBtn = document.getElementById('cam-btn');
 const ttsBtn = document.getElementById('tts-btn');
-const modeBtn = document.getElementById('mode-btn');
-const modeText = document.getElementById('mode-text');
 const sttResult = document.getElementById('stt-result');
 const listeningText = document.getElementById('listening-text');
+let signVoiceToggle = document.getElementById('sign-voice-toggle');
+const voiceSubtitles = document.getElementById('voice-subtitles');
 
-let isSignToTextMode = true;
+let isSignMode = true; // true = sign detection, false = voice recognition
 let isCamOn = true;
 let isTTSOn = true;
 let lastSpokenLabel = "";
@@ -20,11 +20,6 @@ let localStream = null;
 let camera = null;
 let cameraLoopId = null;
 let recognition = null; // For Speech to Text
-
-// --- YouTube-style Caption State ---
-let captionLineA = '';  // top (older, dimmer) line
-let captionLineB = '';  // bottom (current, brighter) line
-const CAPTION_MAX_CHARS = 42; // ~42 chars before wrapping to next line
 
 // --- Spelling Mode State ---
 let accumulatedWord = "";
@@ -63,7 +58,6 @@ let noHandsTimeoutId = null;
 const predictionBuffer = [];
 let localStorageModelKey = 'my-isl-model'; // Default
 let localStorageLabelKey = 'isl_labels';
-let currentSignLanguage = 'ISL'; // Track current language for sign cards
 
 // Language Selector Logic
 const langSelect = document.getElementById('lang-select');
@@ -79,7 +73,6 @@ if (langSelect) {
 
     langSelect.addEventListener('change', (e) => {
         const lang = e.target.value;
-        currentSignLanguage = lang; // Update language for sign cards
         if (lang === 'ISL') {
             localStorageModelKey = 'my-isl-model';
             localStorageLabelKey = 'isl_labels';
@@ -217,7 +210,7 @@ async function loadSavedModelAndLabels() {
         if (serverModel) loadedModels.push("Server");
         if (localModel) loadedModels.push("Local Static");
         if (localModelDynamic) loadedModels.push("Local Dynamic");
-
+        
         // Don't show models loaded message - keep display clear
         if (loadedModels.length === 0) {
             sttResult.innerText = "No models found. Please train in AI Training mode.";
@@ -394,7 +387,7 @@ function runPrediction(landmarks) {
 
         // Collect candidates from all available models
         let candidates = [];
-
+        
         // Debug: Log which models are active (only once per 100 frames)
         if (!window.debugFrameCount) window.debugFrameCount = 0;
         window.debugFrameCount++;
@@ -435,12 +428,12 @@ function runPrediction(landmarks) {
 
             // Add current frame to buffer
             dynamicFrameBuffer.push(flatNormal);
-
+            
             // Keep buffer at fixed size
             if (dynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
                 dynamicFrameBuffer.shift();
             }
-
+            
             const dynamicReady = (Date.now() - dynamicBufferStartTime) >= DYNAMIC_ANALYZE_MS;
 
             // Wait at least 1 second to analyze motion before predicting dynamic signs
@@ -451,20 +444,20 @@ function runPrediction(landmarks) {
                 while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
                     paddedFrames.push(lastFrame);
                 }
-
+                
                 const tensorDynamic = tf.tensor3d([paddedFrames]);
                 const predDynamic = localModelDynamic.predict(tensorDynamic);
                 const conf = predDynamic.max().dataSync()[0];
                 const idx = predDynamic.argMax(-1).dataSync()[0];
-
+                
                 // Give dynamic predictions higher priority by boosting confidence
-                candidates.push({
-                    label: localLabelsDynamic[idx],
+                candidates.push({ 
+                    label: localLabelsDynamic[idx], 
                     conf: Math.min(conf * 1.2, 1.0), // Boost confidence by 20%
                     source: 'Dynamic',
                     isDynamic: true
                 });
-
+                
                 tensorDynamic.dispose();
                 predDynamic.dispose();
             }
@@ -484,7 +477,7 @@ function runPrediction(landmarks) {
             // Skip if user is actively spelling (accumulatedWord has content)
             if (best.isDynamic && best.conf > 0.60 && accumulatedWord.length === 0) { // Lower threshold for dynamic
                 sttResult.innerText = `Sign: ${outputLabel} 🔄 (${Math.round(best.conf * 100)}%)`;
-
+                
                 // Debounce speech: only speak if different sign or 4+ seconds have passed
                 const now = Date.now();
                 const timeSinceLast = now - lastSpokenTime;
@@ -495,7 +488,7 @@ function runPrediction(landmarks) {
                     lastSpokenLabel = outputLabel;
                     lastSpokenTime = now;
                 }
-
+                
                 // Clear buffer after confident detection
                 setTimeout(() => {
                     dynamicFrameBuffer = [];
@@ -550,7 +543,7 @@ function onResults(results) {
             clearTimeout(noHandsTimeoutId);
             noHandsTimeoutId = null;
         }
-
+        
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
@@ -569,7 +562,7 @@ function onResults(results) {
                 noHandsTimeoutId = null;
             }, NO_HANDS_TIMEOUT_MS);
         }
-
+        
         // Reset state on hand loss
         if (lastAddedLetter !== null) {
             lastAddedLetter = null;
@@ -605,7 +598,7 @@ function handleSpelling(letter) {
 
     lastAddedLetter = letter;
     accumulatedWord += letter;
-
+    
     // When starting to spell, reset dynamic frame buffer to avoid interference
     dynamicFrameBuffer = [];
     dynamicBufferStartTime = 0;
@@ -687,15 +680,46 @@ async function startCamera() {
         // Stop any previous stream/loop before starting a new one
         stopCamera();
 
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: {
+        const videoConstraintCandidates = [
+            {
                 facingMode: 'user',
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
                 aspectRatio: { ideal: 16 / 9 },
                 resizeMode: 'none'
+            },
+            {
+                facingMode: 'user',
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                aspectRatio: { ideal: 16 / 9 }
+            },
+            {
+                facingMode: 'user',
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            },
+            {
+                facingMode: 'user'
+            },
+            true
+        ];
+
+        let lastCameraError = null;
+        for (const videoConstraints of videoConstraintCandidates) {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+                break;
+            } catch (constraintErr) {
+                lastCameraError = constraintErr;
+                console.warn('Camera constraints failed, trying fallback...', constraintErr?.name || constraintErr);
             }
-        });
+        }
+
+        if (!localStream) {
+            throw lastCameraError || new Error('Unable to initialize camera stream.');
+        }
+
         videoElement.srcObject = localStream;
 
         await videoElement.play();
@@ -715,7 +739,7 @@ async function startCamera() {
                 return;
             }
 
-            if (isSignToTextMode) {
+            if (isSignMode) {
                 await hands.send({ image: videoElement });
             }
 
@@ -810,52 +834,11 @@ function speakText(text, forceSpeak = false) {
     }
 }
 
-// --- YouTube-Style Caption Helpers ---
-function updateCaptionDisplay(interimText = '') {
-    const lineAEl = document.getElementById('caption-line-a');
-    const lineBEl = document.getElementById('caption-line-b');
-    if (!lineAEl || !lineBEl) return;
-
-    lineAEl.textContent = captionLineA;
-    if (interimText) {
-        lineBEl.innerHTML =
-            (captionLineB ? document.createTextNode(captionLineB + ' ').textContent : '') +
-            `<span class="caption-interim">${interimText}</span>`;
-    } else {
-        lineBEl.textContent = captionLineB;
-    }
-}
-
-function appendCaptionWords(finalText) {
-    const words = finalText.trim().split(/\s+/).filter(Boolean);
-    for (const word of words) {
-        const proposed = captionLineB ? captionLineB + ' ' + word : word;
-        if (proposed.length > CAPTION_MAX_CHARS && captionLineB) {
-            // Current line is full — roll it up to line A, start fresh
-            captionLineA = captionLineB;
-            captionLineB = word;
-        } else {
-            captionLineB = proposed;
-        }
-    }
-    updateCaptionDisplay();
-}
-
-function resetCaptions() {
-    captionLineA = '';
-    captionLineB = '';
-    updateCaptionDisplay();
-    hideSignCards();
-    const lt = document.getElementById('listening-text');
-    if (lt) lt.textContent = 'Listening...';
-}
-
 // --- Speech Recognition Logic (Speech to Sign) ---
 function initSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        const lt = document.getElementById('listening-text');
-        if (lt) lt.textContent = 'Speech recognition not supported in this browser.';
+        listeningText.innerText = "Speech Recognition not supported.";
         return;
     }
 
@@ -865,105 +848,352 @@ function initSpeechRecognition() {
     recognition.lang = 'en-US';
 
     recognition.onresult = (event) => {
-        let interimTranscript = '';
         let finalTranscript = '';
+        let interimTranscript = '';
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const t = event.results[i][0].transcript;
+            const transcript = event.results[i][0].transcript;
+
             if (event.results[i].isFinal) {
-                finalTranscript += t;
+                finalTranscript += transcript + ' ';
             } else {
-                interimTranscript += t;
+                interimTranscript += transcript;
             }
         }
 
-        if (finalTranscript) {
-            appendCaptionWords(finalTranscript.trim());
-            displaySignCards(finalTranscript.trim());
+        // Display based on mode
+        if (isSignMode) {
+            // Sign mode: display in card area (legacy behavior)
+            if (finalTranscript) {
+                listeningText.innerText = `Heard: "${finalTranscript}"`;
+                displaySignCards(finalTranscript);
+            }
         } else {
-            // Show interim words in real-time without committing
-            updateCaptionDisplay(interimTranscript.trim());
-            hideSignCards();
+            // Voice mode: display as subtitles
+            const displayText = finalTranscript || interimTranscript;
+            if (displayText) {
+                voiceSubtitles.innerText = displayText;
+            }
         }
     };
 
     recognition.onerror = (event) => {
-        console.error('Speech error', event.error);
-    };
-
-    recognition.onend = () => {
-        // Auto-restart if still in speech mode
-        if (!isSignToTextMode && recognition) {
-            try { recognition.start(); } catch (e) { /* already running */ }
-        }
+        console.error("Speech error", event.error);
     };
 }
 
-function displaySignCards(text) {
-    const container = document.getElementById('sign-cards-container');
-    if (!container) return;
-    
-    container.innerHTML = ''; // Clear previous cards
-    const words = text.toLowerCase().split(/\s+/).filter(Boolean);
-    const langFolder = currentSignLanguage.toLowerCase(); // 'isl' or 'asl'
-    
-    words.forEach(word => {
-        const card = document.createElement('div');
-        card.className = 'sign-card';
-        
-        const img = document.createElement('img');
-        img.src = `/signs-images/${langFolder}/${word}.jpg`;
-        img.alt = word;
-        img.onerror = () => {
-            // If image not found, hide it but keep the card
-            img.style.display = 'none';
+const translationImageExistsCache = new Map();
+let translationPhraseMap = { common: {}, asl: {}, isl: {} };
+const TRANSLATION_DIGIT_WORD_MAP = {
+    '0': 'zero',
+    '1': 'one',
+    '2': 'two',
+    '3': 'three',
+    '4': 'four',
+    '5': 'five',
+    '6': 'six',
+    '7': 'seven',
+    '8': 'eight',
+    '9': 'nine'
+};
+
+async function loadTranslationPhraseMap() {
+    try {
+        const response = await fetch('/signs-images/phrase-map.json', { cache: 'no-cache' });
+        if (!response.ok) return;
+        const json = await response.json();
+        translationPhraseMap = {
+            common: json.common || {},
+            asl: json.asl || {},
+            isl: json.isl || {}
         };
-        
-        const label = document.createElement('div');
-        label.className = 'sign-card-label';
-        label.textContent = word.length > 12 ? word.substring(0, 10) + '...' : word;
-        
-        card.appendChild(img);
-        card.appendChild(label);
-        container.appendChild(card);
+    } catch (err) {
+        console.warn('Failed to load phrase-map.json for translation view.', err);
+    }
+}
+loadTranslationPhraseMap();
+
+function getTranslationLangFolder() {
+    return localStorageModelKey === 'my-asl-model' ? 'asl' : 'isl';
+}
+
+function checkTranslationImageExists(url) {
+    if (translationImageExistsCache.has(url)) {
+        return Promise.resolve(translationImageExistsCache.get(url));
+    }
+
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            translationImageExistsCache.set(url, true);
+            resolve(true);
+        };
+        img.onerror = () => {
+            translationImageExistsCache.set(url, false);
+            resolve(false);
+        };
+        img.src = url;
     });
 }
 
-function hideSignCards() {
-    const container = document.getElementById('sign-cards-container');
-    if (container) {
-        container.innerHTML = '';
+async function resolveTranslationWordTokens(word, langFolder) {
+    const normalizedWord = word.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (!normalizedWord) return [];
+
+    const wordCandidates = [
+        `/signs-images/${langFolder}/words/${normalizedWord}.jpg`,
+        `/signs-images/${langFolder}/${normalizedWord}.jpg`
+    ];
+
+    for (const src of wordCandidates) {
+        if (await checkTranslationImageExists(src)) {
+            return [{ type: 'card', src, label: normalizedWord }];
+        }
     }
+
+    const charTokens = [];
+    const charsOnly = normalizedWord.replace(/-/g, '');
+    for (const char of charsOnly.toUpperCase()) {
+        if (!/[A-Z0-9]/.test(char)) continue;
+
+        const candidates = [];
+        if (/[A-Z]/.test(char)) {
+            candidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
+        } else {
+            candidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
+            const digitWord = TRANSLATION_DIGIT_WORD_MAP[char];
+            if (digitWord) candidates.push(`/signs-images/${langFolder}/characters/${digitWord}.jpg`);
+        }
+
+        let chosen = null;
+        for (const src of candidates) {
+            if (await checkTranslationImageExists(src)) {
+                chosen = src;
+                break;
+            }
+        }
+
+        if (chosen) charTokens.push({ type: 'card', src: chosen, label: char });
+    }
+
+    return charTokens.length ? charTokens : [{ type: 'label', label: normalizedWord }];
 }
 
-// --- Mode Switching ---
-modeBtn.addEventListener('click', () => {
-    isSignToTextMode = !isSignToTextMode;
+function resolveTranslationMappedPhrase(phrase, langFolder) {
+    const perLangMap = translationPhraseMap[langFolder] || {};
+    if (perLangMap[phrase]) return perLangMap[phrase];
+    return translationPhraseMap.common[phrase] || null;
+}
 
-    if (isSignToTextMode) {
-        signView.style.display = 'flex';
-        speechView.classList.remove('active');
-        modeText.innerText = "Switch to Live Speech";
+function buildTranslationCardUnits(words, langFolder) {
+    const units = [];
+    let index = 0;
 
-        if (isCamOn) startCamera();
-        if (recognition) recognition.stop();
+    while (index < words.length) {
+        let matched = null;
+        const maxLen = Math.min(4, words.length - index);
 
-    } else {
-        signView.style.display = 'none';
-        speechView.classList.add('active');
-        modeText.innerText = "Switch to Sign Translator";
-        resetCaptions();
-
-        if (!recognition) initSpeechRecognition();
-        setTimeout(() => {
-            if (recognition) {
-                try {
-                    recognition.start();
-                } catch (e) { /* already running */ }
+        for (let phraseLen = maxLen; phraseLen >= 2; phraseLen--) {
+            const phraseWords = words.slice(index, index + phraseLen);
+            const phraseText = phraseWords.join(' ');
+            const mappedKey = resolveTranslationMappedPhrase(phraseText, langFolder);
+            if (mappedKey) {
+                matched = {
+                    type: 'phrase',
+                    words: phraseWords,
+                    phraseText,
+                    mappedKey
+                };
+                break;
             }
-        }, 300);
-    }
-});
+        }
 
-// Initialize
-startCamera();
+        if (matched) {
+            units.push(matched);
+            index += matched.words.length;
+        } else {
+            units.push({ type: 'word', text: words[index] });
+            index += 1;
+        }
+    }
+
+    return units;
+}
+
+async function resolveTranslationUnitTokens(unit, langFolder) {
+    if (unit.type === 'word') {
+        return resolveTranslationWordTokens(unit.text, langFolder);
+    }
+
+    const mappedTokens = await resolveTranslationWordTokens(unit.mappedKey, langFolder);
+    const mappedCardToken = mappedTokens.find(t => t.type === 'card');
+    if (mappedCardToken) {
+        return [{ type: 'card', src: mappedCardToken.src, label: unit.phraseText }];
+    }
+
+    const fallbackTokens = [];
+    for (let i = 0; i < unit.words.length; i++) {
+        const wordTokens = await resolveTranslationWordTokens(unit.words[i], langFolder);
+        fallbackTokens.push(...wordTokens);
+        if (i < unit.words.length - 1) fallbackTokens.push({ type: 'space' });
+    }
+    return fallbackTokens;
+}
+
+function displaySignCards(text) {
+    const cardArea = document.querySelector('.sign-cards-area');
+    if (!cardArea) return;
+
+    const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+        cardArea.innerHTML = '<p>No speech detected yet.</p>';
+        return;
+    }
+
+    const langFolder = getTranslationLangFolder();
+
+    (async () => {
+        const tokens = [];
+        const units = buildTranslationCardUnits(words, langFolder);
+        for (let i = 0; i < units.length; i++) {
+            const resolved = await resolveTranslationUnitTokens(units[i], langFolder);
+            tokens.push(...resolved);
+            if (i < units.length - 1) tokens.push({ type: 'space' });
+        }
+
+        cardArea.innerHTML = '';
+        cardArea.style.display = 'flex';
+        cardArea.style.flexWrap = 'wrap';
+        cardArea.style.alignItems = 'flex-start';
+        cardArea.style.justifyContent = 'flex-start';
+        cardArea.style.alignContent = 'flex-start';
+        cardArea.style.gap = '10px';
+        cardArea.style.padding = '16px';
+
+        tokens.forEach((token) => {
+            if (token.type === 'space') {
+                const spacer = document.createElement('div');
+                spacer.style.width = '20px';
+                spacer.style.height = '1px';
+                cardArea.appendChild(spacer);
+                return;
+            }
+
+            const card = document.createElement('div');
+            card.style.width = '94px';
+            card.style.height = '104px';
+            card.style.border = '1px solid rgba(148,163,184,0.35)';
+            card.style.borderRadius = '10px';
+            card.style.background = 'rgba(15,23,42,0.92)';
+            card.style.display = 'flex';
+            card.style.flexDirection = 'column';
+            card.style.alignItems = 'center';
+            card.style.justifyContent = 'center';
+            card.style.padding = '6px';
+
+            if (token.type === 'card') {
+                const img = document.createElement('img');
+                img.src = token.src;
+                img.alt = token.label;
+                img.style.width = '100%';
+                img.style.height = '66px';
+                img.style.objectFit = 'contain';
+                img.style.borderRadius = '6px';
+                img.style.background = 'rgba(0,0,0,0.45)';
+                img.onerror = () => img.style.display = 'none';
+                card.appendChild(img);
+            }
+
+            const label = document.createElement('div');
+            label.textContent = token.label;
+            label.style.fontSize = '0.72rem';
+            label.style.color = '#fff';
+            label.style.marginTop = '4px';
+            label.style.textAlign = 'center';
+            label.style.width = '100%';
+            label.style.whiteSpace = 'nowrap';
+            label.style.overflow = 'hidden';
+            label.style.textOverflow = 'ellipsis';
+            card.appendChild(label);
+
+            cardArea.appendChild(card);
+        });
+    })();
+}
+
+// --- Sign/Voice Mode Toggle ---
+function ensureSignVoiceToggle() {
+    if (signVoiceToggle) return signVoiceToggle;
+
+    signVoiceToggle = document.getElementById('sign-voice-toggle');
+    if (signVoiceToggle) return signVoiceToggle;
+
+    const controlBar = document.querySelector('.control-bar');
+    if (!controlBar) return null;
+
+    const btn = document.createElement('button');
+    btn.id = 'sign-voice-toggle';
+    btn.className = 'control-btn';
+    btn.title = 'Switch between Sign and Voice Mode';
+    btn.innerHTML = '<span class="material-icons">pan_tool</span>';
+    controlBar.appendChild(btn);
+    signVoiceToggle = btn;
+    return signVoiceToggle;
+}
+
+function bindSignVoiceToggle() {
+    const toggleBtn = ensureSignVoiceToggle();
+    if (!toggleBtn) {
+        console.warn('#sign-voice-toggle not found. Sign/Voice toggle is disabled.');
+        return;
+    }
+
+    if (toggleBtn.dataset.bound === 'true') return;
+    toggleBtn.dataset.bound = 'true';
+
+    toggleBtn.addEventListener('click', () => {
+        isSignMode = !isSignMode;
+
+        if (isSignMode) {
+            // Switch to Sign Mode
+            toggleBtn.innerHTML = '<span class="material-icons">pan_tool</span>';
+            toggleBtn.title = 'Switch to Voice Mode';
+            sttResult.style.display = 'inline-block';
+            voiceSubtitles.style.display = 'none';
+            voiceSubtitles.innerText = '';
+
+            if (isCamOn) startCamera();
+            if (recognition) recognition.stop();
+        } else {
+            // Switch to Voice Mode
+            toggleBtn.innerHTML = '<span class="material-icons">mic</span>';
+            toggleBtn.title = 'Switch to Sign Mode';
+            sttResult.style.display = 'none';
+            voiceSubtitles.style.display = 'block';
+            stopCamera();
+
+            if (!recognition) initSpeechRecognition();
+            setTimeout(() => {
+                if (recognition) {
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        console.error("Error starting recognition:", e);
+                    }
+                }
+            }, 500);
+        }
+    });
+}
+
+bindSignVoiceToggle();
+document.addEventListener('DOMContentLoaded', bindSignVoiceToggle, { once: true });
+
+// --- Legacy Mode Button Removed (replaced by Sign/Voice Toggle) ---
+// The old modeBtn had two different modes (sign-to-text vs speech-to-sign)
+// Now we have Sign Mode (sign detection) vs Voice Mode (speech recognition + captions)
+
+// Initialize (start in sign mode by default)
+if (isSignMode && isCamOn) {
+    startCamera();
+}

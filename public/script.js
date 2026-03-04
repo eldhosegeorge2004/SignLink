@@ -169,6 +169,37 @@ let vcCaptionLineA = '';
 let vcCaptionLineB = '';
 const VC_CAPTION_MAX_CHARS = 50; // slightly wider than translation page (wider video layout)
 let vcCardQueue = [];
+let vcCardRenderSeq = 0;
+const vcImageExistsCache = new Map();
+let signPhraseMap = { common: {}, asl: {}, isl: {} };
+const DIGIT_WORD_MAP = {
+    '0': 'zero',
+    '1': 'one',
+    '2': 'two',
+    '3': 'three',
+    '4': 'four',
+    '5': 'five',
+    '6': 'six',
+    '7': 'seven',
+    '8': 'eight',
+    '9': 'nine'
+};
+
+async function loadSignPhraseMap() {
+    try {
+        const response = await fetch('/signs-images/phrase-map.json', { cache: 'no-cache' });
+        if (!response.ok) return;
+        const json = await response.json();
+        signPhraseMap = {
+            common: json.common || {},
+            asl: json.asl || {},
+            isl: json.isl || {}
+        };
+    } catch (err) {
+        console.warn('Failed to load phrase-map.json, continuing without phrase mapping.', err);
+    }
+}
+loadSignPhraseMap();
 
 function getVCVisibleCardCapacity() {
     if (!predictionSignCardsContainer) return 8;
@@ -181,6 +212,134 @@ function getVCVisibleCardCapacity() {
     const cardWidth = 76;
     const columns = Math.max(1, Math.floor((panelWidth + gap) / (cardWidth + gap)));
     return columns * 2;
+}
+
+function checkImageExists(url) {
+    if (vcImageExistsCache.has(url)) {
+        return Promise.resolve(vcImageExistsCache.get(url));
+    }
+
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            vcImageExistsCache.set(url, true);
+            resolve(true);
+        };
+        img.onerror = () => {
+            vcImageExistsCache.set(url, false);
+            resolve(false);
+        };
+        img.src = url;
+    });
+}
+
+async function resolveWordTokens(word, langFolder) {
+    const normalizedWord = word.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (!normalizedWord) return [];
+
+    const wordCandidates = [
+        `/signs-images/${langFolder}/words/${normalizedWord}.jpg`,
+        `/signs-images/${langFolder}/${normalizedWord}.jpg`
+    ];
+
+    for (const src of wordCandidates) {
+        if (await checkImageExists(src)) {
+            return [{ type: 'card', src, label: normalizedWord }];
+        }
+    }
+
+    const charTokens = [];
+    const charsOnly = normalizedWord.replace(/-/g, '');
+    for (const char of charsOnly.toUpperCase()) {
+        if (!/[A-Z0-9]/.test(char)) continue;
+
+        const charCandidates = [];
+        if (/[A-Z]/.test(char)) {
+            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
+        } else {
+            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
+            const digitWord = DIGIT_WORD_MAP[char];
+            if (digitWord) {
+                charCandidates.push(`/signs-images/${langFolder}/characters/${digitWord}.jpg`);
+            }
+        }
+
+        let chosen = null;
+        for (const src of charCandidates) {
+            if (await checkImageExists(src)) {
+                chosen = src;
+                break;
+            }
+        }
+
+        if (chosen) {
+            charTokens.push({ type: 'card', src: chosen, label: char });
+        }
+    }
+
+    if (charTokens.length > 0) return charTokens;
+    return [{ type: 'label', label: normalizedWord }];
+}
+
+function resolveMappedPhrase(phrase, langFolder) {
+    const perLangMap = signPhraseMap[langFolder] || {};
+    if (perLangMap[phrase]) return perLangMap[phrase];
+    return signPhraseMap.common[phrase] || null;
+}
+
+function buildCardUnits(words, langFolder) {
+    const units = [];
+    let index = 0;
+
+    while (index < words.length) {
+        let matched = null;
+        const maxLen = Math.min(4, words.length - index);
+
+        for (let phraseLen = maxLen; phraseLen >= 2; phraseLen--) {
+            const phraseWords = words.slice(index, index + phraseLen);
+            const phraseText = phraseWords.join(' ');
+            const mappedKey = resolveMappedPhrase(phraseText, langFolder);
+            if (mappedKey) {
+                matched = {
+                    type: 'phrase',
+                    words: phraseWords,
+                    phraseText,
+                    mappedKey
+                };
+                break;
+            }
+        }
+
+        if (matched) {
+            units.push(matched);
+            index += matched.words.length;
+        } else {
+            units.push({ type: 'word', text: words[index] });
+            index += 1;
+        }
+    }
+
+    return units;
+}
+
+async function resolveCardUnitTokens(unit, langFolder) {
+    if (unit.type === 'word') {
+        return resolveWordTokens(unit.text, langFolder);
+    }
+
+    const mappedTokens = await resolveWordTokens(unit.mappedKey, langFolder);
+    const mappedCardToken = mappedTokens.find(t => t.type === 'card');
+    if (mappedCardToken) {
+        return [{ type: 'card', src: mappedCardToken.src, label: unit.phraseText }];
+    }
+
+    const fallbackTokens = [];
+    for (let i = 0; i < unit.words.length; i++) {
+        const wordTokens = await resolveWordTokens(unit.words[i], langFolder);
+        fallbackTokens.push(...wordTokens);
+        if (i < unit.words.length - 1) fallbackTokens.push({ type: 'space' });
+    }
+    return fallbackTokens;
 }
 
 // --- Spelling Mode State ---
@@ -453,45 +612,75 @@ function displayVCSignCards(text) {
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
 
-    for (const word of words) {
-        vcCardQueue.push(word);
-    }
-
-    const maxVisible = getVCVisibleCardCapacity();
-    if (vcCardQueue.length > maxVisible) {
-        vcCardQueue = vcCardQueue.slice(vcCardQueue.length - maxVisible);
-    }
-
-    container.innerHTML = '';
+    const renderSeq = ++vcCardRenderSeq;
     const langFolder = currentMode.toLowerCase(); // 'isl' or 'asl'
 
-    vcCardQueue.forEach(word => {
-        const card = document.createElement('div');
-        card.className = 'prediction-sign-card';
-        
-        const img = document.createElement('img');
-        img.src = `/signs-images/${langFolder}/${word}.jpg`;
-        img.alt = word;
-        img.onerror = () => {
-            // If image not found, hide it but keep the card
-            img.style.display = 'none';
-        };
-        
-        const label = document.createElement('div');
-        label.className = 'prediction-sign-card-label';
-        label.textContent = word.length > 12 ? word.substring(0, 10) + '...' : word;
-        
-        card.appendChild(img);
-        card.appendChild(label);
-        container.appendChild(card);
-    });
+    (async () => {
+        const newTokens = [];
+        const units = buildCardUnits(words, langFolder);
 
-    container.classList.add('active');
+        for (let i = 0; i < units.length; i++) {
+            const tokens = await resolveCardUnitTokens(units[i], langFolder);
+            newTokens.push(...tokens);
+            if (i < units.length - 1) {
+                newTokens.push({ type: 'space' });
+            }
+        }
+
+        if (renderSeq !== vcCardRenderSeq) return;
+
+        vcCardQueue.push(...newTokens);
+
+        const maxVisible = getVCVisibleCardCapacity();
+        if (vcCardQueue.length > maxVisible) {
+            vcCardQueue = vcCardQueue.slice(vcCardQueue.length - maxVisible);
+            while (vcCardQueue.length && vcCardQueue[0].type === 'space') {
+                vcCardQueue.shift();
+            }
+        }
+
+        container.innerHTML = '';
+
+        vcCardQueue.forEach(token => {
+            if (token.type === 'space') {
+                const spacer = document.createElement('div');
+                spacer.className = 'prediction-word-separator';
+                container.appendChild(spacer);
+                return;
+            }
+
+            const card = document.createElement('div');
+            card.className = 'prediction-sign-card';
+
+            if (token.type === 'card') {
+                const img = document.createElement('img');
+                img.src = token.src;
+                img.alt = token.label;
+                img.onerror = () => {
+                    img.style.display = 'none';
+                    card.classList.add('no-image');
+                };
+                card.appendChild(img);
+            } else {
+                card.classList.add('no-image');
+            }
+
+            const label = document.createElement('div');
+            label.className = 'prediction-sign-card-label';
+            label.textContent = token.label.length > 12 ? token.label.substring(0, 10) + '...' : token.label;
+
+            card.appendChild(label);
+            container.appendChild(card);
+        });
+
+        container.classList.add('active');
+    })();
 }
 
 function hideVCSignCards() {
     const container = predictionSignCardsContainer;
     if (container) {
+        vcCardRenderSeq++;
         vcCardQueue = [];
         container.classList.remove('active');
         container.innerHTML = '';
