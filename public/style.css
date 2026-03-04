@@ -480,25 +480,33 @@ footer {
 #meeting-room {
     background: transparent;
     position: relative;
+    padding: 18px;
+    gap: 12px;
 }
 
 .main-stage {
     flex: 1;
     position: relative;
-    display: flex;
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(280px, 1fr) auto minmax(190px, 230px);
     width: 100%;
-    height: 100%;
-    overflow: hidden;
-    padding: 20px;
+    height: calc(100% - 84px);
+    overflow: visible;
+    padding: 0;
     gap: 20px;
+    align-items: stretch;
 }
 
 .remote-view-container {
     width: 100%;
-    height: 100%;
+    height: auto;
+    min-width: 0;
     position: relative;
+    grid-column: 2;
+    grid-row: 1;
     background: rgba(0, 0, 0, 0.3);
-    border-radius: 32px;
+    border-radius: 16px;
     overflow: hidden;
     display: flex;
     align-items: center;
@@ -518,19 +526,26 @@ video {
     background: #000;
 }
 
+.remote-view-container>video,
+.local-view-container>video {
+    object-fit: contain !important;
+    object-position: center center;
+}
+
 .local-view-container {
-    position: absolute;
-    bottom: 120px;
-    right: 40px;
-    width: 320px;
-    height: 240px;
+    position: relative;
+    grid-column: 3;
+    grid-row: 1;
+    width: 100%;
+    height: auto;
+    min-width: 0;
     background: #1e293b;
-    border-radius: 24px;
+    border-radius: 16px;
     overflow: hidden;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-    border: 2px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     z-index: 5;
-    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: all 0.25s ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -555,9 +570,9 @@ video {
 }
 
 .local-view-container:hover {
-    transform: scale(1.05);
+    transform: scale(1.01);
     border-color: var(--primary-color);
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42);
 }
 
 .local-view-container video {
@@ -616,30 +631,49 @@ video {
 }
 
 #prediction-overlay {
-    bottom: 220px;
+    position: relative;
+    grid-column: 2 / 4;
+    grid-row: 2;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    margin: 0 auto;
+    width: fit-content;
     background: rgba(15, 23, 42, 0.85);
     border-color: var(--primary-color);
 }
 
 .prediction-sign-cards-container {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    bottom: 150px;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+    position: relative;
+    grid-column: 2 / 4;
+    grid-row: 3;
+    left: auto;
+    transform: none;
+    bottom: auto;
+    width: 100%;
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.72);
+    padding: 14px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(68px, 76px));
+    align-content: start;
+    justify-content: start;
+    justify-items: start;
+    gap: 10px;
+    overflow-y: auto;
     z-index: 52;
 }
 
 .prediction-sign-cards-container.active {
-    display: flex;
+    display: grid;
 }
 
 .prediction-sign-card {
-    width: 88px;
-    height: 96px;
+    width: 100%;
+    max-width: 76px;
+    min-width: 60px;
+    height: 84px;
     background: rgba(15, 23, 42, 0.92);
     border: 1px solid rgba(148, 163, 184, 0.35);
     border-radius: 10px;
@@ -652,7 +686,7 @@ video {
 
 .prediction-sign-card img {
     width: 100%;
-    height: 64px;
+    height: 50px;
     object-fit: contain;
     border-radius: 6px;
     background: rgba(0, 0, 0, 0.5);
@@ -661,7 +695,7 @@ video {
 .prediction-sign-card-label {
     margin-top: 4px;
     color: #ffffff;
-    font-size: 0.68rem;
+    font-size: 0.62rem;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
@@ -670,7 +704,7 @@ video {
 }
 
 #remote-caption-overlay {
-    bottom: 280px;
+    bottom: 16px;
     background: rgba(0, 77, 64, 0.9);
     color: #80cbc4;
     border: 1px solid #4db6ac;
@@ -683,11 +717,11 @@ video {
 }
 
 .caption-log-panel {
-    position: absolute;
-    left: 20px;
-    top: 20px;
-    bottom: 120px;
-    width: 320px;
+    position: relative;
+    grid-column: 1;
+    grid-row: 1 / 4;
+    width: auto;
+    min-height: 0;
     background: rgba(15, 23, 42, 0.92);
     border: 1px solid rgba(59, 130, 246, 0.35);
     border-radius: 16px;
@@ -744,10 +778,11 @@ video {
 
 /* Control Bar */
 .control-bar {
-    position: absolute;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
+    position: relative;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    margin-left: 0;
     background: rgba(20, 20, 30, 0.75);
     backdrop-filter: blur(20px);
     display: flex;
@@ -756,7 +791,7 @@ video {
     padding: 12px 24px;
     border-radius: 20px;
     z-index: 100;
-    width: auto;
+    width: 100%;
     gap: 40px;
     border: 1px solid var(--glass-border);
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
@@ -1377,19 +1412,42 @@ video {
         bottom: 10%;
     }
 
+    .main-stage {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(220px, auto) minmax(220px, auto) auto minmax(160px, 210px);
+        height: auto;
+    }
+
+    .caption-log-panel {
+        grid-column: 1;
+        grid-row: 1;
+        max-height: 220px;
+    }
+
+    .remote-view-container {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
     .local-view-container {
-        width: 110px;
-        height: 150px;
-        top: 20px;
-        bottom: auto;
-        right: 15px;
-        border-radius: 12px;
+        grid-column: 1;
+        grid-row: 3;
+        min-height: 220px;
+    }
+
+    #prediction-overlay {
+        grid-column: 1;
+        grid-row: 4;
+    }
+
+    .prediction-sign-cards-container {
+        grid-column: 1;
+        grid-row: 5;
     }
 
     .control-bar {
-        width: fit-content;
-        max-width: 95%;
-        bottom: 15px;
+        width: 100%;
+        margin-left: 0;
         gap: 10px;
         padding: 8px 16px;
         justify-content: center;
@@ -1398,11 +1456,6 @@ video {
     .secondary-controls {
         right: 15px;
         bottom: 140px;
-    }
-
-    .main-stage {
-        padding: 10px;
-        gap: 10px;
     }
 
     #meetingCodeContainer {
@@ -1455,11 +1508,11 @@ video {
     }
 
     #prediction-overlay {
-        bottom: 185px !important;
+        bottom: auto !important;
     }
 
     .prediction-sign-cards-container {
-        bottom: 122px;
+        bottom: auto;
     }
 
     .prediction-sign-card {
@@ -1472,14 +1525,11 @@ video {
     }
 
     #remote-caption-overlay {
-        bottom: 240px !important;
+        bottom: 14px !important;
     }
 
     .caption-log-panel {
-        width: min(45vw, 260px);
-        top: 14px;
-        bottom: 110px;
-        left: 12px;
+        width: 100%;
     }
 
     .caption-log-header {
