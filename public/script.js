@@ -119,6 +119,7 @@ const sttToggleBtn = document.getElementById('sttToggleBtn');
 const vcCaptionBar = document.getElementById('vc-caption-bar');
 const vcLineA = document.getElementById('vc-caption-line-a');
 const vcLineB = document.getElementById('vc-caption-line-b');
+const captionLogList = document.getElementById('caption-log-list');
 const localVolumeMeter = document.getElementById('localVolume');
 const remoteVolumeMeter = document.getElementById('remoteVolume');
 
@@ -182,10 +183,6 @@ let micSource;
 let volumeInterval;
 
 function setPredictionText(text) {
-    if (predictionOverlay) {
-        predictionOverlay.classList.remove('hidden');
-        predictionOverlay.style.display = 'flex';
-    }
     if (predictionDiv) {
         predictionDiv.innerText = text;
     }
@@ -302,6 +299,7 @@ function initSTT() {
         if (finalTranscript) {
             const trimmed = finalTranscript.trim();
             appendVCCaption(trimmed);
+            appendCaptionLog('You', trimmed);
             displayVCSignCards(trimmed);
             // Send finalized text to remote peer
             socket.emit('speech-message', { room: roomName, text: trimmed });
@@ -363,7 +361,7 @@ sttToggleBtn.addEventListener('click', () => {
         if (!isRecognitionActive) {
             try {
                 recognition.start();
-                vcCaptionBar.classList.add('active');
+                if (vcCaptionBar) vcCaptionBar.classList.add('active');
                 resetVCCaptions();
             } catch (e) {
                 console.error("Failed to start Recognition:", e);
@@ -373,7 +371,7 @@ sttToggleBtn.addEventListener('click', () => {
         }
     } else {
         if (recognition && isRecognitionActive) recognition.stop();
-        vcCaptionBar.classList.remove('active');
+        if (vcCaptionBar) vcCaptionBar.classList.remove('active');
         hideVCSignCards();
     }
 });
@@ -389,6 +387,28 @@ function updateVCCaptionDisplay(interimText = '') {
     } else {
         vcLineB.textContent = vcCaptionLineB;
     }
+}
+
+function appendCaptionLog(speaker, text) {
+    if (!captionLogList || !text) return;
+
+    const emptyState = captionLogList.querySelector('.caption-log-empty');
+    if (emptyState) emptyState.remove();
+
+    const entry = document.createElement('div');
+    entry.className = 'caption-log-entry';
+
+    const speakerLabel = document.createElement('span');
+    speakerLabel.className = 'caption-log-speaker';
+    speakerLabel.textContent = `${speaker}:`;
+
+    const dialogue = document.createElement('span');
+    dialogue.textContent = ` ${text}`;
+
+    entry.appendChild(speakerLabel);
+    entry.appendChild(dialogue);
+    captionLogList.appendChild(entry);
+    captionLogList.scrollTop = captionLogList.scrollHeight;
 }
 
 function appendVCCaption(finalText) {
@@ -1585,10 +1605,12 @@ socket.on("sign-message", data => {
 socket.on("speech-message", data => {
     // Show remote STT text in the caption bar (auto-shows if STT is on)
     if (data.text && data.text.trim()) {
-        if (!vcCaptionBar.classList.contains('active')) {
+        if (vcCaptionBar && !vcCaptionBar.classList.contains('active')) {
             vcCaptionBar.classList.add('active');
         }
-        appendVCCaption(data.text.trim());
+        const remoteText = data.text.trim();
+        appendVCCaption(remoteText);
+        appendCaptionLog('They', remoteText);
     }
 });
 

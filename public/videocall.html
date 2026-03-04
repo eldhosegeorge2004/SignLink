@@ -7,106 +7,6 @@
     <title>Sign Language Link</title> <!-- Branding Name -->
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="modal.css">
-    <style>
-        /* YouTube-style caption bar — sits above control bar */
-        #vc-caption-bar {
-            display: none;
-            position: fixed;
-            bottom: 120px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 90%;
-            max-width: 900px;
-            background: rgba(0, 0, 0, 0.72);
-            border-radius: 12px 12px 0 0;
-            padding: 12px 28px 16px;
-            box-sizing: border-box;
-            z-index: 105;
-            pointer-events: none;
-        }
-
-        #vc-caption-bar.active {
-            display: block;
-        }
-
-        #vc-caption-bar .vc-caption-line {
-            font-size: 1.25rem;
-            font-family: 'Inter', sans-serif;
-            font-weight: 500;
-            color: white;
-            min-height: 1.7rem;
-            line-height: 1.4;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
-        #vc-caption-bar .vc-caption-line.dim {
-            color: rgba(255, 255, 255, 0.42);
-        }
-
-        #vc-caption-bar .vc-interim {
-            color: rgba(255, 255, 255, 0.55);
-        }
-
-        /* Sign Cards Container (Video Call) */
-        #vc-sign-cards-container {
-            display: none;
-            position: fixed;
-            bottom: 230px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 90%;
-            max-width: 1000px;
-            flex-direction: row;
-            flex-wrap: wrap;
-            gap: 12px;
-            justify-content: center;
-            z-index: 104;
-            pointer-events: none;
-        }
-
-        #vc-sign-cards-container.active {
-            display: flex;
-        }
-
-        .vc-sign-card {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            padding: 12px;
-            background: rgba(0, 0, 0, 0.6);
-            border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(8px);
-            transition: all 0.3s ease;
-            min-width: 100px;
-        }
-
-        .vc-sign-card:hover {
-            background: rgba(0, 0, 0, 0.75);
-            border-color: rgba(255, 255, 255, 0.4);
-            transform: scale(1.05);
-        }
-
-        .vc-sign-card img {
-            width: 90px;
-            height: 90px;
-            object-fit: cover;
-            border-radius: 8px;
-            background: rgba(0, 0, 0, 0.3);
-        }
-
-        .vc-sign-card-label {
-            color: white;
-            font-size: 0.85rem;
-            font-weight: 500;
-            font-family: 'Inter', sans-serif;
-            text-align: center;
-            word-wrap: break-word;
-            max-width: 100px;
-        }
-    </style>
 
     <!-- Icons -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -234,6 +134,14 @@
                 </div>
             </div>
 
+            <!-- Left Caption Log -->
+            <div id="caption-log-panel" class="caption-log-panel">
+                <div class="caption-log-header">Live Captions</div>
+                <div id="caption-log-list" class="caption-log-list">
+                    <div class="caption-log-empty">Captions will appear here when speech is detected.</div>
+                </div>
+            </div>
+
             <!-- Local User (PiP) -->
             <div class="local-view-container" id="localContainer">
                 <video id="localVideo" autoplay playsinline muted></video>
@@ -251,19 +159,24 @@
                 <span id="remotePrediction"></span>
             </div>
 
-            <div id="prediction-overlay" class="caption-overlay" style="display: none;">
-                <span class="material-icons">front_hand</span>
+            <!-- Voice Subtitles (Dark Overlay at Bottom) -->
+            <div id="voice-subtitles" class="voice-subtitles"></div>
+
+            <div id="prediction-overlay" class="caption-overlay">
                 <span id="prediction">Waiting for sign...</span>
             </div>
 
-            <!-- YouTube-style Speech Caption Bar -->
-            <div id="vc-caption-bar">
-                <div id="vc-caption-line-a" class="vc-caption-line"></div>
-                <div id="vc-caption-line-b" class="vc-caption-line"></div>
-            </div>
+            <!-- Speech to Text Overlay -->
+            <div id="stt-overlay" class="caption-overlay stt-overlay hidden">
+                <span class="material-icons" style="color: #3b82f6;">graphic_eq</span>
+                <span id="stttext">Listening...</span>
 
-            <!-- Sign Cards Container (Video Call) -->
-            <div id="vc-sign-cards-container"></div>
+                <!-- Sign cards area (mirrors translation page) -->
+                <div class="sign-cards-area" style="margin-top:10px;">
+                    <!-- JS will inject cards here when speech is detected -->
+                    <p>Sign Language Cards Display</p>
+                </div>
+            </div>
 
             <!-- Particle Container for Emoji Animations -->
             <div id="particles-container"></div>
