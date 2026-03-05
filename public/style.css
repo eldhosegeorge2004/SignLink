@@ -655,18 +655,34 @@ video {
     border-radius: 14px;
     background: rgba(15, 23, 42, 0.72);
     padding: 14px;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(68px, 76px));
+    display: flex;
+    flex-wrap: nowrap;
+    flex-direction: column;
+    align-items: flex-start;
     align-content: start;
-    justify-content: start;
-    justify-items: start;
+    justify-content: flex-start;
     gap: 10px;
     overflow-y: auto;
     z-index: 52;
 }
 
 .prediction-sign-cards-container.active {
-    display: grid;
+    display: flex;
+}
+
+.prediction-sign-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+}
+
+.prediction-word-group {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 10px;
 }
 
 .prediction-sign-card {
@@ -709,11 +725,6 @@ video {
     overflow: hidden;
     text-overflow: ellipsis;
     width: 100%;
-}
-
-.prediction-word-separator {
-    width: 18px;
-    min-height: 1px;
 }
 
 #remote-caption-overlay {
