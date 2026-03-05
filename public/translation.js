@@ -117,29 +117,8 @@ async function loadSavedModelAndLabels() {
         const serverLoad = async () => {
             console.log("Attempting to load Server Model...");
             try {
-                let labelsPath = 'labels.json';
-                let modelPath = 'model/model.json';
-
-                if (localStorageModelKey === 'my-asl-model') {
-                    labelsPath = 'dataset.json'; // The dataset JSON we generated contains the classes (we saved a huge dump but labels.json was also saved in /training) - actually let's use the explicit labels.json we built for it. Wait, the converter output ASL into model/asl, but we didn't move labels.json.
-                    // Assuming labels.json is pulled from the root, let's configure ASL to load the specific labels.
-                    labelsPath = 'labels.json?v=8'; // Update this depending on where the user put the training labels. Let's assume we moved it.
-                    modelPath = 'model/asl/model.json?v=8';
-
-                    // Fetch the ASL specific classes we know we just trained
-                    serverLabels = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
-
-                    try {
-                        serverModel = await tf.loadLayersModel(modelPath);
-                        console.log(`Server Model loaded (${serverLabels.length} ASL labels)`);
-                    } catch (tfErr) {
-                        console.error("TFJS ASL Model Load Error:", tfErr);
-                        serverModel = null;
-                    }
-                    return Promise.resolve();
-                }
-
-                const response = await fetch(labelsPath);
+                const modelPath = localStorageModelKey === 'my-asl-model' ? 'model/asl/model.json' : 'model/model.json';
+                const response = await fetch('labels.json');
                 if (response.ok) {
                     serverLabels = await response.json();
                     try {
