@@ -1087,20 +1087,19 @@ async function loadModelsAndLabels() {
     lastDisplayedPrediction = null;
     lastDisplayedFrame = null;
 
-    // load server model for ISL only
-    if (currentMode === 'ISL') {
-        try {
-            const response = await fetch('labels.json');
-            if (response.ok) {
-                serverLabels = await response.json();
-                serverModel = await tf.loadLayersModel('model/model.json');
-                console.log(`Server model loaded (${serverLabels.length} labels)`);
-            } else {
-                console.warn('labels.json not found for server model.');
-            }
-        } catch (e) {
-            console.warn('Server model load failed:', e);
+    // load server model for selected language
+    const serverModelPath = currentMode === 'ASL' ? 'model/asl/model.json' : 'model/model.json';
+    try {
+        const response = await fetch('labels.json');
+        if (response.ok) {
+            serverLabels = await response.json();
+            serverModel = await tf.loadLayersModel(serverModelPath);
+            console.log(`Server model loaded (${serverLabels.length} labels)`);
+        } else {
+            console.warn('labels.json not found for server model.');
         }
+    } catch (e) {
+        console.warn('Server model load failed:', e);
     }
 
     // load local static model if available
