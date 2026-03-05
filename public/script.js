@@ -239,7 +239,9 @@ async function resolveWordTokens(word, langFolder) {
 
     const wordCandidates = [
         `/signs-images/${langFolder}/words/${normalizedWord}.jpg`,
-        `/signs-images/${langFolder}/${normalizedWord}.jpg`
+        `/signs-images/${langFolder}/words/${normalizedWord}.png`,
+        `/signs-images/${langFolder}/${normalizedWord}.jpg`,
+        `/signs-images/${langFolder}/${normalizedWord}.png`
     ];
 
     for (const src of wordCandidates) {
@@ -256,11 +258,14 @@ async function resolveWordTokens(word, langFolder) {
         const charCandidates = [];
         if (/[A-Z]/.test(char)) {
             charCandidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
+            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
         } else {
             charCandidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
+            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
             const digitWord = DIGIT_WORD_MAP[char];
             if (digitWord) {
                 charCandidates.push(`/signs-images/${langFolder}/characters/${digitWord}.jpg`);
+                charCandidates.push(`/signs-images/${langFolder}/characters/${digitWord}.png`);
             }
         }
 
@@ -629,48 +634,100 @@ function displayVCSignCards(text) {
 
         if (renderSeq !== vcCardRenderSeq) return;
 
+        if (vcCardQueue.length && vcCardQueue[vcCardQueue.length - 1]?.type !== 'linebreak') {
+            vcCardQueue.push({ type: 'linebreak' });
+        }
         vcCardQueue.push(...newTokens);
 
         const maxVisible = getVCVisibleCardCapacity();
         if (vcCardQueue.length > maxVisible) {
-            vcCardQueue = vcCardQueue.slice(vcCardQueue.length - maxVisible);
-            while (vcCardQueue.length && vcCardQueue[0].type === 'space') {
+            const sliceStart = vcCardQueue.length - maxVisible;
+            let trimmedQueue = vcCardQueue.slice(sliceStart);
+
+            if (sliceStart > 0 && !['space', 'linebreak'].includes(vcCardQueue[sliceStart - 1]?.type)) {
+                while (trimmedQueue.length && !['space', 'linebreak'].includes(trimmedQueue[0].type)) {
+                    trimmedQueue.shift();
+                }
+            }
+
+            vcCardQueue = trimmedQueue;
+            while (vcCardQueue.length && ['space', 'linebreak'].includes(vcCardQueue[0].type)) {
                 vcCardQueue.shift();
             }
         }
 
         container.innerHTML = '';
 
-        vcCardQueue.forEach(token => {
+        const lineGroups = [];
+        let currentLine = [];
+        let currentGroup = [];
+        for (const token of vcCardQueue) {
+            if (token.type === 'linebreak') {
+                if (currentGroup.length) {
+                    currentLine.push(currentGroup);
+                    currentGroup = [];
+                }
+                if (currentLine.length) {
+                    lineGroups.push(currentLine);
+                    currentLine = [];
+                }
+                continue;
+            }
+
             if (token.type === 'space') {
-                const spacer = document.createElement('div');
-                spacer.className = 'prediction-word-separator';
-                container.appendChild(spacer);
-                return;
+                if (currentGroup.length) {
+                    currentLine.push(currentGroup);
+                    currentGroup = [];
+                }
+                continue;
             }
 
-            const card = document.createElement('div');
-            card.className = 'prediction-sign-card';
+            currentGroup.push(token);
+        }
+        if (currentGroup.length) {
+            currentLine.push(currentGroup);
+        }
+        if (currentLine.length) {
+            lineGroups.push(currentLine);
+        }
 
-            if (token.type === 'card') {
-                const img = document.createElement('img');
-                img.src = token.src;
-                img.alt = token.label;
-                img.onerror = () => {
-                    img.style.display = 'none';
-                    card.classList.add('no-image');
-                };
-                card.appendChild(img);
-            } else {
-                card.classList.add('no-image');
-            }
+        lineGroups.forEach(line => {
+            const lineEl = document.createElement('div');
+            lineEl.className = 'prediction-sign-line';
 
-            const label = document.createElement('div');
-            label.className = 'prediction-sign-card-label';
-            label.textContent = token.label.length > 12 ? token.label.substring(0, 10) + '...' : token.label;
+            line.forEach(group => {
+                const wordGroupEl = document.createElement('div');
+                wordGroupEl.className = 'prediction-word-group';
 
-            card.appendChild(label);
-            container.appendChild(card);
+                group.forEach(token => {
+                    const card = document.createElement('div');
+                    card.className = 'prediction-sign-card';
+
+                    if (token.type === 'card') {
+                        const img = document.createElement('img');
+                        img.src = token.src;
+                        img.alt = token.label;
+                        img.onerror = () => {
+                            img.style.display = 'none';
+                            card.classList.add('no-image');
+                        };
+                        card.appendChild(img);
+                    } else {
+                        card.classList.add('no-image');
+                    }
+
+                    const label = document.createElement('div');
+                    label.className = 'prediction-sign-card-label';
+                    label.textContent = token.label.length > 12 ? token.label.substring(0, 10) + '...' : token.label;
+
+                    card.appendChild(label);
+                    wordGroupEl.appendChild(card);
+                });
+
+                lineEl.appendChild(wordGroupEl);
+            });
+
+            container.appendChild(lineEl);
         });
 
         container.classList.add('active');

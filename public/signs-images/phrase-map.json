@@ -1,7 +1,10 @@
 {
   "common": {
-    "thank you": "thank-you"
+    "thank you": "thank-you",
+    "you are": "you-are"
   },
   "asl": {},
-  "isl": {}
+  "isl": {
+    "i am": "i-am"
+  }
 }

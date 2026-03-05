@@ -917,6 +917,8 @@ const TRANSLATION_DIGIT_WORD_MAP = {
     '8': 'eight',
     '9': 'nine'
 };
+const translationCardQueue = [];
+const TRANSLATION_MAX_CARD_TOKENS = 260;
 
 async function loadTranslationPhraseMap() {
     try {
@@ -963,7 +965,9 @@ async function resolveTranslationWordTokens(word, langFolder) {
 
     const wordCandidates = [
         `/signs-images/${langFolder}/words/${normalizedWord}.jpg`,
-        `/signs-images/${langFolder}/${normalizedWord}.jpg`
+        `/signs-images/${langFolder}/words/${normalizedWord}.png`,
+        `/signs-images/${langFolder}/${normalizedWord}.jpg`,
+        `/signs-images/${langFolder}/${normalizedWord}.png`
     ];
 
     for (const src of wordCandidates) {
@@ -980,10 +984,15 @@ async function resolveTranslationWordTokens(word, langFolder) {
         const candidates = [];
         if (/[A-Z]/.test(char)) {
             candidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
+            candidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
         } else {
             candidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
+            candidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
             const digitWord = TRANSLATION_DIGIT_WORD_MAP[char];
-            if (digitWord) candidates.push(`/signs-images/${langFolder}/characters/${digitWord}.jpg`);
+            if (digitWord) {
+                candidates.push(`/signs-images/${langFolder}/characters/${digitWord}.jpg`);
+                candidates.push(`/signs-images/${langFolder}/characters/${digitWord}.png`);
+            }
         }
 
         let chosen = null;
@@ -1082,62 +1091,132 @@ function displaySignCards(text) {
             if (i < units.length - 1) tokens.push({ type: 'space' });
         }
 
+        if (translationCardQueue.length && translationCardQueue[translationCardQueue.length - 1]?.type !== 'linebreak') {
+            translationCardQueue.push({ type: 'linebreak' });
+        }
+        translationCardQueue.push(...tokens);
+
+        if (translationCardQueue.length > TRANSLATION_MAX_CARD_TOKENS) {
+            const sliceStart = translationCardQueue.length - TRANSLATION_MAX_CARD_TOKENS;
+            let trimmedQueue = translationCardQueue.slice(sliceStart);
+
+            if (sliceStart > 0 && !['space', 'linebreak'].includes(translationCardQueue[sliceStart - 1]?.type)) {
+                while (trimmedQueue.length && !['space', 'linebreak'].includes(trimmedQueue[0].type)) {
+                    trimmedQueue.shift();
+                }
+            }
+
+            translationCardQueue.length = 0;
+            translationCardQueue.push(...trimmedQueue);
+
+            while (translationCardQueue.length && ['space', 'linebreak'].includes(translationCardQueue[0].type)) {
+                translationCardQueue.shift();
+            }
+        }
+
         cardArea.innerHTML = '';
         cardArea.style.display = 'flex';
-        cardArea.style.flexWrap = 'wrap';
+        cardArea.style.flexWrap = 'nowrap';
+        cardArea.style.flexDirection = 'column';
         cardArea.style.alignItems = 'flex-start';
         cardArea.style.justifyContent = 'flex-start';
         cardArea.style.alignContent = 'flex-start';
         cardArea.style.gap = '10px';
         cardArea.style.padding = '16px';
 
-        tokens.forEach((token) => {
+        const lineGroups = [];
+        let currentLine = [];
+        let currentGroup = [];
+        for (const token of translationCardQueue) {
+            if (token.type === 'linebreak') {
+                if (currentGroup.length) {
+                    currentLine.push(currentGroup);
+                    currentGroup = [];
+                }
+                if (currentLine.length) {
+                    lineGroups.push(currentLine);
+                    currentLine = [];
+                }
+                continue;
+            }
+
             if (token.type === 'space') {
-                const spacer = document.createElement('div');
-                spacer.style.width = '20px';
-                spacer.style.height = '1px';
-                cardArea.appendChild(spacer);
-                return;
+                if (currentGroup.length) {
+                    currentLine.push(currentGroup);
+                    currentGroup = [];
+                }
+                continue;
             }
 
-            const card = document.createElement('div');
-            card.style.width = '78px';
-            card.style.height = '88px';
-            card.style.border = '1px solid rgba(148,163,184,0.35)';
-            card.style.borderRadius = '10px';
-            card.style.background = 'rgba(15,23,42,0.92)';
-            card.style.display = 'flex';
-            card.style.flexDirection = 'column';
-            card.style.alignItems = 'center';
-            card.style.justifyContent = 'center';
-            card.style.padding = '5px';
+            currentGroup.push(token);
+        }
+        if (currentGroup.length) {
+            currentLine.push(currentGroup);
+        }
+        if (currentLine.length) {
+            lineGroups.push(currentLine);
+        }
 
-            if (token.type === 'card') {
-                const img = document.createElement('img');
-                img.src = token.src;
-                img.alt = token.label;
-                img.style.width = '100%';
-                img.style.height = '50px';
-                img.style.objectFit = 'contain';
-                img.style.borderRadius = '6px';
-                img.style.background = 'rgba(0,0,0,0.45)';
-                img.onerror = () => img.style.display = 'none';
-                card.appendChild(img);
-            }
+        lineGroups.forEach((line) => {
+            const lineEl = document.createElement('div');
+            lineEl.style.display = 'flex';
+            lineEl.style.flexWrap = 'wrap';
+            lineEl.style.alignItems = 'flex-start';
+            lineEl.style.gap = '10px';
+            lineEl.style.width = '100%';
 
-            const label = document.createElement('div');
-            label.textContent = token.label;
-            label.style.fontSize = '0.64rem';
-            label.style.color = '#fff';
-            label.style.marginTop = '3px';
-            label.style.textAlign = 'center';
-            label.style.width = '100%';
-            label.style.whiteSpace = 'nowrap';
-            label.style.overflow = 'hidden';
-            label.style.textOverflow = 'ellipsis';
-            card.appendChild(label);
+            line.forEach((group) => {
+                const wordGroupEl = document.createElement('div');
+                wordGroupEl.style.display = 'flex';
+                wordGroupEl.style.flexWrap = 'nowrap';
+                wordGroupEl.style.alignItems = 'flex-start';
+                wordGroupEl.style.gap = '10px';
 
-            cardArea.appendChild(card);
+                group.forEach((token) => {
+                const card = document.createElement('div');
+                card.style.width = '78px';
+                card.style.height = '88px';
+                card.style.border = '1px solid rgba(148,163,184,0.35)';
+                card.style.borderRadius = '10px';
+                card.style.background = 'rgba(15,23,42,0.92)';
+                card.style.display = 'flex';
+                card.style.flexDirection = 'column';
+                card.style.alignItems = 'center';
+                card.style.justifyContent = 'center';
+                card.style.padding = '5px';
+
+                if (token.type === 'card') {
+                    const img = document.createElement('img');
+                    img.src = token.src;
+                    img.alt = token.label;
+                    img.style.width = '100%';
+                    img.style.height = '50px';
+                    img.style.objectFit = 'contain';
+                    img.style.borderRadius = '6px';
+                    img.style.background = 'rgba(0,0,0,0.45)';
+                    img.onerror = () => img.style.display = 'none';
+                    card.appendChild(img);
+                }
+
+                const label = document.createElement('div');
+                label.textContent = token.label;
+                label.style.fontSize = '0.64rem';
+                label.style.color = '#fff';
+                label.style.marginTop = '3px';
+                label.style.textAlign = 'center';
+                label.style.width = '100%';
+                label.style.whiteSpace = 'nowrap';
+                label.style.overflow = 'hidden';
+                label.style.textOverflow = 'ellipsis';
+                card.appendChild(label);
+
+                wordGroupEl.appendChild(card);
+            });
+
+                lineEl.appendChild(wordGroupEl);
+            });
+
+            cardArea.appendChild(lineEl);
         });
     })();
 }
