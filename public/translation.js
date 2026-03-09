@@ -117,19 +117,22 @@ async function loadSavedModelAndLabels() {
         const serverLoad = async () => {
             console.log("Attempting to load Server Model...");
             try {
-                const modelPath = localStorageModelKey === 'my-asl-model' ? 'model/asl/model.json' : 'model/model.json';
-                const response = await fetch('labels.json');
+                const isASL = localStorageModelKey === 'my-asl-model';
+                const modelPath = isASL ? 'model/asl/model.json' : 'model/model.json';
+                const labelsPath = isASL ? 'model/asl/labels.json' : 'labels.json';
+
+                const response = await fetch(labelsPath);
                 if (response.ok) {
                     serverLabels = await response.json();
                     try {
                         serverModel = await tf.loadLayersModel(modelPath);
-                        console.log(`Server Model loaded (${serverLabels.length} labels)`);
+                        console.log(`Server Model loaded (${serverLabels.length} labels from ${labelsPath})`);
                     } catch (tfErr) {
-                        console.error("TFJS ISL Model Load Error:", tfErr);
+                        console.error("TFJS Server Model Load Error:", tfErr);
                         serverModel = null;
                     }
                 } else {
-                    console.warn("labels.json not found.");
+                    console.warn(`${labelsPath} not found.`);
                 }
             } catch (e) {
                 console.error("Server model load failed fatally:", e);
