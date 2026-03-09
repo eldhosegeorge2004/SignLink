@@ -940,7 +940,6 @@ function initSpeechRecognition() {
     };
 }
 
-<<<<<<< Updated upstream
 const translationImageExistsCache = new Map();
 let translationPhraseMap = { common: {}, asl: {}, isl: {} };
 const TRANSLATION_DIGIT_WORD_MAP = {
@@ -994,35 +993,6 @@ function checkTranslationImageExists(url) {
             resolve(false);
         };
         img.src = url;
-=======
-function displaySignCards(text) {
-    const container = document.getElementById('sign-cards-container');
-    if (!container) return;
-
-    container.innerHTML = ''; // Clear previous cards
-    const words = text.toLowerCase().split(/\s+/).filter(Boolean);
-    const langFolder = currentSignLanguage.toLowerCase(); // 'isl' or 'asl'
-
-    words.forEach(word => {
-        const card = document.createElement('div');
-        card.className = 'sign-card';
-
-        const img = document.createElement('img');
-        img.src = `/signs-images/${langFolder}/${word}.jpg`;
-        img.alt = word;
-        img.onerror = () => {
-            // If image not found, hide it but keep the card
-            img.style.display = 'none';
-        };
-
-        const label = document.createElement('div');
-        label.className = 'sign-card-label';
-        label.textContent = word.length > 12 ? word.substring(0, 10) + '...' : word;
-
-        card.appendChild(img);
-        card.appendChild(label);
-        container.appendChild(card);
->>>>>>> Stashed changes
     });
 }
 
