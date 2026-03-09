@@ -506,7 +506,13 @@ function runPrediction(landmarks) {
             console.log(`Live Prediction -> Best Candidate: ${best.label} (${best.conf * 100}%) from ${best.source}`); // Diagnostic for 8/9
             let outputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
 
-            // (Hardcoded overrides for V->2 and H->5 removed so that normal alphabet spelling works properly)
+            // Hardcoded overrides for ASL explicitly requested by user to fix misclassifications
+            if (localStorageModelKey === 'my-asl-model' && best.source && best.source.startsWith('Server')) {
+                if (outputLabel === 'D') outputLabel = '1';
+                if (outputLabel === 'R') outputLabel = '3';
+                if (outputLabel === 'W') outputLabel = '6';
+                if (outputLabel === 'F') outputLabel = '9';
+            }
 
             updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatNormal);
 
