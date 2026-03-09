@@ -469,8 +469,8 @@ function runPrediction(landmarks) {
             // completely ignore the server model to protect custom signs.
             const isCustomNumber = bestLocal.label === '8' || bestLocal.label === '9';
             // EXPLICIT ALPHABET PROTECTION: The Local model (which only knows numbers) 
-            // will try to hijack 'A' and 'B' if the Server model dips below 80%.
-            const isServerAlpha = bestServer.label === 'A' || bestServer.label === 'B';
+            // will try to hijack alphabets if the Server model dips below 80%.
+            const isServerAlpha = /^[A-Z]$/.test(bestServer.label);
 
             if (isCustomNumber && bestLocal.conf >= 0.75) {
                 best = bestLocal;
@@ -503,12 +503,7 @@ function runPrediction(landmarks) {
             console.log(`Live Prediction -> Best Candidate: ${best.label} (${best.conf * 100}%) from ${best.source}`); // Diagnostic for 8/9
             let outputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
 
-            // Explicit hardcoded overrides requested by user - ONLY apply to Server predictions
-            // so we don't accidentally trample on user-trained numbers that might look similar.
-            if (best.source && best.source.startsWith('Server')) {
-                if (outputLabel === 'V') outputLabel = '2';
-                if (outputLabel === 'H') outputLabel = '5';
-            }
+            // (Hardcoded overrides for V->2 and H->5 removed so that normal alphabet spelling works properly)
 
             updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatNormal);
 
