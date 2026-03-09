@@ -146,6 +146,7 @@ async function loadSavedModelAndLabels() {
                 const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
                 if (localLabelData) {
                     localLabels = JSON.parse(localLabelData);
+                    console.log(`Diagnostic -> Loaded Local Static Labels for ${localStorageLabelKey}:`, localLabels);
                     try {
                         localModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
                         console.log(`Local Static Model loaded (${localLabels.length} labels)`);
@@ -191,7 +192,7 @@ async function loadSavedModelAndLabels() {
         if (serverModel) loadedModels.push("Server");
         if (localModel) loadedModels.push("Local Static");
         if (localModelDynamic) loadedModels.push("Local Dynamic");
-        
+
         // Don't show models loaded message - keep display clear
         if (loadedModels.length === 0) {
             sttResult.innerText = "No models found. Please train in AI Training mode.";
@@ -368,7 +369,7 @@ function runPrediction(landmarks) {
 
         // Collect candidates from all available models
         let candidates = [];
-        
+
         // Debug: Log which models are active (only once per 100 frames)
         if (!window.debugFrameCount) window.debugFrameCount = 0;
         window.debugFrameCount++;
@@ -394,27 +395,30 @@ function runPrediction(landmarks) {
         // 2. Query Local Static Model (only when hand is still)
         if (staticAllowed && localModel && localLabels.length) {
             const pNorm = predictSingleModel(localModel, localLabels, tensorNormal);
-            candidates.push({ ...pNorm, source: 'Local' });
+            // Use raw confidence instead of boosting to prevent small models from becoming overconfident on untrained signs
+            candidates.push({ ...pNorm, conf: pNorm.conf, source: 'Local' });
 
-            const pFlip = predictSingleModel(localModel, localLabels, tensorFlipped);
-            candidates.push({ ...pFlip, source: 'Local(M)' });
+            // Note: We intentionally DO NOT evaluate the Local model using the flipped tensor. 
+            // The AI Training Studio does not artificially mirror training coordinates, so feeding 
+            // a mirrored matrix into a small local model forces it to output garbage data with random spikes.
         }
 
         // 3. Query Dynamic Model with frame buffer
         // Skip dynamic detection if user is in the middle of spelling
-        if (localModelDynamic && localLabelsDynamic.length && accumulatedWord.length === 0) {
+        // TEMP OFF: Paused dynamic model testing entirely while user verifies alphabets
+        if (false && localModelDynamic && localLabelsDynamic.length && accumulatedWord.length === 0) {
             if (dynamicBufferStartTime === 0) {
                 dynamicBufferStartTime = Date.now();
             }
 
             // Add current frame to buffer
             dynamicFrameBuffer.push(flatNormal);
-            
+
             // Keep buffer at fixed size
             if (dynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
                 dynamicFrameBuffer.shift();
             }
-            
+
             const dynamicReady = (Date.now() - dynamicBufferStartTime) >= DYNAMIC_ANALYZE_MS;
 
             // Wait at least 1 second to analyze motion before predicting dynamic signs
@@ -425,40 +429,94 @@ function runPrediction(landmarks) {
                 while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
                     paddedFrames.push(lastFrame);
                 }
-                
+
                 const tensorDynamic = tf.tensor3d([paddedFrames]);
                 const predDynamic = localModelDynamic.predict(tensorDynamic);
                 const conf = predDynamic.max().dataSync()[0];
                 const idx = predDynamic.argMax(-1).dataSync()[0];
-                
+
                 // Give dynamic predictions higher priority by boosting confidence
-                candidates.push({ 
-                    label: localLabelsDynamic[idx], 
-                    conf: Math.min(conf * 1.2, 1.0), // Boost confidence by 20%
+                candidates.push({
+                    label: localLabelsDynamic[idx],
+                    conf: conf, // Removed artificial 1.2x boost to prevent false positives during static sign fidgeting
                     source: 'Dynamic',
                     isDynamic: true
                 });
-                
+
                 tensorDynamic.dispose();
                 predDynamic.dispose();
             }
         }
 
         // 4. Find Best Candidate
-        // Sort by confidence descending
-        candidates.sort((a, b) => b.conf - a.conf);
-        const best = candidates[0];
+        // Group candidates by source
+        const serverCandidates = candidates.filter(c => c.source.startsWith('Server'));
+        const localCandidates = candidates.filter(c => c.source.startsWith('Local') || c.source === 'Dynamic');
+
+        // Sort both groups by confidence descending
+        serverCandidates.sort((a, b) => b.conf - a.conf);
+        localCandidates.sort((a, b) => b.conf - a.conf);
+
+        let best = null;
+
+        const bestLocal = localCandidates.length > 0 ? localCandidates[0] : null;
+        const bestServer = serverCandidates.length > 0 ? serverCandidates[0] : null;
+
+        // Custom precedence rule (Relative Tiered Override):
+        if (bestServer && bestLocal) {
+            // SPECIAL EXCEPTION: 8 and 9 are frequently misclassified by Server as V/2 or C.
+            // If the local model thinks it is an 8 or 9 with even moderate confidence (>0.75), 
+            // completely ignore the server model to protect custom signs.
+            const isCustomNumber = bestLocal.label === '8' || bestLocal.label === '9';
+            // EXPLICIT ALPHABET PROTECTION: The Local model (which only knows numbers) 
+            // will try to hijack 'A' and 'B' if the Server model dips below 80%.
+            const isServerAlpha = bestServer.label === 'A' || bestServer.label === 'B';
+
+            if (isCustomNumber && bestLocal.conf >= 0.75) {
+                best = bestLocal;
+            } else if (isServerAlpha && bestServer.conf >= 0.60) {
+                // If the Server model sees A or B with even minimal confidence (60%),
+                // DO NOT let the Custom numbering model guess.
+                best = bestServer;
+            } else if (bestServer.conf >= 0.95) {
+                // Tier 1: Server is extremely confident.
+                // It only loses if Local is ALSO extremely confident and mathematically higher.
+                if (bestLocal.conf >= 0.95 && bestLocal.conf > bestServer.conf) {
+                    best = bestLocal;
+                } else {
+                    best = bestServer;
+                }
+            } else if (bestServer.conf < 0.80 && bestLocal.conf >= 0.90) {
+                // Tier 2: Server is very unsure (< 0.80), and Local is extremely confident (> 0.90).
+                best = bestLocal;
+            } else {
+                // Tier 3: Neither has a massive edge or weakness, just compare raw confidence.
+                best = bestServer.conf > bestLocal.conf ? bestServer : bestLocal;
+            }
+        } else {
+            // Fallbacks if one model type is completely missing
+            best = bestServer || bestLocal;
+        }
 
         // 5. Threshold & Display
         if (best) {
-            const outputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
+            console.log(`Live Prediction -> Best Candidate: ${best.label} (${best.conf * 100}%) from ${best.source}`); // Diagnostic for 8/9
+            let outputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
+
+            // Explicit hardcoded overrides requested by user - ONLY apply to Server predictions
+            // so we don't accidentally trample on user-trained numbers that might look similar.
+            if (best.source && best.source.startsWith('Server')) {
+                if (outputLabel === 'V') outputLabel = '2';
+                if (outputLabel === 'H') outputLabel = '5';
+            }
+
             updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatNormal);
 
             // If dynamic sign detected, show immediately with special indicator
             // Skip if user is actively spelling (accumulatedWord has content)
-            if (best.isDynamic && best.conf > 0.60 && accumulatedWord.length === 0) { // Lower threshold for dynamic
+            if (best.isDynamic && best.conf > 0.85 && accumulatedWord.length === 0) { // Require high confidence for dynamic
                 sttResult.innerText = `Sign: ${outputLabel} 🔄 (${Math.round(best.conf * 100)}%)`;
-                
+
                 // Debounce speech: only speak if different sign or 4+ seconds have passed
                 const now = Date.now();
                 const timeSinceLast = now - lastSpokenTime;
@@ -469,14 +527,14 @@ function runPrediction(landmarks) {
                     lastSpokenLabel = outputLabel;
                     lastSpokenTime = now;
                 }
-                
+
                 // Clear buffer after confident detection
                 setTimeout(() => {
                     dynamicFrameBuffer = [];
                     dynamicBufferStartTime = 0;
                 }, 500); // Small delay before clearing
-            } else if (outputLabel.length === 1 && /^[a-zA-Z]$/.test(outputLabel)) {
-                // Single letters require stable hold
+            } else if (outputLabel.length === 1 && /^[a-zA-Z0-9]$/.test(outputLabel)) {
+                // Single letters or numbers require stable hold
                 processPredictedLetter(outputLabel);
                 sttResult.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
             } else if (accumulatedWord.length === 0) {
@@ -524,27 +582,27 @@ function onResults(results) {
             clearTimeout(noHandsTimeoutId);
             noHandsTimeoutId = null;
         }
-        
+
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
             runPrediction(landmarks);
         }
     } else {
-        // If hand disappears while spelling, finalize immediately
-        if (accumulatedWord.length > 0) {
-            finishSpelling(true);
-        }
-
         // No hands detected - set timeout for "Waiting for hands"
         if (!noHandsTimeoutId) {
             noHandsTimeoutId = setTimeout(() => {
                 sttResult.innerText = "Waiting for hands...";
                 noHandsTimeoutId = null;
+
+                // If hand disappears for a while while spelling, finalize the word
+                if (accumulatedWord.length > 0) {
+                    finishSpelling(true);
+                }
             }, NO_HANDS_TIMEOUT_MS);
         }
-        
-        // Reset state on hand loss
+
+        // Reset state on hand loss to allow double letters
         if (lastAddedLetter !== null) {
             lastAddedLetter = null;
         }
@@ -579,7 +637,7 @@ function handleSpelling(letter) {
 
     lastAddedLetter = letter;
     accumulatedWord += letter;
-    
+
     // When starting to spell, reset dynamic frame buffer to avoid interference
     dynamicFrameBuffer = [];
     dynamicBufferStartTime = 0;
@@ -882,6 +940,7 @@ function initSpeechRecognition() {
     };
 }
 
+<<<<<<< Updated upstream
 const translationImageExistsCache = new Map();
 let translationPhraseMap = { common: {}, asl: {}, isl: {} };
 const TRANSLATION_DIGIT_WORD_MAP = {
@@ -935,6 +994,35 @@ function checkTranslationImageExists(url) {
             resolve(false);
         };
         img.src = url;
+=======
+function displaySignCards(text) {
+    const container = document.getElementById('sign-cards-container');
+    if (!container) return;
+
+    container.innerHTML = ''; // Clear previous cards
+    const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+    const langFolder = currentSignLanguage.toLowerCase(); // 'isl' or 'asl'
+
+    words.forEach(word => {
+        const card = document.createElement('div');
+        card.className = 'sign-card';
+
+        const img = document.createElement('img');
+        img.src = `/signs-images/${langFolder}/${word}.jpg`;
+        img.alt = word;
+        img.onerror = () => {
+            // If image not found, hide it but keep the card
+            img.style.display = 'none';
+        };
+
+        const label = document.createElement('div');
+        label.className = 'sign-card-label';
+        label.textContent = word.length > 12 ? word.substring(0, 10) + '...' : word;
+
+        card.appendChild(img);
+        card.appendChild(label);
+        container.appendChild(card);
+>>>>>>> Stashed changes
     });
 }
 
@@ -1152,45 +1240,45 @@ function displaySignCards(text) {
                 wordGroupEl.style.gap = '10px';
 
                 group.forEach((token) => {
-                const card = document.createElement('div');
-                card.style.width = '78px';
-                card.style.height = '88px';
-                card.style.border = '1px solid rgba(148,163,184,0.35)';
-                card.style.borderRadius = '10px';
-                card.style.background = 'rgba(15,23,42,0.92)';
-                card.style.display = 'flex';
-                card.style.flexDirection = 'column';
-                card.style.alignItems = 'center';
-                card.style.justifyContent = 'center';
-                card.style.padding = '5px';
+                    const card = document.createElement('div');
+                    card.style.width = '78px';
+                    card.style.height = '88px';
+                    card.style.border = '1px solid rgba(148,163,184,0.35)';
+                    card.style.borderRadius = '10px';
+                    card.style.background = 'rgba(15,23,42,0.92)';
+                    card.style.display = 'flex';
+                    card.style.flexDirection = 'column';
+                    card.style.alignItems = 'center';
+                    card.style.justifyContent = 'center';
+                    card.style.padding = '5px';
 
-                if (token.type === 'card') {
-                    const img = document.createElement('img');
-                    img.src = token.src;
-                    img.alt = token.label;
-                    img.style.width = '100%';
-                    img.style.height = '50px';
-                    img.style.objectFit = 'contain';
-                    img.style.borderRadius = '6px';
-                    img.style.background = 'rgba(0,0,0,0.45)';
-                    img.onerror = () => img.style.display = 'none';
-                    card.appendChild(img);
-                }
+                    if (token.type === 'card') {
+                        const img = document.createElement('img');
+                        img.src = token.src;
+                        img.alt = token.label;
+                        img.style.width = '100%';
+                        img.style.height = '50px';
+                        img.style.objectFit = 'contain';
+                        img.style.borderRadius = '6px';
+                        img.style.background = 'rgba(0,0,0,0.45)';
+                        img.onerror = () => img.style.display = 'none';
+                        card.appendChild(img);
+                    }
 
-                const label = document.createElement('div');
-                label.textContent = token.label;
-                label.style.fontSize = '0.64rem';
-                label.style.color = '#fff';
-                label.style.marginTop = '3px';
-                label.style.textAlign = 'center';
-                label.style.width = '100%';
-                label.style.whiteSpace = 'nowrap';
-                label.style.overflow = 'hidden';
-                label.style.textOverflow = 'ellipsis';
-                card.appendChild(label);
+                    const label = document.createElement('div');
+                    label.textContent = token.label;
+                    label.style.fontSize = '0.64rem';
+                    label.style.color = '#fff';
+                    label.style.marginTop = '3px';
+                    label.style.textAlign = 'center';
+                    label.style.width = '100%';
+                    label.style.whiteSpace = 'nowrap';
+                    label.style.overflow = 'hidden';
+                    label.style.textOverflow = 'ellipsis';
+                    card.appendChild(label);
 
-                wordGroupEl.appendChild(card);
-            });
+                    wordGroupEl.appendChild(card);
+                });
 
                 lineEl.appendChild(wordGroupEl);
             });
