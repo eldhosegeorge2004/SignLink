@@ -60,7 +60,7 @@ def convert_dataset(input_dir, output_file):
         label_path = os.path.join(input_dir, label)
         print(f"\nProcessing label: [{label}]")
         
-        files = [f for f in os.listdir(label_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        files = [f for f in os.listdir(label_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif'))]
         success_count = 0
         
         for i, img_name in enumerate(files):

@@ -30,7 +30,8 @@ Name images after the word they represent in lowercase:
 - `yes.jpg`, `no.jpg`, `goodbye.jpg`, etc.
 
 ### 3. **File Format**
-Supported formats: `.jpg`, `.png`, or `.webp`
+Supported formats: `.jpg`, `.png`, `.gif`, or `.webp`
+- Use `.gif` for animated/dynamic sign cards with motion sequences
 
 ### 4. **Image Size**
 - Recommended: 200x200px or larger
@@ -51,8 +52,8 @@ Supported formats: `.jpg`, `.png`, or `.webp`
 
 ### Create Your Own:
 1. Record yourself signing
-2. Extract a clear frame/screenshot
-3. Crop and save as `.jpg`
+2. Extract a clear frame/screenshot or create a multi-frame animation
+3. Crop and save as `.jpg`, `.png`, or `.gif` (use GIF for animated signs)
 4. Place in appropriate language folder
 
 ## How It Works
@@ -60,9 +61,10 @@ Supported formats: `.jpg`, `.png`, or `.webp`
 ### When User Speaks:
 1. Speech is recognized in speech-to-sign mode
 2. Current language is detected (ISL or ASL)
-3. Cards are displayed from `/signs-images/{language}/{word}.jpg`
-4. If image missing → word label still shows
-5. If user switches language → new images display automatically
+3. Cards are displayed from `/signs-images/{language}/{word}.jpg/png/gif`
+4. Animated cards (GIFs) will play automatically in the card display
+5. If image missing → word label still shows
+6. If user switches language → new images display automatically
 
 ### Example Flow:
 ```

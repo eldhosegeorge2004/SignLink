@@ -1032,8 +1032,10 @@ async function resolveTranslationWordTokens(word, langFolder) {
     const wordCandidates = [
         `/signs-images/${langFolder}/words/${normalizedWord}.jpg`,
         `/signs-images/${langFolder}/words/${normalizedWord}.png`,
+        `/signs-images/${langFolder}/words/${normalizedWord}.gif`,
         `/signs-images/${langFolder}/${normalizedWord}.jpg`,
-        `/signs-images/${langFolder}/${normalizedWord}.png`
+        `/signs-images/${langFolder}/${normalizedWord}.png`,
+        `/signs-images/${langFolder}/${normalizedWord}.gif`
     ];
 
     for (const src of wordCandidates) {
@@ -1051,13 +1053,16 @@ async function resolveTranslationWordTokens(word, langFolder) {
         if (/[A-Z]/.test(char)) {
             candidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
             candidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
+            candidates.push(`/signs-images/${langFolder}/characters/${char}.gif`);
         } else {
             candidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
             candidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
+            candidates.push(`/signs-images/${langFolder}/characters/${char}.gif`);
             const digitWord = TRANSLATION_DIGIT_WORD_MAP[char];
             if (digitWord) {
                 candidates.push(`/signs-images/${langFolder}/characters/${digitWord}.jpg`);
                 candidates.push(`/signs-images/${langFolder}/characters/${digitWord}.png`);
+                candidates.push(`/signs-images/${langFolder}/characters/${digitWord}.gif`);
             }
         }
 
