@@ -100,7 +100,7 @@ def main():
             
         print(f"Processing class: {label}...")
         
-        files = [f for f in os.listdir(label_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        files = [f for f in os.listdir(label_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))]
         random.seed(42) # Consistent sampling if re-run
         random.shuffle(files)
         files = files[:MAX_SAMPLES_PER_CLASS]
