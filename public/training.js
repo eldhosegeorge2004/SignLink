@@ -615,24 +615,31 @@ trainBtn.addEventListener('click', async () => {
 
 async function trainStaticModel(staticData) {
     console.log(`trainStaticModel called with ${staticData.length} samples`);
-    const uniqueLabels = [...new Set(staticData.map(d => d.label))];
+    let uniqueLabels = [...new Set(staticData.map(d => d.label))];
     console.log(`Unique static labels: ${uniqueLabels.join(', ')}`);
 
+    // Ensure at least 2 classes for oneHot (required by TensorFlow)
+    let trainingData = [...staticData];
     if (uniqueLabels.length < 2) {
-        const msg = `❌ Need at least 2 different static signs. You have: ${uniqueLabels.join(', ')}`;
-        statusMsg.innerText = msg;
-        console.warn(msg);
-        throw new Error(`Only ${uniqueLabels.length} unique static sign(s). Need at least 2 different signs with different names.`);
+        const dummyLabel = uniqueLabels[0] + '_dummy';
+        uniqueLabels = [uniqueLabels[0], dummyLabel];
+        // Add dummy samples (duplicate of first class with dummy label)
+        const dummySamples = staticData.slice(0, Math.max(1, Math.ceil(staticData.length * 0.2))).map(d => ({
+            ...d,
+            label: dummyLabel
+        }));
+        trainingData = [...staticData, ...dummySamples];
+        console.log(`Added ${dummySamples.length} dummy samples to reach 2 classes`);
     }
 
     statusMsg.innerText = "🔄 Training static model (this may take 1-2 minutes)...";
-    console.log(`Starting static training with ${staticData.length} samples, ${uniqueLabels.length} classes`);
+    console.log(`Starting static training with ${trainingData.length} samples, ${uniqueLabels.length} classes`);
 
     const labelMap = {};
     uniqueLabels.forEach((l, i) => labelMap[l] = i);
 
-    const xs = tf.tensor2d(staticData.map(d => d.landmarks));
-    const ys = tf.oneHot(tf.tensor1d(staticData.map(d => labelMap[d.label]), 'int32'), uniqueLabels.length);
+    const xs = tf.tensor2d(trainingData.map(d => d.landmarks));
+    const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), uniqueLabels.length);
 
     const staticModel = tf.sequential();
     staticModel.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [63] }));
@@ -668,7 +675,9 @@ async function trainStaticModel(staticData) {
 
         console.log('Fit complete, setting model variable...');
         // Save to global model variable
-        model = { static: staticModel, staticLabels: uniqueLabels };
+        // Extract original labels (remove _dummy suffix)
+        const originalLabels = uniqueLabels.map(l => l.endsWith('_dummy') ? l.replace('_dummy', '') : l).filter((v, i, a) => a.indexOf(v) === i);
+        model = { static: staticModel, staticLabels: originalLabels };
         console.log('Static model training complete. Model state:', { hasStatic: !!model.static, labelsCount: model.staticLabels?.length });
     } catch (error) {
         console.error('Static model training error:', error);
@@ -682,25 +691,32 @@ async function trainStaticModel(staticData) {
 
 async function trainDynamicModel(dynamicData) {
     console.log(`trainDynamicModel called with ${dynamicData.length} samples`);
-    const uniqueLabels = [...new Set(dynamicData.map(d => d.label))];
+    let uniqueLabels = [...new Set(dynamicData.map(d => d.label))];
     console.log(`Unique dynamic labels: ${uniqueLabels.join(', ')}`);
 
+    // Ensure at least 2 classes for oneHot (required by TensorFlow)
+    let trainingData = [...dynamicData];
     if (uniqueLabels.length < 2) {
-        const msg = `❌ Need at least 2 different dynamic signs. You have: ${uniqueLabels.join(', ')}`;
-        statusMsg.innerText = msg;
-        console.warn(msg);
-        throw new Error(`Only ${uniqueLabels.length} unique dynamic sign(s). Need at least 2 different signs with different names.`);
+        const dummyLabel = uniqueLabels[0] + '_dummy';
+        uniqueLabels = [uniqueLabels[0], dummyLabel];
+        // Add dummy samples (duplicate of first class with dummy label)
+        const dummySamples = dynamicData.slice(0, Math.max(1, Math.ceil(dynamicData.length * 0.2))).map(d => ({
+            ...d,
+            label: dummyLabel
+        }));
+        trainingData = [...dynamicData, ...dummySamples];
+        console.log(`Added ${dummySamples.length} dummy samples to reach 2 classes`);
     }
 
     statusMsg.innerText = "🔄 Training dynamic model (this may take 1-2 minutes)...";
-    console.log(`Starting dynamic training with ${dynamicData.length} samples, ${uniqueLabels.length} classes`);
+    console.log(`Starting dynamic training with ${trainingData.length} samples, ${uniqueLabels.length} classes`);
 
     const labelMap = {};
     uniqueLabels.forEach((l, i) => labelMap[l] = i);
 
     const handRequirementMap = {};
     uniqueLabels.forEach((label) => {
-        const labelSamples = dynamicData.filter(d => d.label === label);
+        const labelSamples = trainingData.filter(d => d.label === label);
         const observed = new Set(
             labelSamples
                 .map(d => {
@@ -718,7 +734,7 @@ async function trainDynamicModel(dynamicData) {
     });
 
     // Pad/truncate sequences to fixed length
-    const paddedSequences = dynamicData.map(d => {
+    const paddedSequences = trainingData.map(d => {
         const frames = d.frames || [];
         if (frames.length < MAX_DYNAMIC_FRAMES) {
             // Pad with last frame
@@ -731,7 +747,7 @@ async function trainDynamicModel(dynamicData) {
     });
 
     const xs = tf.tensor3d(paddedSequences); // [samples, timesteps, features]
-    const ys = tf.oneHot(tf.tensor1d(dynamicData.map(d => labelMap[d.label]), 'int32'), uniqueLabels.length);
+    const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), uniqueLabels.length);
 
     const dynamicModel = tf.sequential();
     // Use glorotUniform instead of default orthogonal for faster initialization
@@ -783,8 +799,10 @@ async function trainDynamicModel(dynamicData) {
             console.log('Model is null, creating new model object');
             model = {};
         }
+        // Extract original labels (remove _dummy suffix)
+        const originalLabels = uniqueLabels.map(l => l.endsWith('_dummy') ? l.replace('_dummy', '') : l).filter((v, i, a) => a.indexOf(v) === i);
         model.dynamic = dynamicModel;
-        model.dynamicLabels = uniqueLabels;
+        model.dynamicLabels = originalLabels;
         model.dynamicHandRequirements = handRequirementMap;
         console.log('Dynamic model training complete. Model state:', { hasDynamic: !!model.dynamic, labelsCount: model.dynamicLabels?.length });
     } catch (error) {

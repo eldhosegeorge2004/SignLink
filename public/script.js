@@ -1785,7 +1785,6 @@ trainBtn.addEventListener('click', async () => {
     if (collectedData.length < 10) return alert("Collect more data (min 10 samples)!");
 
     uniqueLabels = [...new Set(collectedData.map(d => d.label))];
-    if (uniqueLabels.length < 2) return alert("Need at least 2 different signs.");
 
     const labelMap = {};
     uniqueLabels.forEach((l, i) => labelMap[l] = i);
