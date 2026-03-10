@@ -378,6 +378,25 @@ function applyISLHandCountDisambiguation(label, detectedHandCount) {
     return label;
 }
 
+function chooseBestCandidateWithLocalPriority(candidates) {
+    const serverCandidates = candidates.filter(c => c.source.startsWith('Server'));
+    const localCandidates = candidates.filter(c => c.source.startsWith('Local') || c.source === 'Dynamic');
+
+    serverCandidates.sort((a, b) => b.conf - a.conf);
+    localCandidates.sort((a, b) => b.conf - a.conf);
+
+    const bestLocal = localCandidates[0] || null;
+    const bestServer = serverCandidates[0] || null;
+
+    if (bestLocal && bestServer) {
+        // Local-first bias: local/web-trained sign wins unless server is clearly stronger.
+        if (bestLocal.conf >= bestServer.conf - 0.12) return bestLocal;
+        return bestServer;
+    }
+
+    return bestLocal || bestServer || null;
+}
+
 function runPrediction(landmarks, detectedHandCount = 1) {
     // We need at least one model
     if (!serverModel && !localModel && !localModelDynamic) return;
@@ -486,55 +505,8 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             }
         }
 
-        // 4. Find Best Candidate
-        // Group candidates by source
-        const serverCandidates = candidates.filter(c => c.source.startsWith('Server'));
-        const localCandidates = candidates.filter(c => c.source.startsWith('Local') || c.source === 'Dynamic');
-
-        // Sort both groups by confidence descending
-        serverCandidates.sort((a, b) => b.conf - a.conf);
-        localCandidates.sort((a, b) => b.conf - a.conf);
-
-        let best = null;
-
-        const bestLocal = localCandidates.length > 0 ? localCandidates[0] : null;
-        const bestServer = serverCandidates.length > 0 ? serverCandidates[0] : null;
-
-        // Custom precedence rule (Relative Tiered Override):
-        if (bestServer && bestLocal) {
-            // SPECIAL EXCEPTION: 8 and 9 are frequently misclassified by Server as V/2 or C.
-            // If the local model thinks it is an 8 or 9 with even moderate confidence (>0.75), 
-            // completely ignore the server model to protect custom signs.
-            const isCustomNumber = bestLocal.label === '8' || bestLocal.label === '9';
-            // EXPLICIT ALPHABET PROTECTION: The Local model (which only knows numbers) 
-            // will try to hijack alphabets if the Server model dips below 80%.
-            const isServerAlpha = /^[A-Z]$/.test(bestServer.label);
-
-            if (isCustomNumber && bestLocal.conf >= 0.75) {
-                best = bestLocal;
-            } else if (isServerAlpha && bestServer.conf >= 0.60) {
-                // If the Server model sees A or B with even minimal confidence (60%),
-                // DO NOT let the Custom numbering model guess.
-                best = bestServer;
-            } else if (bestServer.conf >= 0.95) {
-                // Tier 1: Server is extremely confident.
-                // It only loses if Local is ALSO extremely confident and mathematically higher.
-                if (bestLocal.conf >= 0.95 && bestLocal.conf > bestServer.conf) {
-                    best = bestLocal;
-                } else {
-                    best = bestServer;
-                }
-            } else if (bestServer.conf < 0.80 && bestLocal.conf >= 0.90) {
-                // Tier 2: Server is very unsure (< 0.80), and Local is extremely confident (> 0.90).
-                best = bestLocal;
-            } else {
-                // Tier 3: Neither has a massive edge or weakness, just compare raw confidence.
-                best = bestServer.conf > bestLocal.conf ? bestServer : bestLocal;
-            }
-        } else {
-            // Fallbacks if one model type is completely missing
-            best = bestServer || bestLocal;
-        }
+        // 4. Find Best Candidate with local/web-trained priority
+        const best = chooseBestCandidateWithLocalPriority(candidates);
 
         // 5. Threshold & Display
         if (best) {

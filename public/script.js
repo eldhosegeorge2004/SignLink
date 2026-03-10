@@ -1490,6 +1490,25 @@ function shouldSkipStaticLabel(label) {
     return typeof label === 'string' && label.toLowerCase() === 'hello';
 }
 
+function chooseBestCandidateWithLocalPriority(candidates) {
+    const serverCandidates = candidates.filter(c => c.source === 'server');
+    const localCandidates = candidates.filter(c => c.source === 'local' || c.source === 'dynamic');
+
+    serverCandidates.sort((a, b) => b.conf - a.conf);
+    localCandidates.sort((a, b) => b.conf - a.conf);
+
+    const bestServer = serverCandidates[0] || null;
+    const bestLocal = localCandidates[0] || null;
+
+    if (bestServer && bestLocal) {
+        // Local-first bias: allow local/web-trained model to win even when slightly lower confidence.
+        if (bestLocal.conf >= bestServer.conf - 0.12) return bestLocal;
+        return bestServer;
+    }
+
+    return bestLocal || bestServer || null;
+}
+
 function runPrediction(flatLandmarks, detectedHandCount = 1) {
     // require either server or local model to be present
     if ((!serverModel || serverLabels.length === 0) &&
@@ -1595,8 +1614,8 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             return;
         }
 
-        candidates.sort((a, b) => b.conf - a.conf);
-        const best = candidates[0];
+        const best = chooseBestCandidateWithLocalPriority(candidates);
+        if (!best) return;
         const rawOutputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
         const outputLabel = applyISLHandCountDisambiguation(rawOutputLabel, detectedHandCount);
         updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatLandmarks);
