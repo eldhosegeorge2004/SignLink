@@ -363,6 +363,21 @@ function labelMatchesDetectedHands(label, detectedHandCount) {
     return requirement === 'any' || requirement === detectedHandCount;
 }
 
+function shouldSkipStaticLabel(label) {
+    return typeof label === 'string' && label.toLowerCase() === 'hello';
+}
+
+function applyISLHandCountDisambiguation(label, detectedHandCount) {
+    if (localStorageModelKey !== 'my-isl-model') return label;
+    if (typeof label !== 'string') return label;
+
+    if (detectedHandCount < 2 && label.toUpperCase() === 'T') {
+        return '1';
+    }
+
+    return label;
+}
+
 function runPrediction(landmarks, detectedHandCount = 1) {
     // We need at least one model
     if (!serverModel && !localModel && !localModelDynamic) return;
@@ -404,27 +419,29 @@ function runPrediction(landmarks, detectedHandCount = 1) {
         // 1. Query Server Model (Static only when hand is still)
         if (staticAllowed && serverModel && serverLabels.length) {
             const pNorm = predictSingleModel(serverModel, serverLabels, tensorNormal);
-            candidates.push({ ...pNorm, source: 'Server' });
+            if (!shouldSkipStaticLabel(pNorm.label)) {
+                candidates.push({ ...pNorm, source: 'Server' });
+            }
 
             const pFlip = predictSingleModel(serverModel, serverLabels, tensorFlipped);
-            candidates.push({ ...pFlip, source: 'Server(M)' });
+            if (!shouldSkipStaticLabel(pFlip.label)) {
+                candidates.push({ ...pFlip, source: 'Server(M)' });
+            }
         }
 
         // 2. Query Local Static Model (only when hand is still)
         if (staticAllowed && localModel && localLabels.length) {
             const pNorm = predictSingleModel(localModel, localLabels, tensorNormal);
-            // Use raw confidence instead of boosting to prevent small models from becoming overconfident on untrained signs
-            candidates.push({ ...pNorm, conf: pNorm.conf, source: 'Local' });
+            if (!shouldSkipStaticLabel(pNorm.label)) {
+                candidates.push({ ...pNorm, source: 'Local' });
+            }
 
-            // Note: We intentionally DO NOT evaluate the Local model using the flipped tensor. 
-            // The AI Training Studio does not artificially mirror training coordinates, so feeding 
-            // a mirrored matrix into a small local model forces it to output garbage data with random spikes.
+            // Keep local model non-mirrored to avoid unstable predictions from mirrored coordinates.
         }
 
         // 3. Query Dynamic Model with frame buffer
         // Skip dynamic detection if user is in the middle of spelling
-        // TEMP OFF: Paused dynamic model testing entirely while user verifies alphabets
-        if (false && localModelDynamic && localLabelsDynamic.length && accumulatedWord.length === 0) {
+        if (localModelDynamic && localLabelsDynamic.length && accumulatedWord.length === 0) {
             if (dynamicBufferStartTime === 0) {
                 dynamicBufferStartTime = Date.now();
             }
@@ -532,22 +549,21 @@ function runPrediction(landmarks, detectedHandCount = 1) {
                 if (outputLabel === 'F') outputLabel = '9';
             }
 
+            outputLabel = applyISLHandCountDisambiguation(outputLabel, detectedHandCount);
             updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatNormal);
 
             // If dynamic sign detected, show immediately with special indicator
             // Skip if user is actively spelling (accumulatedWord has content)
             if (best.isDynamic && best.conf > 0.85 && accumulatedWord.length === 0) { // Require high confidence for dynamic
                 sttResult.innerText = `Sign: ${outputLabel} 🔄 (${Math.round(best.conf * 100)}%)`;
-
-                // Debounce speech: only speak if different sign or 4+ seconds have passed
-                const now = Date.now();
-                const timeSinceLast = now - lastSpokenTime;
+                
+                // Change-only speaking: do not repeat while same sign remains detected.
                 const isDifferentSign = outputLabel !== lastSpokenLabel;
 
-                if (isDifferentSign || timeSinceLast > 4000) {
+                if (isDifferentSign) {
                     speakText(outputLabel);
                     lastSpokenLabel = outputLabel;
-                    lastSpokenTime = now;
+                    lastSpokenTime = Date.now();
                 }
 
                 // Clear buffer after confident detection
@@ -562,7 +578,11 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             } else if (accumulatedWord.length === 0) {
                 // Only show non-dynamic/non-letter signs if not spelling
                 sttResult.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
-                speakText(outputLabel);
+                if (outputLabel !== lastSpokenLabel) {
+                    speakText(outputLabel);
+                    lastSpokenLabel = outputLabel;
+                    lastSpokenTime = Date.now();
+                }
             } else if (accumulatedWord.length > 0) {
                 // During spelling, suppress sttResult display entirely (only show spelling overlay)
                 sttResult.innerText = '';
