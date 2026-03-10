@@ -389,9 +389,20 @@ function chooseBestCandidateWithLocalPriority(candidates) {
     const bestServer = serverCandidates[0] || null;
 
     if (bestLocal && bestServer) {
-        // Local-first bias: local/web-trained sign wins unless server is clearly stronger.
-        if (bestLocal.conf >= bestServer.conf - 0.12) return bestLocal;
-        return bestServer;
+        const serverLabel = String(bestServer.label || '').toUpperCase();
+        const localLabel = String(bestLocal.label || '').toUpperCase();
+        const serverIsAlphabet = /^[A-Z]$/.test(serverLabel);
+        const localIsDigit = /^[0-9]$/.test(localLabel);
+
+        // Keep a narrow safety guard only for strong alphabet-vs-digit conflicts.
+        if (serverIsAlphabet && localIsDigit && bestServer.conf >= 0.75 && (bestServer.conf - bestLocal.conf) >= 0.08) {
+            return bestServer;
+        }
+
+        // Stronger local preference so website-trained signs win more consistently.
+        const localScore = bestLocal.conf + 0.10;
+        const serverScore = bestServer.conf;
+        return localScore >= serverScore ? bestLocal : bestServer;
     }
 
     return bestLocal || bestServer || null;
