@@ -119,19 +119,22 @@ async function loadSavedModelAndLabels() {
         const serverLoad = async () => {
             console.log("Attempting to load Server Model...");
             try {
-                const modelPath = localStorageModelKey === 'my-asl-model' ? 'model/asl/model.json' : 'model/model.json';
-                const response = await fetch('labels.json');
+                const isASL = localStorageModelKey === 'my-asl-model';
+                const modelPath = isASL ? 'model/asl/model.json' : 'model/model.json';
+                const labelsPath = isASL ? 'model/asl/labels.json' : 'labels.json';
+
+                const response = await fetch(labelsPath);
                 if (response.ok) {
                     serverLabels = await response.json();
                     try {
                         serverModel = await tf.loadLayersModel(modelPath);
-                        console.log(`Server Model loaded (${serverLabels.length} labels)`);
+                        console.log(`Server Model loaded (${serverLabels.length} labels from ${labelsPath})`);
                     } catch (tfErr) {
-                        console.error("TFJS ISL Model Load Error:", tfErr);
+                        console.error("TFJS Server Model Load Error:", tfErr);
                         serverModel = null;
                     }
                 } else {
-                    console.warn("labels.json not found.");
+                    console.warn(`${labelsPath} not found.`);
                 }
             } catch (e) {
                 console.error("Server model load failed fatally:", e);
@@ -148,6 +151,7 @@ async function loadSavedModelAndLabels() {
                 const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
                 if (localLabelData) {
                     localLabels = JSON.parse(localLabelData);
+                    console.log(`Diagnostic -> Loaded Local Static Labels for ${localStorageLabelKey}:`, localLabels);
                     try {
                         localModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
                         console.log(`Local Static Model loaded (${localLabels.length} labels)`);
@@ -195,7 +199,7 @@ async function loadSavedModelAndLabels() {
         if (serverModel) loadedModels.push("Server");
         if (localModel) loadedModels.push("Local Static");
         if (localModelDynamic) loadedModels.push("Local Dynamic");
-        
+
         // Don't show models loaded message - keep display clear
         if (loadedModels.length === 0) {
             sttResult.innerText = "No models found. Please train in AI Training mode.";
@@ -359,6 +363,40 @@ function labelMatchesDetectedHands(label, detectedHandCount) {
     return requirement === 'any' || requirement === detectedHandCount;
 }
 
+function shouldSkipStaticLabel(label) {
+    return typeof label === 'string' && label.toLowerCase() === 'hello';
+}
+
+function applyISLHandCountDisambiguation(label, detectedHandCount) {
+    if (localStorageModelKey !== 'my-isl-model') return label;
+    if (typeof label !== 'string') return label;
+
+    if (detectedHandCount < 2 && label.toUpperCase() === 'T') {
+        return '1';
+    }
+
+    return label;
+}
+
+function chooseBestCandidateWithLocalPriority(candidates) {
+    const serverCandidates = candidates.filter(c => c.source.startsWith('Server'));
+    const localCandidates = candidates.filter(c => c.source.startsWith('Local') || c.source === 'Dynamic');
+
+    serverCandidates.sort((a, b) => b.conf - a.conf);
+    localCandidates.sort((a, b) => b.conf - a.conf);
+
+    const bestLocal = localCandidates[0] || null;
+    const bestServer = serverCandidates[0] || null;
+
+    if (bestLocal && bestServer) {
+        // Local-first bias: local/web-trained sign wins unless server is clearly stronger.
+        if (bestLocal.conf >= bestServer.conf - 0.12) return bestLocal;
+        return bestServer;
+    }
+
+    return bestLocal || bestServer || null;
+}
+
 function runPrediction(landmarks, detectedHandCount = 1) {
     // We need at least one model
     if (!serverModel && !localModel && !localModelDynamic) return;
@@ -383,7 +421,7 @@ function runPrediction(landmarks, detectedHandCount = 1) {
 
         // Collect candidates from all available models
         let candidates = [];
-        
+
         // Debug: Log which models are active (only once per 100 frames)
         if (!window.debugFrameCount) window.debugFrameCount = 0;
         window.debugFrameCount++;
@@ -400,19 +438,24 @@ function runPrediction(landmarks, detectedHandCount = 1) {
         // 1. Query Server Model (Static only when hand is still)
         if (staticAllowed && serverModel && serverLabels.length) {
             const pNorm = predictSingleModel(serverModel, serverLabels, tensorNormal);
-            candidates.push({ ...pNorm, source: 'Server' });
+            if (!shouldSkipStaticLabel(pNorm.label)) {
+                candidates.push({ ...pNorm, source: 'Server' });
+            }
 
             const pFlip = predictSingleModel(serverModel, serverLabels, tensorFlipped);
-            candidates.push({ ...pFlip, source: 'Server(M)' });
+            if (!shouldSkipStaticLabel(pFlip.label)) {
+                candidates.push({ ...pFlip, source: 'Server(M)' });
+            }
         }
 
         // 2. Query Local Static Model (only when hand is still)
         if (staticAllowed && localModel && localLabels.length) {
             const pNorm = predictSingleModel(localModel, localLabels, tensorNormal);
-            candidates.push({ ...pNorm, source: 'Local' });
+            if (!shouldSkipStaticLabel(pNorm.label)) {
+                candidates.push({ ...pNorm, source: 'Local' });
+            }
 
-            const pFlip = predictSingleModel(localModel, localLabels, tensorFlipped);
-            candidates.push({ ...pFlip, source: 'Local(M)' });
+            // Keep local model non-mirrored to avoid unstable predictions from mirrored coordinates.
         }
 
         // 3. Query Dynamic Model with frame buffer
@@ -424,12 +467,12 @@ function runPrediction(landmarks, detectedHandCount = 1) {
 
             // Add current frame to buffer
             dynamicFrameBuffer.push(flatNormal);
-            
+
             // Keep buffer at fixed size
             if (dynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
                 dynamicFrameBuffer.shift();
             }
-            
+
             const dynamicReady = (Date.now() - dynamicBufferStartTime) >= DYNAMIC_ANALYZE_MS;
 
             // Wait at least 1 second to analyze motion before predicting dynamic signs
@@ -440,67 +483,78 @@ function runPrediction(landmarks, detectedHandCount = 1) {
                 while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
                     paddedFrames.push(lastFrame);
                 }
-                
+
                 const tensorDynamic = tf.tensor3d([paddedFrames]);
                 const predDynamic = localModelDynamic.predict(tensorDynamic);
                 const conf = predDynamic.max().dataSync()[0];
                 const idx = predDynamic.argMax(-1).dataSync()[0];
                 const predictedDynamicLabel = localLabelsDynamic[idx];
-                
-                // Give dynamic predictions higher priority by boosting confidence
+
+                // Keep dynamic predictions unboosted to reduce false positives,
+                // but still enforce hand-count requirements when available.
                 if (labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
-                    candidates.push({ 
-                        label: predictedDynamicLabel, 
-                        conf: Math.min(conf * 1.2, 1.0), // Boost confidence by 20%
+                    candidates.push({
+                        label: predictedDynamicLabel,
+                        conf: conf,
                         source: 'Dynamic',
                         isDynamic: true
                     });
                 }
-                
                 tensorDynamic.dispose();
                 predDynamic.dispose();
             }
         }
 
-        // 4. Find Best Candidate
-        // Sort by confidence descending
-        candidates.sort((a, b) => b.conf - a.conf);
-        const best = candidates[0];
+        // 4. Find Best Candidate with local/web-trained priority
+        const best = chooseBestCandidateWithLocalPriority(candidates);
 
         // 5. Threshold & Display
         if (best) {
-            const outputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
+            console.log(`Live Prediction -> Best Candidate: ${best.label} (${best.conf * 100}%) from ${best.source}`); // Diagnostic for 8/9
+            let outputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
+
+            // Hardcoded overrides for ASL explicitly requested by user to fix misclassifications
+            if (localStorageModelKey === 'my-asl-model' && best.source && best.source.startsWith('Server')) {
+                if (outputLabel === 'D') outputLabel = '1';
+                if (outputLabel === 'R') outputLabel = '3';
+                if (outputLabel === 'W') outputLabel = '6';
+                if (outputLabel === 'F') outputLabel = '9';
+            }
+
+            outputLabel = applyISLHandCountDisambiguation(outputLabel, detectedHandCount);
             updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatNormal);
 
             // If dynamic sign detected, show immediately with special indicator
             // Skip if user is actively spelling (accumulatedWord has content)
-            if (best.isDynamic && best.conf > 0.60 && accumulatedWord.length === 0) { // Lower threshold for dynamic
+            if (best.isDynamic && best.conf > 0.85 && accumulatedWord.length === 0) { // Require high confidence for dynamic
                 sttResult.innerText = `Sign: ${outputLabel} 🔄 (${Math.round(best.conf * 100)}%)`;
                 
-                // Debounce speech: only speak if different sign or 4+ seconds have passed
-                const now = Date.now();
-                const timeSinceLast = now - lastSpokenTime;
+                // Change-only speaking: do not repeat while same sign remains detected.
                 const isDifferentSign = outputLabel !== lastSpokenLabel;
 
-                if (isDifferentSign || timeSinceLast > 4000) {
+                if (isDifferentSign) {
                     speakText(outputLabel);
                     lastSpokenLabel = outputLabel;
-                    lastSpokenTime = now;
+                    lastSpokenTime = Date.now();
                 }
-                
+
                 // Clear buffer after confident detection
                 setTimeout(() => {
                     dynamicFrameBuffer = [];
                     dynamicBufferStartTime = 0;
                 }, 500); // Small delay before clearing
-            } else if (outputLabel.length === 1 && /^[a-zA-Z]$/.test(outputLabel)) {
-                // Single letters require stable hold
+            } else if (outputLabel.length === 1 && /^[a-zA-Z0-9]$/.test(outputLabel)) {
+                // Single letters or numbers require stable hold
                 processPredictedLetter(outputLabel);
                 sttResult.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
             } else if (accumulatedWord.length === 0) {
                 // Only show non-dynamic/non-letter signs if not spelling
                 sttResult.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
-                speakText(outputLabel);
+                if (outputLabel !== lastSpokenLabel) {
+                    speakText(outputLabel);
+                    lastSpokenLabel = outputLabel;
+                    lastSpokenTime = Date.now();
+                }
             } else if (accumulatedWord.length > 0) {
                 // During spelling, suppress sttResult display entirely (only show spelling overlay)
                 sttResult.innerText = '';
@@ -542,7 +596,7 @@ function onResults(results) {
             clearTimeout(noHandsTimeoutId);
             noHandsTimeoutId = null;
         }
-        
+
         const detectedHandCount = Math.min(2, results.multiHandLandmarks.length);
 
         for (const landmarks of results.multiHandLandmarks) {
@@ -553,20 +607,20 @@ function onResults(results) {
         // Predict once from the primary hand to avoid duplicate/competing outputs.
         runPrediction(results.multiHandLandmarks[0], detectedHandCount);
     } else {
-        // If hand disappears while spelling, finalize immediately
-        if (accumulatedWord.length > 0) {
-            finishSpelling(true);
-        }
-
         // No hands detected - set timeout for "Waiting for hands"
         if (!noHandsTimeoutId) {
             noHandsTimeoutId = setTimeout(() => {
                 sttResult.innerText = "Waiting for hands...";
                 noHandsTimeoutId = null;
+
+                // If hand disappears for a while while spelling, finalize the word
+                if (accumulatedWord.length > 0) {
+                    finishSpelling(true);
+                }
             }, NO_HANDS_TIMEOUT_MS);
         }
-        
-        // Reset state on hand loss
+
+        // Reset state on hand loss to allow double letters
         if (lastAddedLetter !== null) {
             lastAddedLetter = null;
         }
@@ -601,7 +655,7 @@ function handleSpelling(letter) {
 
     lastAddedLetter = letter;
     accumulatedWord += letter;
-    
+
     // When starting to spell, reset dynamic frame buffer to avoid interference
     dynamicFrameBuffer = [];
     dynamicBufferStartTime = 0;
@@ -1174,45 +1228,45 @@ function displaySignCards(text) {
                 wordGroupEl.style.gap = '10px';
 
                 group.forEach((token) => {
-                const card = document.createElement('div');
-                card.style.width = '78px';
-                card.style.height = '88px';
-                card.style.border = '1px solid rgba(148,163,184,0.35)';
-                card.style.borderRadius = '10px';
-                card.style.background = 'rgba(15,23,42,0.92)';
-                card.style.display = 'flex';
-                card.style.flexDirection = 'column';
-                card.style.alignItems = 'center';
-                card.style.justifyContent = 'center';
-                card.style.padding = '5px';
+                    const card = document.createElement('div');
+                    card.style.width = '78px';
+                    card.style.height = '88px';
+                    card.style.border = '1px solid rgba(148,163,184,0.35)';
+                    card.style.borderRadius = '10px';
+                    card.style.background = 'rgba(15,23,42,0.92)';
+                    card.style.display = 'flex';
+                    card.style.flexDirection = 'column';
+                    card.style.alignItems = 'center';
+                    card.style.justifyContent = 'center';
+                    card.style.padding = '5px';
 
-                if (token.type === 'card') {
-                    const img = document.createElement('img');
-                    img.src = token.src;
-                    img.alt = token.label;
-                    img.style.width = '100%';
-                    img.style.height = '50px';
-                    img.style.objectFit = 'contain';
-                    img.style.borderRadius = '6px';
-                    img.style.background = 'rgba(0,0,0,0.45)';
-                    img.onerror = () => img.style.display = 'none';
-                    card.appendChild(img);
-                }
+                    if (token.type === 'card') {
+                        const img = document.createElement('img');
+                        img.src = token.src;
+                        img.alt = token.label;
+                        img.style.width = '100%';
+                        img.style.height = '50px';
+                        img.style.objectFit = 'contain';
+                        img.style.borderRadius = '6px';
+                        img.style.background = 'rgba(0,0,0,0.45)';
+                        img.onerror = () => img.style.display = 'none';
+                        card.appendChild(img);
+                    }
 
-                const label = document.createElement('div');
-                label.textContent = token.label;
-                label.style.fontSize = '0.64rem';
-                label.style.color = '#fff';
-                label.style.marginTop = '3px';
-                label.style.textAlign = 'center';
-                label.style.width = '100%';
-                label.style.whiteSpace = 'nowrap';
-                label.style.overflow = 'hidden';
-                label.style.textOverflow = 'ellipsis';
-                card.appendChild(label);
+                    const label = document.createElement('div');
+                    label.textContent = token.label;
+                    label.style.fontSize = '0.64rem';
+                    label.style.color = '#fff';
+                    label.style.marginTop = '3px';
+                    label.style.textAlign = 'center';
+                    label.style.width = '100%';
+                    label.style.whiteSpace = 'nowrap';
+                    label.style.overflow = 'hidden';
+                    label.style.textOverflow = 'ellipsis';
+                    card.appendChild(label);
 
-                wordGroupEl.appendChild(card);
-            });
+                    wordGroupEl.appendChild(card);
+                });
 
                 lineEl.appendChild(wordGroupEl);
             });

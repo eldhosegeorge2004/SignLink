@@ -1475,6 +1475,40 @@ function labelMatchesDetectedHands(label, detectedHandCount) {
     return requirement === 'any' || requirement === detectedHandCount;
 }
 
+function applyISLHandCountDisambiguation(label, detectedHandCount) {
+    if (currentMode !== 'ISL') return label;
+    if (typeof label !== 'string') return label;
+
+    if (detectedHandCount < 2 && label.toUpperCase() === 'T') {
+        return '1';
+    }
+
+    return label;
+}
+
+function shouldSkipStaticLabel(label) {
+    return typeof label === 'string' && label.toLowerCase() === 'hello';
+}
+
+function chooseBestCandidateWithLocalPriority(candidates) {
+    const serverCandidates = candidates.filter(c => c.source === 'server');
+    const localCandidates = candidates.filter(c => c.source === 'local' || c.source === 'dynamic');
+
+    serverCandidates.sort((a, b) => b.conf - a.conf);
+    localCandidates.sort((a, b) => b.conf - a.conf);
+
+    const bestServer = serverCandidates[0] || null;
+    const bestLocal = localCandidates[0] || null;
+
+    if (bestServer && bestLocal) {
+        // Local-first bias: allow local/web-trained model to win even when slightly lower confidence.
+        if (bestLocal.conf >= bestServer.conf - 0.12) return bestLocal;
+        return bestServer;
+    }
+
+    return bestLocal || bestServer || null;
+}
+
 function runPrediction(flatLandmarks, detectedHandCount = 1) {
     // require either server or local model to be present
     if ((!serverModel || serverLabels.length === 0) &&
@@ -1501,7 +1535,10 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             const pred = serverModel.predict(input);
             const conf = pred.max().dataSync()[0];
             const idx = pred.argMax(-1).dataSync()[0];
-            candidates.push({ label: serverLabels[idx], conf, source: 'server' });
+            const label = serverLabels[idx];
+            if (!shouldSkipStaticLabel(label)) {
+                candidates.push({ label, conf, source: 'server' });
+            }
         }
 
         // local static predictions (only when hand is still)
@@ -1509,7 +1546,10 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             const pred = model.predict(input);
             const conf = pred.max().dataSync()[0];
             const idx = pred.argMax(-1).dataSync()[0];
-            candidates.push({ label: uniqueLabels[idx], conf, source: 'local' });
+            const label = uniqueLabels[idx];
+            if (!shouldSkipStaticLabel(label)) {
+                candidates.push({ label, conf, source: 'local' });
+            }
         }
 
         // dynamic predictions with frame buffer
@@ -1574,9 +1614,10 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             return;
         }
 
-        candidates.sort((a, b) => b.conf - a.conf);
-        const best = candidates[0];
-        const outputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
+        const best = chooseBestCandidateWithLocalPriority(candidates);
+        if (!best) return;
+        const rawOutputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
+        const outputLabel = applyISLHandCountDisambiguation(rawOutputLabel, detectedHandCount);
         updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatLandmarks);
 
         // Clear dynamic buffer if dynamic sign detected with good confidence
@@ -1599,15 +1640,9 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             setPredictionText(`Sign: ${displayText} (${Math.round(best.conf * 100)}%)`);
 
             const now = Date.now();
-            const wordLastSpoken = localWordLastSpoken[outputLabel] || 0;
-            const timeSinceAny = now - lastSpokenTime;
-            const timeSinceSame = now - wordLastSpoken;
-
-            // Debounce speech: only speak if different sign or 4+ seconds have passed
+            // Change-only speaking: do not repeat while the same sign remains detected.
             const isDifferentSign = outputLabel !== lastSpokenLabel;
-            const shouldSpeak = best.isDynamic
-                ? (isDifferentSign || timeSinceAny > 4000)
-                : (timeSinceSame > 4000 && timeSinceAny > 800);
+            const shouldSpeak = isDifferentSign;
 
             if (shouldSpeak) {
                 lastSpokenLabel = outputLabel;
