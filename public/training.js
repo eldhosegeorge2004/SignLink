@@ -42,6 +42,7 @@ let dynamicFrameBuffer = [];
 const MAX_DYNAMIC_FRAMES = 30;
 const TARGET_FPS = 10; // Capture ~10 frames per second
 let lastFrameCaptureTime = 0;
+let dynamicRecordingMaxHands = 1;
 
 // Storage Keys
 const STORAGE_KEYS = {
@@ -113,6 +114,7 @@ function startDynamicRecording() {
     isDynamicRecording = true;
     dynamicFrameBuffer = [];
     lastFrameCaptureTime = 0;
+    dynamicRecordingMaxHands = 1;
 
     // Update UI
     startRecordBtn.style.display = 'none';
@@ -202,7 +204,9 @@ function onResults(results) {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-    if (results.multiHandLandmarks) {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const detectedHands = Math.min(2, results.multiHandLandmarks.length);
+
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
@@ -216,25 +220,27 @@ function onResults(results) {
                 }
             }
 
-            // Dynamic mode recording
-            if (isDynamicRecording && recordingMode === 'dynamic') {
-                const now = Date.now();
-                const frameInterval = 1000 / TARGET_FPS;
+        }
 
-                if (now - lastFrameCaptureTime >= frameInterval) {
-                    const flatLandmarks = preprocessLandmarks(landmarks);
-                    dynamicFrameBuffer.push(flatLandmarks);
-                    lastFrameCaptureTime = now;
+        // Dynamic mode recording: capture one frame per interval from primary hand,
+        // while remembering whether this sample used one hand or two hands.
+        if (isDynamicRecording && recordingMode === 'dynamic') {
+            dynamicRecordingMaxHands = Math.max(dynamicRecordingMaxHands, detectedHands);
 
-                    // Update UI
-                    frameCount.textContent = dynamicFrameBuffer.length;
-                    const progress = (dynamicFrameBuffer.length / MAX_DYNAMIC_FRAMES) * 100;
-                    progressBar.style.width = `${Math.min(progress, 100)}%`;
+            const now = Date.now();
+            const frameInterval = 1000 / TARGET_FPS;
+            if (now - lastFrameCaptureTime >= frameInterval) {
+                const primaryLandmarks = results.multiHandLandmarks[0];
+                const flatLandmarks = preprocessLandmarks(primaryLandmarks);
+                dynamicFrameBuffer.push(flatLandmarks);
+                lastFrameCaptureTime = now;
 
-                    // Auto-stop at max frames
-                    if (dynamicFrameBuffer.length >= MAX_DYNAMIC_FRAMES) {
-                        stopDynamicRecording();
-                    }
+                frameCount.textContent = dynamicFrameBuffer.length;
+                const progress = (dynamicFrameBuffer.length / MAX_DYNAMIC_FRAMES) * 100;
+                progressBar.style.width = `${Math.min(progress, 100)}%`;
+
+                if (dynamicFrameBuffer.length >= MAX_DYNAMIC_FRAMES) {
+                    stopDynamicRecording();
                 }
             }
         }
@@ -253,6 +259,7 @@ async function saveDynamicSign(label, frames) {
         label,
         type: 'dynamic',
         frames: frames,
+        handCount: dynamicRecordingMaxHands,
         frameCount: frames.length,
         recordedAt: Date.now()
     });
@@ -508,6 +515,25 @@ async function trainDynamicModel(dynamicData) {
     const labelMap = {};
     uniqueLabels.forEach((l, i) => labelMap[l] = i);
 
+    const handRequirementMap = {};
+    uniqueLabels.forEach((label) => {
+        const labelSamples = dynamicData.filter(d => d.label === label);
+        const observed = new Set(
+            labelSamples
+                .map(d => {
+                    const raw = Number(d.handCount ?? d.requiredHands);
+                    return raw === 2 ? 2 : (raw === 1 ? 1 : null);
+                })
+                .filter(v => v !== null)
+        );
+
+        if (observed.size === 1) {
+            handRequirementMap[label] = [...observed][0];
+        } else {
+            handRequirementMap[label] = 'any';
+        }
+    });
+
     // Pad/truncate sequences to fixed length
     const paddedSequences = dynamicData.map(d => {
         const frames = d.frames || [];
@@ -576,6 +602,7 @@ async function trainDynamicModel(dynamicData) {
         }
         model.dynamic = dynamicModel;
         model.dynamicLabels = uniqueLabels;
+        model.dynamicHandRequirements = handRequirementMap;
         console.log('Dynamic model training complete. Model state:', { hasDynamic: !!model.dynamic, labelsCount: model.dynamicLabels?.length });
     } catch (error) {
         console.error('Dynamic model training error:', error);
@@ -622,6 +649,10 @@ saveBtn.addEventListener('click', async () => {
         if (model.dynamic && model.dynamicLabels) {
             await model.dynamic.save(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
             localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`, JSON.stringify(model.dynamicLabels));
+            localStorage.setItem(
+                `${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`,
+                JSON.stringify(model.dynamicHandRequirements || {})
+            );
             console.log('✅ Dynamic model saved');
             saved = true;
         }

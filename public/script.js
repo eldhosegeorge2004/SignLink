@@ -19,6 +19,7 @@ let uniqueLabels = [];
 // Dynamic sign support
 let modelDynamic = null;
 let uniqueLabelsDynamic = [];
+let dynamicLabelHandRequirements = {};
 let dynamicFrameBuffer = [];
 const MAX_DYNAMIC_FRAMES = 30;
 const DYNAMIC_ANALYZE_MS = 1500;
@@ -1081,6 +1082,7 @@ async function loadModelsAndLabels() {
     uniqueLabels = [];
     modelDynamic = null;
     uniqueLabelsDynamic = [];
+    dynamicLabelHandRequirements = {};
     predictionBuffer.length = 0;
     dynamicFrameBuffer = [];
     dynamicBufferStartTime = 0;
@@ -1124,6 +1126,8 @@ async function loadModelsAndLabels() {
         const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
         if (dynamicLabelData) {
             uniqueLabelsDynamic = JSON.parse(dynamicLabelData);
+            const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
+            dynamicLabelHandRequirements = dynamicReqData ? JSON.parse(dynamicReqData) : {};
             try {
                 modelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
                 console.log(`Local dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
@@ -1417,6 +1421,8 @@ function onResults(results) {
         // Preprocess for AI (Normalization is Scale/Translation invariant)
         const flatLandmarks = preprocessLandmarks(landmarks);
 
+        const detectedHandCount = Math.min(2, results.multiHandLandmarks.length);
+
         // Handle Collection or Prediction
         if (isCollecting) {
             const label = labelInput.value.trim();
@@ -1424,7 +1430,7 @@ function onResults(results) {
                 saveGesture(label, flatLandmarks);
             }
         } else {
-            runPrediction(flatLandmarks);
+            runPrediction(flatLandmarks, detectedHandCount);
         }
     } else {
         // If hand disappears while spelling, finalize immediately
@@ -1458,7 +1464,18 @@ function onResults(results) {
     ctx.restore();
 }
 
-function runPrediction(flatLandmarks) {
+function normalizeHandRequirement(rawValue) {
+    if (rawValue === 1 || rawValue === '1') return 1;
+    if (rawValue === 2 || rawValue === '2') return 2;
+    return 'any';
+}
+
+function labelMatchesDetectedHands(label, detectedHandCount) {
+    const requirement = normalizeHandRequirement(dynamicLabelHandRequirements[label]);
+    return requirement === 'any' || requirement === detectedHandCount;
+}
+
+function runPrediction(flatLandmarks, detectedHandCount = 1) {
     // require either server or local model to be present
     if ((!serverModel || serverLabels.length === 0) &&
         (!model || uniqueLabels.length === 0) &&
@@ -1524,15 +1541,18 @@ function runPrediction(flatLandmarks) {
                 const predDynamic = modelDynamic.predict(tensorDynamic);
                 const conf = predDynamic.max().dataSync()[0];
                 const idx = predDynamic.argMax(-1).dataSync()[0];
+                const predictedDynamicLabel = uniqueLabelsDynamic[idx];
 
                 // Boost confidence for dynamic signs to compete with static scores
                 const boostedConf = Math.min(conf * 1.2, 1.0);
-                candidates.push({
-                    label: uniqueLabelsDynamic[idx],
-                    conf: boostedConf,
-                    source: 'dynamic',
-                    isDynamic: true
-                });
+                if (labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
+                    candidates.push({
+                        label: predictedDynamicLabel,
+                        conf: boostedConf,
+                        source: 'dynamic',
+                        isDynamic: true
+                    });
+                }
 
                 tensorDynamic.dispose();
                 predDynamic.dispose();

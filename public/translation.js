@@ -42,6 +42,7 @@ let localLabels = [];
 // Dynamic sign support
 let localModelDynamic = null;
 let localLabelsDynamic = [];
+let dynamicLabelHandRequirements = {};
 let dynamicFrameBuffer = [];
 const MAX_DYNAMIC_FRAMES = 30;
 const DYNAMIC_ANALYZE_MS = 1500;
@@ -105,6 +106,7 @@ async function loadSavedModelAndLabels() {
         localLabels = [];
         localModelDynamic = null;
         localLabelsDynamic = [];
+        dynamicLabelHandRequirements = {};
         predictionBuffer.length = 0;
         dynamicFrameBuffer = [];
         dynamicBufferStartTime = 0;
@@ -169,6 +171,8 @@ async function loadSavedModelAndLabels() {
                 const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
                 if (dynamicLabelData) {
                     localLabelsDynamic = JSON.parse(dynamicLabelData);
+                    const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
+                    dynamicLabelHandRequirements = dynamicReqData ? JSON.parse(dynamicReqData) : {};
                     try {
                         localModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
                         console.log(`Local Dynamic Model loaded (${localLabelsDynamic.length} labels)`);
@@ -344,7 +348,18 @@ function predictSingleModel(modelInstance, labels, tensor) {
     return { label: labels[idx], conf: conf };
 }
 
-function runPrediction(landmarks) {
+function normalizeHandRequirement(rawValue) {
+    if (rawValue === 1 || rawValue === '1') return 1;
+    if (rawValue === 2 || rawValue === '2') return 2;
+    return 'any';
+}
+
+function labelMatchesDetectedHands(label, detectedHandCount) {
+    const requirement = normalizeHandRequirement(dynamicLabelHandRequirements[label]);
+    return requirement === 'any' || requirement === detectedHandCount;
+}
+
+function runPrediction(landmarks, detectedHandCount = 1) {
     // We need at least one model
     if (!serverModel && !localModel && !localModelDynamic) return;
 
@@ -430,14 +445,17 @@ function runPrediction(landmarks) {
                 const predDynamic = localModelDynamic.predict(tensorDynamic);
                 const conf = predDynamic.max().dataSync()[0];
                 const idx = predDynamic.argMax(-1).dataSync()[0];
+                const predictedDynamicLabel = localLabelsDynamic[idx];
                 
                 // Give dynamic predictions higher priority by boosting confidence
-                candidates.push({ 
-                    label: localLabelsDynamic[idx], 
-                    conf: Math.min(conf * 1.2, 1.0), // Boost confidence by 20%
-                    source: 'Dynamic',
-                    isDynamic: true
-                });
+                if (labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
+                    candidates.push({ 
+                        label: predictedDynamicLabel, 
+                        conf: Math.min(conf * 1.2, 1.0), // Boost confidence by 20%
+                        source: 'Dynamic',
+                        isDynamic: true
+                    });
+                }
                 
                 tensorDynamic.dispose();
                 predDynamic.dispose();
@@ -525,11 +543,15 @@ function onResults(results) {
             noHandsTimeoutId = null;
         }
         
+        const detectedHandCount = Math.min(2, results.multiHandLandmarks.length);
+
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
-            runPrediction(landmarks);
         }
+
+        // Predict once from the primary hand to avoid duplicate/competing outputs.
+        runPrediction(results.multiHandLandmarks[0], detectedHandCount);
     } else {
         // If hand disappears while spelling, finalize immediately
         if (accumulatedWord.length > 0) {
