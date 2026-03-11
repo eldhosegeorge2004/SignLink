@@ -44,6 +44,9 @@ let collectedData = [];
 let currentLang = 'ISL';
 let model = null;
 let recordingMode = 'static'; // 'static' or 'dynamic'
+const MAX_STATIC_SAMPLES_PER_SESSION = 100;
+let staticSessionSampleCount = 0;
+let isStaticPausedNoHands = false;
 
 // Dynamic recording state
 let isDynamicRecording = false;
@@ -382,6 +385,11 @@ function onResults(results) {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         const detectedHands = Math.min(2, results.multiHandLandmarks.length);
 
+        if (isCollecting && recordingMode === 'static' && isStaticPausedNoHands) {
+            isStaticPausedNoHands = false;
+            statusMsg.textContent = `Recording resumed: ${staticSessionSampleCount}/${MAX_STATIC_SAMPLES_PER_SESSION} samples`;
+        }
+
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
@@ -391,7 +399,8 @@ function onResults(results) {
                 const label = labelInput.value.trim();
                 if (label) {
                     const flatLandmarks = preprocessLandmarks(landmarks);
-                    saveDataPoint(label, flatLandmarks, 'static');
+                    const shouldContinue = captureStaticSample(label, flatLandmarks);
+                    if (!shouldContinue) break;
                 }
             }
 
@@ -432,6 +441,11 @@ function onResults(results) {
                 runDynamicTestPrediction(flatLandmarks);
             }
         }
+    } else if (isCollecting && recordingMode === 'static') {
+        if (!isStaticPausedNoHands) {
+            isStaticPausedNoHands = true;
+            statusMsg.textContent = `Paused: no hands detected (${staticSessionSampleCount}/${MAX_STATIC_SAMPLES_PER_SESSION})`;
+        }
     } else if (isTestMode) {
         setTestResult('Test mode active. Show your hand to predict.');
     }
@@ -442,6 +456,64 @@ function onResults(results) {
 function saveDataPoint(label, landmarks, type = 'static') {
     collectedData.push({ label, landmarks, type });
     updateUIStats();
+}
+
+function captureStaticSample(label, flatLandmarks) {
+    if (!isCollecting) return false;
+    if (staticSessionSampleCount >= MAX_STATIC_SAMPLES_PER_SESSION) {
+        stopStaticCollection('Auto-stopped at 100 samples.');
+        return false;
+    }
+
+    saveDataPoint(label, flatLandmarks, 'static');
+    staticSessionSampleCount += 1;
+    statusMsg.textContent = `Recording static sign: ${staticSessionSampleCount}/${MAX_STATIC_SAMPLES_PER_SESSION}`;
+
+    if (staticSessionSampleCount >= MAX_STATIC_SAMPLES_PER_SESSION) {
+        stopStaticCollection('Auto-stopped at 100 samples.');
+        return false;
+    }
+
+    return true;
+}
+
+function startStaticCollection() {
+    const label = labelInput.value.trim();
+    if (!label) {
+        alert("Please enter a sign name first!");
+        labelInput.focus();
+        return;
+    }
+
+    isCollecting = true;
+    staticSessionSampleCount = 0;
+    isStaticPausedNoHands = false;
+
+    recIndicator.style.display = 'flex';
+    captureBtn.classList.add('active');
+    statusMsg.textContent = `Recording static sign: 0/${MAX_STATIC_SAMPLES_PER_SESSION}`;
+}
+
+function stopStaticCollection(reason = 'Recording stopped.') {
+    if (!isCollecting) return;
+
+    isCollecting = false;
+    isStaticPausedNoHands = false;
+
+    const recordedCount = staticSessionSampleCount;
+    staticSessionSampleCount = 0;
+
+    recIndicator.style.display = 'none';
+    captureBtn.classList.remove('active');
+
+    const suffix = recordedCount > 0 ? ` Saved ${recordedCount} samples.` : ' No new samples captured.';
+    statusMsg.textContent = `${reason}${suffix}`;
+
+    saveToServer().then(() => {
+        renderDataList();
+    }).catch((err) => {
+        console.error('Failed to save static recording session:', err);
+    });
 }
 
 async function saveDynamicSign(label, frames) {
@@ -556,25 +628,13 @@ clearAllBtn.addEventListener('click', async () => {
 });
 
 // --- Capture Controls ---
-captureBtn.addEventListener('mousedown', () => {
-    if (!labelInput.value.trim()) {
-        alert("Please enter a sign name first!");
-        labelInput.focus();
-        return;
+captureBtn.addEventListener('click', () => {
+    if (recordingMode !== 'static') return;
+    if (isCollecting) {
+        stopStaticCollection('Recording stopped.');
+    } else {
+        startStaticCollection();
     }
-    isCollecting = true;
-    recIndicator.style.display = 'flex';
-    captureBtn.classList.add('active');
-});
-
-['mouseup', 'mouseleave'].forEach(evt => {
-    captureBtn.addEventListener(evt, async () => {
-        isCollecting = false;
-        recIndicator.style.display = 'none';
-        captureBtn.classList.remove('active');
-        await saveToServer(); // Auto-save on release
-        renderDataList();
-    });
 });
 
 // --- Training Logic ---

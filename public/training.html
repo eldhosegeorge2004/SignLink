@@ -301,6 +301,18 @@
             background: #eee;
         }
 
+        .capture-fab.active {
+            background: #da3633;
+            border-color: rgba(218, 54, 51, 0.5);
+        }
+
+        .capture-fab.active .capture-inner {
+            background: white;
+            border-radius: 10px;
+            width: 34px;
+            height: 34px;
+        }
+
         .capture-inner {
             width: 60px;
             height: 60px;
@@ -448,11 +460,10 @@
             </div>
 
             <!-- Capture Button -->
-            <button id="captureBtn" class="capture-fab" title="Hold to Record">
+            <button id="captureBtn" class="capture-fab" title="Click to Start/Stop Recording">
                 <div class="capture-inner"></div>
             </button>
-            <p id="captureHint" style="margin-top: 15px; color: #8b949e; font-size: 0.9rem;">Hold button to record
-                samples</p>
+            <p id="captureHint" style="margin-top: 15px; color: #8b949e; font-size: 0.9rem;">Press once to start, press again to stop. Pauses when no hands are detected, auto-stops at 100 samples.</p>
 
             <!-- Dynamic Recording Controls (hidden by default) -->
             <div id="dynamicControls" style="display: none; margin-top: 20px; text-align: center;">
