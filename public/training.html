@@ -435,27 +435,34 @@
             <button id="captureBtn" class="capture-fab" title="Hold to Record">
                 <div class="capture-inner"></div>
             </button>
-            <p id="captureHint" style="margin-top: 15px; color: #8b949e; font-size: 0.9rem;">Hold button to record samples</p>
-            
+            <p id="captureHint" style="margin-top: 15px; color: #8b949e; font-size: 0.9rem;">Hold button to record
+                samples</p>
+
             <!-- Dynamic Recording Controls (hidden by default) -->
             <div id="dynamicControls" style="display: none; margin-top: 20px; text-align: center;">
-                <button id="startRecordBtn" class="primary-btn" style="width: 200px; display: inline-flex; margin-bottom: 10px;">
+                <button id="startRecordBtn" class="primary-btn"
+                    style="width: 200px; display: inline-flex; margin-bottom: 10px;">
                     <span class="material-icons">fiber_manual_record</span>
                     Start Recording
                 </button>
-                <button id="stopRecordBtn" class="secondary-btn" style="width: 200px; display: none; margin-bottom: 10px;">
+                <button id="stopRecordBtn" class="secondary-btn"
+                    style="width: 200px; display: none; margin-bottom: 10px;">
                     <span class="material-icons">stop</span>
                     Stop Recording
                 </button>
-                <div id="frameCounter" style="color: #58a6ff; font-size: 1.2rem; font-weight: 600; margin-top: 5px; display: none;">
+                <div id="frameCounter"
+                    style="color: #58a6ff; font-size: 1.2rem; font-weight: 600; margin-top: 5px; display: none;">
                     Frames: <span id="frameCount">0</span> / 30
                 </div>
-                <div id="recordingProgress" style="width: 200px; height: 4px; background: #21262d; border-radius: 2px; margin: 10px auto; overflow: hidden; display: none;">
-                    <div id="progressBar" style="height: 100%; background: #238636; width: 0%; transition: width 0.1s;"></div>
+                <div id="recordingProgress"
+                    style="width: 200px; height: 4px; background: #21262d; border-radius: 2px; margin: 10px auto; overflow: hidden; display: none;">
+                    <div id="progressBar" style="height: 100%; background: #238636; width: 0%; transition: width 0.1s;">
+                    </div>
                 </div>
             </div>
 
-            <div id="testResult" style="position: absolute; left: 50%; transform: translateX(-50%); bottom: 125px; z-index: 6; color: #e6edf3; font-size: 0.95rem; font-weight: 600; background: rgba(13, 17, 23, 0.9); border: 1px solid #30363d; border-radius: 8px; padding: 8px 12px; white-space: nowrap;">
+            <div id="testResult"
+                style="position: absolute; left: calc(50% + 60px); transform: translateY(50%); bottom: 70px; z-index: 6; color: #e6edf3; font-size: 0.95rem; font-weight: 600; background: rgba(13, 17, 23, 0.9); border: 1px solid #30363d; border-radius: 8px; padding: 8px 12px; white-space: nowrap;">
                 Test mode is off.
             </div>
         </div>
