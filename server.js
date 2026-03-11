@@ -49,6 +49,85 @@ app.post('/api/training-data', (req, res) => {
     }
 });
 
+// POST /api/upload-sign-card — upload a sign card image
+app.post('/api/upload-sign-card', (req, res) => {
+    try {
+        const { lang, label, imageBase64, extension } = req.body;
+
+        if (!lang || !label || !imageBase64 || !extension) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        const safeLabel = label.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-');
+        const langFolder = lang.toLowerCase();
+
+        // Remove valid 'data:image/...;base64,' prefix
+        const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+
+        const uploadsDir = path.join(__dirname, 'public', 'signs-images', langFolder);
+
+        // Ensure directory exists
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
+        // Clean up previous image formats for this label to avoid duplicates showing up incorrectly
+        const formats = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        formats.forEach(ext => {
+            const oldFilePath = path.join(uploadsDir, `${safeLabel}.${ext}`);
+            if (fs.existsSync(oldFilePath)) {
+                fs.unlinkSync(oldFilePath);
+            }
+        });
+
+        const targetFilePath = path.join(uploadsDir, `${safeLabel}.${extension}`);
+        fs.writeFileSync(targetFilePath, imageBuffer);
+
+        res.json({ success: true, path: `/signs-images/${langFolder}/${safeLabel}.${extension}` });
+
+    } catch (err) {
+        console.error('Error saving sign card image:', err);
+        res.status(500).json({ error: 'Failed to save sign card image' });
+    }
+});
+
+// POST /api/delete-sign-card — delete a sign card image
+app.post('/api/delete-sign-card', (req, res) => {
+    try {
+        const { lang, label } = req.body;
+
+        if (!lang || !label) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        const safeLabel = label.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-');
+        const langFolder = lang.toLowerCase();
+
+        const uploadsDir = path.join(__dirname, 'public', 'signs-images', langFolder);
+
+        let deleted = false;
+
+        // Check and delete any matching format
+        if (fs.existsSync(uploadsDir)) {
+            const formats = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            formats.forEach(ext => {
+                const filePath = path.join(uploadsDir, `${safeLabel}.${ext}`);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    deleted = true;
+                }
+            });
+        }
+
+        res.json({ success: true, deleted });
+
+    } catch (err) {
+        console.error('Error deleting sign card image:', err);
+        res.status(500).json({ error: 'Failed to delete sign card image' });
+    }
+});
+
 io.on("connection", socket => {
     console.log(`User connected: ${socket.id}`);
 

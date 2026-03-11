@@ -18,6 +18,13 @@ const clearAllBtn = document.getElementById('clearAllBtn');
 const testBtn = document.getElementById('testBtn');
 const testResult = document.getElementById('testResult');
 
+// Sign Card Elements
+const signCardBtn = document.getElementById('signCardBtn');
+const signCardInput = document.getElementById('signCardInput');
+const signCardStatus = document.getElementById('signCardStatus');
+const clearSignDetailsBtn = document.getElementById('clearSignDetailsBtn');
+const signCardFileName = document.getElementById('signCardFileName');
+
 // Dynamic mode elements
 const staticModeBtn = document.getElementById('staticModeBtn');
 const dynamicModeBtn = document.getElementById('dynamicModeBtn');
@@ -520,6 +527,20 @@ function renderDataList() {
 
 window.deleteLabel = async (label) => {
     if (confirm(`Delete all samples for "${label}"?`)) {
+        // Attempt to delete any associated sign card image from the server
+        try {
+            await fetch('/api/delete-sign-card', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    lang: currentLang,
+                    label: label
+                })
+            });
+        } catch (err) {
+            console.warn(`Could not delete sign card image for ${label}:`, err);
+        }
+
         collectedData = collectedData.filter(d => d.label !== label);
         await saveToServer();
         renderDataList();
@@ -912,6 +933,121 @@ uploadInput.addEventListener('change', (e) => {
     };
     reader.readAsText(file);
 });
+
+// --- Sign Card Upload ---
+if (signCardBtn && signCardInput) {
+    signCardBtn.addEventListener('click', () => {
+        const label = labelInput.value.trim();
+        if (!label) {
+            alert("Please enter a Sign Name first before uploading its card.");
+            labelInput.focus();
+            return;
+        }
+        signCardInput.click();
+    });
+
+    if (clearSignDetailsBtn) {
+        clearSignDetailsBtn.addEventListener('click', async () => {
+            const label = labelInput.value.trim();
+            if (label) {
+                // Attempt to delete any associated sign card image from the server
+                try {
+                    await fetch('/api/delete-sign-card', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            lang: currentLang,
+                            label: label
+                        })
+                    });
+                } catch (err) {
+                    console.warn(`Could not delete sign card image on clear for ${label}:`, err);
+                }
+            }
+
+            labelInput.value = '';
+            signCardInput.value = '';
+            signCardStatus.textContent = '';
+
+            if (signCardFileName) {
+                signCardFileName.textContent = '';
+                signCardFileName.style.display = 'none';
+            }
+        });
+    }
+
+    signCardInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const label = labelInput.value.trim();
+        if (!label) {
+            alert("Sign name is missing.");
+            return;
+        }
+
+        // Display selected filename
+        if (signCardFileName) {
+            signCardFileName.textContent = `Selected: ${file.name}`;
+            signCardFileName.style.display = 'block';
+        }
+
+        // Get extension from filename
+        const filenameParts = file.name.split('.');
+        if (filenameParts.length < 2) {
+            alert("File must have a valid image extension (.jpg, .png, .gif, .webp)");
+            return;
+        }
+        const extension = filenameParts.pop().toLowerCase();
+
+        // Allowed extensions
+        if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) {
+            alert("Invalid format. Please upload JPG, PNG, GIF, or WEBP.");
+            return;
+        }
+
+        signCardStatus.textContent = `Uploading ${file.name}...`;
+        signCardStatus.style.color = '#58a6ff'; // Blue loading state
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            const base64Data = evt.target.result;
+
+            try {
+                const res = await fetch('/api/upload-sign-card', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lang: currentLang,
+                        label: label,
+                        imageBase64: base64Data,
+                        extension: extension
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    signCardStatus.textContent = `✅ Uploaded successfully!`;
+                    signCardStatus.style.color = '#2ea043'; // Green success state
+                    setTimeout(() => {
+                        signCardStatus.textContent = ''; // Clear status after a while
+                    }, 5000);
+                } else {
+                    throw new Error(data.error || 'Failed to finish upload');
+                }
+            } catch (err) {
+                console.error("Card upload error:", err);
+                signCardStatus.textContent = `❌ Upload failed`;
+                signCardStatus.style.color = '#da3633'; // Red error state
+                alert("Could not upload sign card. Make sure server is running.");
+            }
+        };
+        reader.readAsDataURL(file);
+
+        // Reset input to allow selecting same file again if it failed
+        e.target.value = '';
+    });
+}
 
 // Start
 init();

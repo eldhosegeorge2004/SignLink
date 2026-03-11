@@ -387,6 +387,22 @@
                     <input type="text" id="labelInput" class="text-input" placeholder="Sign Name (e.g. Hello)">
                     <p style="font-size: 0.8rem; color: #8b949e;">Enter the name of the sign you are about to record.
                     </p>
+
+                    <input type="file" id="signCardInput" class="hidden-file-input" accept=".jpg,.jpeg,.png,.gif,.webp">
+                    <button id="signCardBtn" class="secondary-btn"
+                        style="width: 100%; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:5px;">
+                        <span class="material-icons" style="font-size:18px;">add_photo_alternate</span>
+                        Add Sign Card (Optional)
+                    </button>
+                    <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                        <div id="signCardFileName"
+                            style="font-size: 0.8rem; color: #8b949e; font-style: italic; display: none;"></div>
+                        <button id="clearSignDetailsBtn"
+                            style="background: none; border: none; color: #da3633; font-size: 0.8rem; cursor: pointer; padding: 0; text-decoration: underline;">
+                            Clear
+                        </button>
+                    </div>
+                    <div id="signCardStatus" style="font-size: 0.8rem; color: #2ea043; margin-top: 2px;"></div>
                 </div>
             </div>
 
