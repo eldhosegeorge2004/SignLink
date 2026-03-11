@@ -42,6 +42,8 @@ const predictionBuffer = [];
 const minimumHoldDuration = 1000; // ms
 let holdStartTime = 0;
 let heldLetter = null;
+const DYNAMIC_LETTER_COOLDOWN_MS = 1200;
+let lastDynamicLetterAddedAt = 0;
 
 async function updateModeVariables() {
     if (currentMode === 'ISL') {
@@ -241,10 +243,8 @@ async function resolveWordTokens(word, langFolder) {
     const wordCandidates = [
         `/signs-images/${langFolder}/words/${normalizedWord}.jpg`,
         `/signs-images/${langFolder}/words/${normalizedWord}.png`,
-        `/signs-images/${langFolder}/words/${normalizedWord}.gif`,
         `/signs-images/${langFolder}/${normalizedWord}.jpg`,
-        `/signs-images/${langFolder}/${normalizedWord}.png`,
-        `/signs-images/${langFolder}/${normalizedWord}.gif`
+        `/signs-images/${langFolder}/${normalizedWord}.png`
     ];
 
     for (const src of wordCandidates) {
@@ -262,16 +262,13 @@ async function resolveWordTokens(word, langFolder) {
         if (/[A-Z]/.test(char)) {
             charCandidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
             charCandidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
-            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.gif`);
         } else {
             charCandidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
             charCandidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
-            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.gif`);
             const digitWord = DIGIT_WORD_MAP[char];
             if (digitWord) {
                 charCandidates.push(`/signs-images/${langFolder}/characters/${digitWord}.jpg`);
                 charCandidates.push(`/signs-images/${langFolder}/characters/${digitWord}.png`);
-                charCandidates.push(`/signs-images/${langFolder}/characters/${digitWord}.gif`);
             }
         }
 
@@ -1480,6 +1477,12 @@ function labelMatchesDetectedHands(label, detectedHandCount) {
     return requirement === 'any' || requirement === detectedHandCount;
 }
 
+function isASLDynamicSpellingLetter(label) {
+    if (currentMode !== 'ASL') return false;
+    if (typeof label !== 'string') return false;
+    return label.toUpperCase() === 'Z';
+}
+
 function applyISLHandCountDisambiguation(label, detectedHandCount) {
     if (currentMode !== 'ISL') return label;
     if (typeof label !== 'string') return label;
@@ -1569,11 +1572,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
         }
 
         // dynamic predictions with frame buffer
-        // Skip dynamic buffer accumulation if user is spelling (accumulatedWord has content)
-        if (accumulatedWord.length > 0) {
-            dynamicFrameBuffer = [];
-            dynamicBufferStartTime = 0;
-        } else if (modelDynamic && uniqueLabelsDynamic.length) {
+        if (modelDynamic && uniqueLabelsDynamic.length) {
             if (dynamicBufferStartTime === 0) {
                 dynamicBufferStartTime = Date.now();
             }
@@ -1601,7 +1600,8 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
 
                 // Boost confidence for dynamic signs to compete with static scores
                 const boostedConf = Math.min(conf * 1.2, 1.0);
-                if (labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
+                const allowDynamicDuringSpelling = accumulatedWord.length === 0 || isASLDynamicSpellingLetter(predictedDynamicLabel);
+                if (allowDynamicDuringSpelling && labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
                     candidates.push({
                         label: predictedDynamicLabel,
                         conf: boostedConf,
@@ -1646,7 +1646,11 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
 
         // Check if it's a single letter
         if (outputLabel.length === 1 && /^[a-zA-Z]$/.test(outputLabel)) {
-            processPredictedLetter(outputLabel);
+            if (best.isDynamic && isASLDynamicSpellingLetter(outputLabel)) {
+                processDynamicPredictedLetter(outputLabel, best.conf);
+            } else {
+                processPredictedLetter(outputLabel);
+            }
             setPredictionText(`Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`);
         } else if (accumulatedWord.length > 0) {
             // During spelling, suppress prediction display (only show spelling overlay)
@@ -1707,6 +1711,15 @@ function processPredictedLetter(letter) {
         heldLetter = letter;
         holdStartTime = now;
     }
+}
+
+function processDynamicPredictedLetter(letter, confidence = 0) {
+    const now = Date.now();
+    if (confidence < 0.7) return;
+    if (now - lastDynamicLetterAddedAt < DYNAMIC_LETTER_COOLDOWN_MS) return;
+
+    handleSpelling(letter);
+    lastDynamicLetterAddedAt = now;
 }
 
 function updateSpellingDisplay() {
@@ -1790,6 +1803,7 @@ trainBtn.addEventListener('click', async () => {
     if (collectedData.length < 10) return alert("Collect more data (min 10 samples)!");
 
     uniqueLabels = [...new Set(collectedData.map(d => d.label))];
+    if (uniqueLabels.length < 2) return alert("Need at least 2 different signs.");
 
     const labelMap = {};
     uniqueLabels.forEach((l, i) => labelMap[l] = i);

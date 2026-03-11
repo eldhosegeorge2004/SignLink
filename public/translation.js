@@ -358,6 +358,12 @@ function normalizeHandRequirement(rawValue) {
     return 'any';
 }
 
+function isASLDynamicSpellingLetter(label) {
+    if (localStorageModelKey !== 'my-asl-model') return false;
+    if (typeof label !== 'string') return false;
+    return label.toUpperCase() === 'Z';
+}
+
 function labelMatchesDetectedHands(label, detectedHandCount) {
     const requirement = normalizeHandRequirement(dynamicLabelHandRequirements[label]);
     return requirement === 'any' || requirement === detectedHandCount;
@@ -471,7 +477,7 @@ function runPrediction(landmarks, detectedHandCount = 1) {
 
         // 3. Query Dynamic Model with frame buffer
         // Skip dynamic detection if user is in the middle of spelling
-        if (localModelDynamic && localLabelsDynamic.length && accumulatedWord.length === 0) {
+        if (localModelDynamic && localLabelsDynamic.length) {
             if (dynamicBufferStartTime === 0) {
                 dynamicBufferStartTime = Date.now();
             }
@@ -503,7 +509,8 @@ function runPrediction(landmarks, detectedHandCount = 1) {
 
                 // Keep dynamic predictions unboosted to reduce false positives,
                 // but still enforce hand-count requirements when available.
-                if (labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
+                const allowDynamicDuringSpelling = accumulatedWord.length === 0 || isASLDynamicSpellingLetter(predictedDynamicLabel);
+                if (allowDynamicDuringSpelling && labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
                     candidates.push({
                         label: predictedDynamicLabel,
                         conf: conf,
@@ -535,11 +542,18 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             outputLabel = applyISLHandCountDisambiguation(outputLabel, detectedHandCount);
             updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatNormal);
 
-            // If dynamic sign detected, show immediately with special indicator
-            // Skip if user is actively spelling (accumulatedWord has content)
-            if (best.isDynamic && best.conf > 0.85 && accumulatedWord.length === 0) { // Require high confidence for dynamic
+            if (outputLabel.length === 1 && /^[a-zA-Z0-9]$/.test(outputLabel)) {
+                // Dynamic ASL Z is movement-based, so use cooldown commit instead of static hold timing.
+                if (best.isDynamic && isASLDynamicSpellingLetter(outputLabel)) {
+                    processDynamicPredictedLetter(outputLabel, best.conf);
+                } else {
+                    processPredictedLetter(outputLabel);
+                }
+                const dynamicTag = best.isDynamic ? ' 🔄' : '';
+                sttResult.innerText = `Sign: ${outputLabel}${dynamicTag} (${Math.round(best.conf * 100)}%)`;
+            } else if (best.isDynamic && best.conf > 0.85 && accumulatedWord.length === 0) { // Require high confidence for dynamic
                 sttResult.innerText = `Sign: ${outputLabel} 🔄 (${Math.round(best.conf * 100)}%)`;
-                
+
                 // Change-only speaking: do not repeat while same sign remains detected.
                 const isDifferentSign = outputLabel !== lastSpokenLabel;
 
@@ -554,10 +568,6 @@ function runPrediction(landmarks, detectedHandCount = 1) {
                     dynamicFrameBuffer = [];
                     dynamicBufferStartTime = 0;
                 }, 500); // Small delay before clearing
-            } else if (outputLabel.length === 1 && /^[a-zA-Z0-9]$/.test(outputLabel)) {
-                // Single letters or numbers require stable hold
-                processPredictedLetter(outputLabel);
-                sttResult.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
             } else if (accumulatedWord.length === 0) {
                 // Only show non-dynamic/non-letter signs if not spelling
                 sttResult.innerText = `Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`;
@@ -653,6 +663,8 @@ function onResults(results) {
 const minimumHoldDuration = 1000; // milliseconds (~1 second)
 let holdStartTime = 0;
 let heldLetter = null;
+const DYNAMIC_LETTER_COOLDOWN_MS = 1200;
+let lastDynamicLetterAddedAt = 0;
 
 function handleSpelling(letter) {
     // This helper is now only called after the hold check succeeds.
@@ -702,6 +714,15 @@ function processPredictedLetter(letter) {
         heldLetter = letter;
         holdStartTime = now;
     }
+}
+
+function processDynamicPredictedLetter(letter, confidence = 0) {
+    const now = Date.now();
+    if (confidence < 0.7) return;
+    if (now - lastDynamicLetterAddedAt < DYNAMIC_LETTER_COOLDOWN_MS) return;
+
+    handleSpelling(letter);
+    lastDynamicLetterAddedAt = now;
 }
 
 function updateSpellingDisplay() {
