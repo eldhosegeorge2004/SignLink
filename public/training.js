@@ -66,6 +66,26 @@ let testDynamicFrameBuffer = [];
 let testDynamicBufferStartTime = 0;
 const TEST_DYNAMIC_ANALYZE_MS = 1200;
 
+function normalizeLabel(label) {
+    const trimmed = (label || '').trim();
+    if (!trimmed) return '';
+    if (/^[a-zA-Z]$/.test(trimmed)) return trimmed.toUpperCase();
+    return trimmed;
+}
+
+function normalizeDatasetLabels(samples) {
+    let changed = false;
+    const normalized = samples.map((sample) => {
+        const normalizedLabel = normalizeLabel(sample.label);
+        if (normalizedLabel !== sample.label) {
+            changed = true;
+            return { ...sample, label: normalizedLabel };
+        }
+        return sample;
+    });
+    return { normalized, changed };
+}
+
 // Storage Keys
 const STORAGE_KEYS = {
     'ISL': { model: 'my-isl-model', labels: 'isl_labels', data: 'isl_data' },
@@ -264,12 +284,13 @@ async function toggleTestMode() {
 }
 
 function startDynamicRecording() {
-    const label = labelInput.value.trim();
+    const label = normalizeLabel(labelInput.value);
     if (!label) {
         alert("Please enter a sign name first!");
         labelInput.focus();
         return;
     }
+    labelInput.value = label;
 
     isDynamicRecording = true;
     dynamicFrameBuffer = [];
@@ -293,7 +314,7 @@ function stopDynamicRecording() {
 
     // Save the recorded sequence
     if (dynamicFrameBuffer.length >= 10) {
-        const label = labelInput.value.trim();
+        const label = normalizeLabel(labelInput.value);
         saveDynamicSign(label, dynamicFrameBuffer);
         statusMsg.textContent = `Saved dynamic sign "${label}" with ${dynamicFrameBuffer.length} frames`;
     } else {
@@ -396,8 +417,9 @@ function onResults(results) {
 
             // Static mode recording
             if (isCollecting && recordingMode === 'static') {
-                const label = labelInput.value.trim();
+                const label = normalizeLabel(labelInput.value);
                 if (label) {
+                    labelInput.value = label;
                     const flatLandmarks = preprocessLandmarks(landmarks);
                     const shouldContinue = captureStaticSample(label, flatLandmarks);
                     if (!shouldContinue) break;
@@ -454,7 +476,9 @@ function onResults(results) {
 }
 
 function saveDataPoint(label, landmarks, type = 'static') {
-    collectedData.push({ label, landmarks, type, isTrained: false, recordedAt: Date.now() });
+    const normalizedLabel = normalizeLabel(label);
+    if (!normalizedLabel) return;
+    collectedData.push({ label: normalizedLabel, landmarks, type, isTrained: false, recordedAt: Date.now() });
     updateUIStats();
 }
 
@@ -478,12 +502,13 @@ function captureStaticSample(label, flatLandmarks) {
 }
 
 function startStaticCollection() {
-    const label = labelInput.value.trim();
+    const label = normalizeLabel(labelInput.value);
     if (!label) {
         alert("Please enter a sign name first!");
         labelInput.focus();
         return;
     }
+    labelInput.value = label;
 
     isCollecting = true;
     staticSessionSampleCount = 0;
@@ -517,8 +542,11 @@ function stopStaticCollection(reason = 'Recording stopped.') {
 }
 
 async function saveDynamicSign(label, frames) {
+    const normalizedLabel = normalizeLabel(label);
+    if (!normalizedLabel) return;
+
     collectedData.push({
-        label,
+        label: normalizedLabel,
         type: 'dynamic',
         frames: frames,
         handCount: dynamicRecordingMaxHands,
@@ -537,7 +565,14 @@ async function loadDataFromServer() {
         const res = await fetch('/api/training-data');
         if (!res.ok) throw new Error(`Server responded ${res.status}`);
         const allData = await res.json();
-        collectedData = allData[currentLang] || [];
+        const loadedData = allData[currentLang] || [];
+        const normalizedData = normalizeDatasetLabels(loadedData);
+        collectedData = normalizedData.normalized;
+
+        if (normalizedData.changed) {
+            // Persist one-time normalization so all future training runs are consistent.
+            await saveToServer();
+        }
     } catch (err) {
         console.error('Failed to load training data from server:', err);
         collectedData = [];
@@ -1258,7 +1293,7 @@ uploadInput.addEventListener('change', (e) => {
             if (Array.isArray(imported)) {
                 // Validate both static and dynamic formats
                 const valid = imported.every(d => {
-                    if (!d.label) return false;
+                    if (!normalizeLabel(d.label)) return false;
                     if (d.type === 'dynamic') {
                         return d.frames && Array.isArray(d.frames) && d.frames.length > 0;
                     } else {
@@ -1269,6 +1304,7 @@ uploadInput.addEventListener('change', (e) => {
                 if (valid) {
                     const normalizedImported = imported.map((sample) => ({
                         ...sample,
+                        label: normalizeLabel(sample.label),
                         type: sample.type || 'static',
                         isTrained: false,
                         recordedAt: sample.recordedAt || Date.now()
@@ -1292,18 +1328,19 @@ uploadInput.addEventListener('change', (e) => {
 // --- Sign Card Upload ---
 if (signCardBtn && signCardInput) {
     signCardBtn.addEventListener('click', () => {
-        const label = labelInput.value.trim();
+        const label = normalizeLabel(labelInput.value);
         if (!label) {
             alert("Please enter a Sign Name first before uploading its card.");
             labelInput.focus();
             return;
         }
+        labelInput.value = label;
         signCardInput.click();
     });
 
     if (clearSignDetailsBtn) {
         clearSignDetailsBtn.addEventListener('click', async () => {
-            const label = labelInput.value.trim();
+            const label = normalizeLabel(labelInput.value);
             if (label) {
                 // Attempt to delete any associated sign card image from the server
                 try {
@@ -1335,11 +1372,12 @@ if (signCardBtn && signCardInput) {
         const file = e.target.files[0];
         if (!file) return;
 
-        const label = labelInput.value.trim();
+        const label = normalizeLabel(labelInput.value);
         if (!label) {
             alert("Sign name is missing.");
             return;
         }
+        labelInput.value = label;
 
         // Display selected filename
         if (signCardFileName) {
@@ -1403,6 +1441,13 @@ if (signCardBtn && signCardInput) {
         e.target.value = '';
     });
 }
+
+labelInput.addEventListener('blur', () => {
+    const normalized = normalizeLabel(labelInput.value);
+    if (normalized) {
+        labelInput.value = normalized;
+    }
+});
 
 // Start
 init();
