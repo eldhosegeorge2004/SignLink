@@ -1332,12 +1332,12 @@ async function resolveTranslationUnitTokens(unit, langFolder) {
 }
 
 function displaySignCards(text) {
-    const cardArea = document.querySelector('.sign-cards-area');
+    const cardArea = document.querySelector('.sign-cards-area-right');
     if (!cardArea) return;
 
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length === 0) {
-        cardArea.innerHTML = '<p>No speech detected yet.</p>';
+        cardArea.innerHTML = '<div class="placeholder-msg">Sign Cards will appear here.</div>';
         return;
     }
 
@@ -1349,12 +1349,10 @@ function displaySignCards(text) {
         for (let i = 0; i < units.length; i++) {
             const resolved = await resolveTranslationUnitTokens(units[i], langFolder);
             tokens.push(...resolved);
-            if (i < units.length - 1) tokens.push({ type: 'space' });
+            // Every word/phrase gets its own line
+            tokens.push({ type: 'linebreak' });
         }
 
-        if (translationCardQueue.length && translationCardQueue[translationCardQueue.length - 1]?.type !== 'linebreak') {
-            translationCardQueue.push({ type: 'linebreak' });
-        }
         translationCardQueue.push(...tokens);
 
         if (translationCardQueue.length > TRANSLATION_MAX_CARD_TOKENS) {
@@ -1376,14 +1374,6 @@ function displaySignCards(text) {
         }
 
         cardArea.innerHTML = '';
-        cardArea.style.display = 'flex';
-        cardArea.style.flexWrap = 'nowrap';
-        cardArea.style.flexDirection = 'column';
-        cardArea.style.alignItems = 'flex-start';
-        cardArea.style.justifyContent = 'flex-start';
-        cardArea.style.alignContent = 'flex-start';
-        cardArea.style.gap = '10px';
-        cardArea.style.padding = '16px';
 
         const lineGroups = [];
         let currentLine = [];
@@ -1479,6 +1469,9 @@ function displaySignCards(text) {
 
             cardArea.appendChild(lineEl);
         });
+        
+        // Auto-scroll to the bottom as new cards are added
+        cardArea.scrollTop = cardArea.scrollHeight;
     })();
 }
 

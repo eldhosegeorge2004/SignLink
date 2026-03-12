@@ -12,11 +12,14 @@
     <style>
         :root {
             --primary: #2f81f7;
-            --bg-dark: #0d1117;
-            --text-main: #e6edf3;
+            --primary-glow: rgba(47, 129, 247, 0.4);
+            --bg-dark: #05070a;
+            --text-main: #f0f6fc;
             --text-muted: #8b949e;
-            --card-bg: #161b22;
-            --border-color: #30363d;
+            --glass-bg: rgba(22, 27, 34, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --font-heading: 'Outfit', sans-serif;
+            --font-body: 'Inter', sans-serif;
         }
 
         * {
@@ -29,11 +32,11 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
+            background-color: var(--bg-dark);
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-dark);
+            font-family: var(--font-body);
             color: var(--text-main);
             height: 100dvh;
             display: flex;
@@ -41,52 +44,108 @@
             align-items: center;
             justify-content: center;
             padding: 32px 24px;
+            position: relative;
         }
 
-        body::before {
-            content: "";
+        /* --- Animated Background --- */
+        .bg-blobs {
             position: fixed;
             inset: 0;
-            width: 150vw;
-            height: 150vh;
-            background: radial-gradient(circle at 50% 50%, rgba(47, 129, 247, 0.15) 0%, transparent 50%);
             z-index: -1;
-            animation: pulse-glow 10s ease-in-out infinite alternate;
+            overflow: hidden;
+            filter: blur(80px);
         }
 
-        @keyframes pulse-glow {
-            0% { opacity: 0.5; transform: scale(0.9); }
-            100% { opacity: 0.8; transform: scale(1.1); }
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            opacity: 0.15;
+            animation: move-blob 20s infinite alternate cubic-bezier(0.45, 0, 0.55, 1);
         }
 
+        .blob-1 {
+            width: 500px;
+            height: 500px;
+            background: var(--primary);
+            top: -100px;
+            left: -100px;
+            animation-duration: 25s;
+        }
+
+        .blob-2 {
+            width: 400px;
+            height: 400px;
+            background: #8b5cf6;
+            bottom: -50px;
+            right: -50px;
+            animation-delay: -5s;
+        }
+
+        .blob-3 {
+            width: 300px;
+            height: 300px;
+            background: #06b6d4;
+            top: 40%;
+            left: 50%;
+            animation-delay: -10s;
+        }
+
+        @keyframes move-blob {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(100px, 50px) scale(1.1); }
+        }
+
+        /* --- Header --- */
         header {
             text-align: center;
-            margin-bottom: 32px;
+            margin-bottom: 50px;
             z-index: 2;
             flex-shrink: 0;
+            animation: fadeInDown 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .logo-icon {
+            font-size: 36px;
+            color: var(--primary);
+            background: rgba(47, 129, 247, 0.1);
+            padding: 10px;
+            border-radius: 16px;
+            box-shadow: 0 8px 24px var(--primary-glow);
         }
 
         h1 {
-            font-family: 'Outfit', sans-serif;
-            font-size: clamp(1.8rem, 5vw, 3rem);
+            font-family: var(--font-heading);
+            font-size: clamp(2rem, 6vw, 3.5rem);
             font-weight: 800;
+            letter-spacing: -1px;
             margin-bottom: 8px;
-            background: linear-gradient(135deg, #fff 0%, #a5d6ff 100%);
+            background: linear-gradient(135deg, #fff 30%, #a5d6ff 100%);
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
         p.subtitle {
-            font-size: clamp(0.85rem, 2vw, 1.1rem);
+            font-size: clamp(0.9rem, 2.5vw, 1.2rem);
             color: var(--text-muted);
+            font-weight: 400;
         }
 
+        /* --- Cards --- */
         .cards-container {
             display: flex;
-            gap: 20px;
+            gap: 24px;
             z-index: 2;
             width: 100%;
-            max-width: 1100px;
+            max-width: 1200px;
             justify-content: center;
             flex-wrap: wrap;
             flex: 1;
@@ -94,37 +153,54 @@
         }
 
         .card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 24px;
-            padding: 28px;
-            flex: 1 1 280px;
-            max-width: 320px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 32px;
+            padding: 32px;
+            flex: 1 1 300px;
+            max-width: 360px;
             display: flex;
             flex-direction: column;
             align-items: center;
             text-align: center;
             cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
             position: relative;
             overflow: hidden;
             text-decoration: none;
             color: var(--text-main);
+            animation: fadeInUp 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .card:nth-child(1) { animation-delay: 0.1s; }
+        .card:nth-child(2) { animation-delay: 0.2s; }
+        .card:nth-child(3) { animation-delay: 0.3s; }
+
+        .card::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at top right, rgba(255,255,255,0.05), transparent);
+            pointer-events: none;
         }
 
         .card:hover {
-            transform: translateY(-10px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 0 2px var(--primary);
-            border-color: transparent;
+            transform: translateY(-12px) scale(1.02);
+            background: rgba(47, 129, 247, 0.08);
+            border-color: var(--primary);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 20px var(--primary-glow);
         }
 
         .card-image-wrapper {
             width: 100%;
-            height: 170px;
-            margin-bottom: 18px;
-            border-radius: 16px;
+            height: 180px;
+            margin-bottom: 24px;
+            border-radius: 20px;
             overflow: hidden;
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(0, 0, 0, 0.2);
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -134,7 +210,7 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transition: transform 0.5s ease;
+            transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         .card:hover .card-image-wrapper img {
@@ -142,149 +218,115 @@
         }
 
         .card h2 {
-            font-family: 'Outfit', sans-serif;
-            font-size: 1.4rem;
-            margin-bottom: 8px;
+            font-family: var(--font-heading);
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #fff;
         }
 
         .card p {
-            font-size: 0.9rem;
+            font-size: 1rem;
             color: var(--text-muted);
-            line-height: 1.5;
+            line-height: 1.6;
+            margin-bottom: 20px;
         }
 
         .card-icon {
-            margin-top: 16px;
             background: rgba(47, 129, 247, 0.1);
             color: var(--primary);
-            padding: 10px;
+            padding: 12px;
             border-radius: 50%;
-            transition: background 0.3s;
+            transition: all 0.3s;
+            font-size: 28px;
+            margin-top: auto;
         }
 
         .card:hover .card-icon {
             background: var(--primary);
             color: white;
+            transform: scale(1.1) rotate(5deg);
         }
 
-        /* Tablet */
-        @media (max-width: 900px) {
-            .card {
-                flex: 1 1 calc(50% - 20px);
-                max-width: 360px;
-            }
+        /* --- Cursor Effects --- */
+        .cursor-glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(47, 129, 247, 0.08) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 1;
+            transform: translate(-50%, -50%);
+            transition: transform 0.1s ease-out;
+            will-change: transform;
         }
 
-        /* ── MOBILE: true native app feel — no scroll ── */
+        /* --- Spline Canvas --- */
+        #spline-canvas {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.7; /* Increased visibility */
+        }
+
+        /* --- Animations --- */
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* --- Mobile Improvements --- */
         @media (max-width: 600px) {
             body {
-                padding: 20px 16px 16px;
-                justify-content: space-between;
+                padding: 24px 20px;
+                justify-content: center;
+                overflow-y: auto;
             }
 
             header {
-                margin-bottom: 0;
+                margin-bottom: 30px;
             }
 
-            h1 {
-                font-size: 1.7rem;
-                margin-bottom: 4px;
-            }
-
-            p.subtitle {
-                font-size: 0.8rem;
-            }
+            h1 { font-size: 2.2rem; }
 
             .cards-container {
                 flex-direction: column;
-                flex-wrap: nowrap;
-                gap: 10px;
-                align-items: stretch;
-                justify-content: center;
-                flex: 1;
-                margin-top: 16px;
+                gap: 16px;
             }
 
             .card {
-                flex: 1 1 0;
-                min-height: 0;
                 max-width: 100%;
-                width: 100%;
-                padding: 12px 16px;
-                border-radius: 16px;
-                flex-direction: row;
-                align-items: center;
-                text-align: left;
-                gap: 14px;
+                padding: 24px;
+                border-radius: 24px;
             }
 
-            /* No hover lift on touch */
-            .card:hover {
-                transform: none;
-                box-shadow: 0 0 0 2px var(--primary);
-            }
-
-            .card-image-wrapper {
-                width: 72px;
-                height: 72px;
-                min-width: 72px;
-                border-radius: 12px;
-                margin-bottom: 0;
-                flex-shrink: 0;
-            }
-
-            .card-content {
-                display: flex;
-                flex-direction: column;
-                flex: 1;
-                min-width: 0;
-            }
-
-            .card h2 {
-                font-size: 1rem;
-                margin-bottom: 4px;
-            }
-
-            .card p {
-                font-size: 0.78rem;
-                line-height: 1.4;
-            }
-
-            .card-icon {
-                margin-top: 0;
-                margin-left: auto;
-                flex-shrink: 0;
-                padding: 8px;
-                font-size: 20px;
-            }
-        }
-
-        /* Very small phones */
-        @media (max-width: 360px) {
-            body {
-                padding: 16px 12px 12px;
-            }
-
-            h1 {
-                font-size: 1.5rem;
-            }
-
-            .card {
-                padding: 10px 12px;
-            }
-
-            .card-image-wrapper {
-                width: 60px;
-                height: 60px;
-                min-width: 60px;
-            }
+            .card-image-wrapper { height: 140px; }
         }
     </style>
 </head>
 
 <body>
 
+    <div class="cursor-glow" id="cursor-glow"></div>
+    <canvas id="spline-canvas"></canvas>
+
+    <div class="bg-blobs" id="bg-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
     <header>
+        <div class="logo-area">
+            <span class="material-icons logo-icon">sign_language</span>
+        </div>
         <h1>Welcome to SignLink</h1>
         <p class="subtitle">Choose how you want to connect today.</p>
     </header>
@@ -327,6 +369,113 @@
         </a>
     </div>
 
+    <script>
+        const glow = document.getElementById('cursor-glow');
+        const blobs = document.querySelectorAll('.blob');
+        const cards = document.querySelectorAll('.card');
+        const header = document.querySelector('header');
+        const canvas = document.getElementById('spline-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let mouse = { x: -1000, y: -1000 };
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Spline Data
+        const splines = [];
+        for (let i = 0; i < 5; i++) {
+            splines.push({
+                y: height * 0.2 + (i * height * 0.15),
+                amplitude: 30 + (i * 10),
+                speed: 0.003 + (i * 0.002), // Much slower, subtle speed
+                offset: i * Math.PI,
+                color: i % 2 === 0 ? 'rgba(47, 129, 247, 0.7)' : 'rgba(139, 92, 246, 0.6)' // Increased alpha
+            });
+        }
+
+        function drawSplines(time) {
+            ctx.clearRect(0, 0, width, height);
+            
+            splines.forEach(s => {
+                ctx.beginPath();
+                ctx.strokeStyle = s.color;
+                ctx.lineWidth = 2; // Thicker lines
+
+                for (let x = 0; x <= width; x += 10) {
+                    // Base wave
+                    let waveY = s.y + Math.sin(x * 0.002 + s.offset + time * s.speed) * s.amplitude;
+                    
+                    // Mouse distortion
+                    const dx = x - mouse.x;
+                    const dy = waveY - mouse.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 250) {
+                        const force = (250 - dist) / 250;
+                        waveY += dy * force * 0.6;
+                    }
+
+                    if (x === 0) ctx.moveTo(x, waveY);
+                    else ctx.lineTo(x, waveY);
+                }
+                ctx.stroke();
+            });
+
+            requestAnimationFrame(drawSplines);
+        }
+        drawSplines(0);
+
+        document.addEventListener('mousemove', (e) => {
+            const { clientX, clientY } = e;
+            mouse.x = clientX;
+            mouse.y = clientY;
+            
+            // Move glow
+            glow.style.left = `${clientX}px`;
+            glow.style.top = `${clientY}px`;
+
+            // Parallax Blobs
+            const moveX = (clientX - window.innerWidth / 2) / 25;
+            const moveY = (clientY - window.innerHeight / 2) / 25;
+
+            blobs.forEach((blob, index) => {
+                const speed = (index + 1) * 0.5;
+                blob.style.transform = `translate(${moveX * speed}px, ${moveY * speed}px)`;
+            });
+
+            // Subtle Card Tilt
+            cards.forEach(card => {
+                const rect = card.getBoundingClientRect();
+                const cardX = clientX - (rect.left + rect.width / 2);
+                const cardY = clientY - (rect.top + rect.height / 2);
+                
+                const distance = Math.sqrt(cardX**2 + cardY**2);
+                if (distance < 400) {
+                    const tiltX = cardY / 20;
+                    const tiltY = -cardX / 20;
+                    card.style.transform = `perspective(1000px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateY(-5px)`;
+                } else {
+                    card.style.transform = '';
+                }
+            });
+
+            const headerX = (clientX - window.innerWidth / 2) / 50;
+            const headerY = (clientY - window.innerHeight / 2) / 50;
+            header.style.transform = `translate(${headerX}px, ${headerY}px)`;
+        });
+
+        document.addEventListener('mouseleave', () => {
+            mouse.x = -1000;
+            mouse.y = -1000;
+            cards.forEach(card => card.style.transform = '');
+            header.style.transform = '';
+        });
+    </script>
 </body>
 
 </html>
