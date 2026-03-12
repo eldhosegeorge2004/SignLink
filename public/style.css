@@ -1665,17 +1665,17 @@ video {
     }
 
     .prediction-sign-card {
-        width: clamp(56px, 12vw, 74px);
-        height: clamp(68px, 14vw, 84px);
-        min-width: clamp(56px, 12vw, 74px);
+        width: clamp(46px, 10vw, 62px);
+        height: clamp(58px, 12vw, 74px);
+        min-width: clamp(46px, 10vw, 62px);
     }
 
     .prediction-sign-card img {
-        height: clamp(40px, 8vw, 54px);
+        height: clamp(33px, 7vw, 46px);
     }
 
     .prediction-sign-card-label {
-        font-size: clamp(0.55rem, 1.5vw, 0.62rem);
+        font-size: clamp(0.5rem, 1.3vw, 0.58rem);
     }
 
     #remote-caption-overlay {
@@ -1773,8 +1773,8 @@ video {
     }
 
     .prediction-sign-card {
-        width: clamp(50px, 10vw, 60px);
-        height: clamp(62px, 12vw, 72px);
+        width: clamp(42px, 9vw, 54px);
+        height: clamp(52px, 11vw, 64px);
     }
 
     .caption-overlay {
