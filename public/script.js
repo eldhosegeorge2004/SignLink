@@ -265,16 +265,18 @@ async function preloadSignCardsFromSupabase() {
 preloadSignCardsFromSupabase();
 
 function getVCVisibleCardCapacity() {
-    if (!predictionSignCardsContainer) return 8;
+    if (!predictionSignCardsContainer) return 30;
 
     const panelWidth = predictionSignCardsContainer.clientWidth;
-    if (!panelWidth) return 8;
+    if (!panelWidth) return 30;
 
     const style = window.getComputedStyle(predictionSignCardsContainer);
     const gap = parseInt(style.columnGap || style.gap || '10', 10) || 10;
     const cardWidth = 76;
     const columns = Math.max(1, Math.floor((panelWidth + gap) / (cardWidth + gap)));
-    return columns * 2;
+    // Use more rows on narrower screens so full phrases are never clipped
+    const rows = columns <= 3 ? 5 : columns <= 5 ? 4 : 3;
+    return Math.max(30, columns * rows);
 }
 
 function checkImageExists(url) {
@@ -702,100 +704,145 @@ function displayVCSignCards(text) {
         }
         vcCardQueue.push(...newTokens);
 
-        const maxVisible = getVCVisibleCardCapacity();
-        if (vcCardQueue.length > maxVisible) {
-            const sliceStart = vcCardQueue.length - maxVisible;
-            let trimmedQueue = vcCardQueue.slice(sliceStart);
-
-            if (sliceStart > 0 && !['space', 'linebreak'].includes(vcCardQueue[sliceStart - 1]?.type)) {
-                while (trimmedQueue.length && !['space', 'linebreak'].includes(trimmedQueue[0].type)) {
-                    trimmedQueue.shift();
-                }
-            }
-
-            vcCardQueue = trimmedQueue;
+        // Limit global queue size to prevent memory leaks
+        if (vcCardQueue.length > 100) {
+            vcCardQueue = vcCardQueue.slice(vcCardQueue.length - 100);
             while (vcCardQueue.length && ['space', 'linebreak'].includes(vcCardQueue[0].type)) {
                 vcCardQueue.shift();
             }
         }
 
-        container.innerHTML = '';
-
-        const lineGroups = [];
-        let currentLine = [];
-        let currentGroup = [];
-        for (const token of vcCardQueue) {
-            if (token.type === 'linebreak') {
-                if (currentGroup.length) {
-                    currentLine.push(currentGroup);
-                    currentGroup = [];
-                }
-                if (currentLine.length) {
-                    lineGroups.push(currentLine);
-                    currentLine = [];
-                }
-                continue;
-            }
-
-            if (token.type === 'space') {
-                if (currentGroup.length) {
-                    currentLine.push(currentGroup);
-                    currentGroup = [];
-                }
-                continue;
-            }
-
-            currentGroup.push(token);
-        }
-        if (currentGroup.length) {
-            currentLine.push(currentGroup);
-        }
-        if (currentLine.length) {
-            lineGroups.push(currentLine);
-        }
-
-        lineGroups.forEach(line => {
-            const lineEl = document.createElement('div');
-            lineEl.className = 'prediction-sign-line';
-
-            line.forEach(group => {
-                const wordGroupEl = document.createElement('div');
-                wordGroupEl.className = 'prediction-word-group';
-
-                group.forEach(token => {
-                    const card = document.createElement('div');
-                    card.className = 'prediction-sign-card';
-
-                    if (token.type === 'card') {
-                        const img = document.createElement('img');
-                        img.src = token.src;
-                        img.alt = token.label;
-                        img.onerror = () => {
-                            img.style.display = 'none';
-                            card.classList.add('no-image');
-                        };
-                        card.appendChild(img);
-                    } else {
-                        card.classList.add('no-image');
-                    }
-
-                    const label = document.createElement('div');
-                    label.className = 'prediction-sign-card-label';
-                    label.textContent = token.label.length > 12 ? token.label.substring(0, 10) + '...' : token.label;
-
-                    card.appendChild(label);
-                    wordGroupEl.appendChild(card);
-                });
-
-                lineEl.appendChild(wordGroupEl);
-            });
-
-            container.appendChild(lineEl);
-        });
-
-        container.classList.add('active');
+        reRenderVCSignCards();
     })();
 }
+
+function reRenderVCSignCards() {
+    const container = predictionSignCardsContainer;
+    if (!container) return;
+
+    if (vcCardQueue.length === 0) {
+        container.innerHTML = '';
+        container.classList.remove('active');
+        return;
+    }
+
+    const maxVisible = getVCVisibleCardCapacity();
+    let visibleQueue = [];
+    let cardCount = 0;
+    let indexFound = -1;
+
+    // Work backwards to collect up to maxVisible cards
+    for (let i = vcCardQueue.length - 1; i >= 0; i--) {
+        const token = vcCardQueue[i];
+        if (token.type === 'card') {
+            cardCount++;
+        }
+        if (cardCount > maxVisible) {
+            indexFound = i + 1;
+            break;
+        }
+    }
+
+    if (indexFound !== -1) {
+        visibleQueue = vcCardQueue.slice(indexFound);
+        // If we split a word (the token we start with is a card, and the token before it was also a card)
+        if (indexFound > 0 && vcCardQueue[indexFound].type === 'card' && vcCardQueue[indexFound - 1].type === 'card') {
+            // Drop cards until we hit a space or linebreak to preserve word integrity
+            while (visibleQueue.length && visibleQueue[0].type === 'card') {
+                visibleQueue.shift();
+            }
+        }
+    } else {
+        visibleQueue = vcCardQueue.slice();
+    }
+
+    // Strip any leading spaces or linebreaks
+    while (visibleQueue.length && ['space', 'linebreak'].includes(visibleQueue[0].type)) {
+        visibleQueue.shift();
+    }
+
+    container.innerHTML = '';
+
+    const lineGroups = [];
+    let currentLine = [];
+    let currentGroup = [];
+    for (const token of visibleQueue) {
+        if (token.type === 'linebreak') {
+            if (currentGroup.length) {
+                currentLine.push(currentGroup);
+                currentGroup = [];
+            }
+            if (currentLine.length) {
+                lineGroups.push(currentLine);
+                currentLine = [];
+            }
+            continue;
+        }
+
+        if (token.type === 'space') {
+            if (currentGroup.length) {
+                currentLine.push(currentGroup);
+                currentGroup = [];
+            }
+            continue;
+        }
+
+        currentGroup.push(token);
+    }
+    if (currentGroup.length) {
+        currentLine.push(currentGroup);
+    }
+    if (currentLine.length) {
+        lineGroups.push(currentLine);
+    }
+
+    lineGroups.forEach(line => {
+        const lineEl = document.createElement('div');
+        lineEl.className = 'prediction-sign-line';
+
+        line.forEach(group => {
+            const wordGroupEl = document.createElement('div');
+            wordGroupEl.className = 'prediction-word-group';
+
+            group.forEach(token => {
+                const card = document.createElement('div');
+                card.className = 'prediction-sign-card';
+
+                if (token.type === 'card') {
+                    const img = document.createElement('img');
+                    img.src = token.src;
+                    img.alt = token.label;
+                    img.onerror = () => {
+                        img.style.display = 'none';
+                        card.classList.add('no-image');
+                    };
+                    card.appendChild(img);
+                } else {
+                    card.classList.add('no-image');
+                }
+
+                const label = document.createElement('div');
+                label.className = 'prediction-sign-card-label';
+                label.textContent = token.label.length > 12 ? token.label.substring(0, 10) + '...' : token.label;
+
+                card.appendChild(label);
+                wordGroupEl.appendChild(card);
+            });
+
+            lineEl.appendChild(wordGroupEl);
+        });
+
+        container.appendChild(lineEl);
+    });
+
+    container.classList.add('active');
+}
+
+window.addEventListener('resize', () => {
+    if (predictionSignCardsContainer && predictionSignCardsContainer.classList.contains('active')) {
+        reRenderVCSignCards();
+    }
+});
 
 function hideVCSignCards() {
     const container = predictionSignCardsContainer;
