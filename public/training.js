@@ -454,7 +454,7 @@ function onResults(results) {
 }
 
 function saveDataPoint(label, landmarks, type = 'static') {
-    collectedData.push({ label, landmarks, type });
+    collectedData.push({ label, landmarks, type, isTrained: false, recordedAt: Date.now() });
     updateUIStats();
 }
 
@@ -523,7 +523,8 @@ async function saveDynamicSign(label, frames) {
         frames: frames,
         handCount: dynamicRecordingMaxHands,
         frameCount: frames.length,
-        recordedAt: Date.now()
+        recordedAt: Date.now(),
+        isTrained: false
     });
     updateUIStats();
     await saveToServer();
@@ -638,200 +639,127 @@ captureBtn.addEventListener('click', () => {
 });
 
 // --- Training Logic ---
-trainBtn.addEventListener('click', async () => {
-    if (collectedData.length < 10) return alert("Collect more data (min 10 samples)!");
+const DUMMY_LABEL_PREFIX = '__internal_dummy__';
+const STATIC_REHEARSAL_PER_LABEL = 20;
+const DYNAMIC_REHEARSAL_PER_LABEL = 8;
 
-    // Separate static and dynamic data
-    const staticData = collectedData.filter(d => d.type === 'static' || !d.type);
-    const dynamicData = collectedData.filter(d => d.type === 'dynamic');
+function isStaticSample(sample) {
+    return sample.type === 'static' || !sample.type;
+}
 
-    statusMsg.innerText = "Preparing data...";
-    trainBtn.disabled = true;
-    saveBtn.disabled = true;
-    model = null; // Reset model to ensure clean state
+function isDynamicSample(sample) {
+    return sample.type === 'dynamic';
+}
 
-    try {
-        // Train Static Model
-        if (staticData.length >= 5) {
-            await new Promise(resolve => setTimeout(resolve, 100)); // Allow UI refresh
-            await trainStaticModel(staticData);
-            console.log('After static training, model:', model);
-            await new Promise(resolve => setTimeout(resolve, 100)); // Allow UI refresh
-        }
+function getUniqueLabels(samples) {
+    return [...new Set(samples.map(s => s.label))];
+}
 
-        // Train Dynamic Model
-        if (dynamicData.length >= 5) {
-            await new Promise(resolve => setTimeout(resolve, 100)); // Allow UI refresh
-            await trainDynamicModel(dynamicData);
-            console.log('After dynamic training, model:', model);
-            await new Promise(resolve => setTimeout(resolve, 100)); // Allow UI refresh
-        }
-
-        if (staticData.length < 5 && dynamicData.length < 5) {
-            alert("Need at least 5 samples of either static or dynamic signs!");
-            trainBtn.disabled = false;
-            return;
-        }
-
-        // Verify model was created
-        if (!model || (!model.static && !model.dynamic)) {
-            throw new Error("Model was not properly created during training. Please try again.");
-        }
-
-        const modelTypes = [];
-        if (model.static) modelTypes.push("Static ✋");
-        if (model.dynamic) modelTypes.push("Dynamic 🔄");
-
-        statusMsg.innerText = `✅ Training Complete! (${modelTypes.join(', ')}) - Click 'Save to Application' to use your models.`;
-        trainBtn.disabled = false;
-        saveBtn.disabled = false;
-    } catch (error) {
-        console.error("Training error:", error);
-        statusMsg.innerText = `❌ Training failed: ${error.message}`;
-        trainBtn.disabled = false;
-        saveBtn.disabled = true;
-        alert(`Training failed: ${error.message}\n\nCheck browser console for more details.`);
+function shuffleArray(arr) {
+    const out = [...arr];
+    for (let i = out.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [out[i], out[j]] = [out[j], out[i]];
     }
-});
+    return out;
+}
 
-async function trainStaticModel(staticData) {
-    console.log(`trainStaticModel called with ${staticData.length} samples`);
-    let uniqueLabels = [...new Set(staticData.map(d => d.label))];
-    console.log(`Unique static labels: ${uniqueLabels.join(', ')}`);
+function getRehearsalSamplesPerLabel(samples, perLabelLimit) {
+    const buckets = {};
+    samples.forEach((sample) => {
+        if (!buckets[sample.label]) buckets[sample.label] = [];
+        buckets[sample.label].push(sample);
+    });
 
-    // Ensure at least 2 classes for oneHot (required by TensorFlow)
-    let trainingData = [...staticData];
-    if (uniqueLabels.length < 2) {
-        const dummyLabel = uniqueLabels[0] + '_dummy';
-        uniqueLabels = [uniqueLabels[0], dummyLabel];
-        // Add dummy samples (duplicate of first class with dummy label)
-        const dummySamples = staticData.slice(0, Math.max(1, Math.ceil(staticData.length * 0.2))).map(d => ({
-            ...d,
-            label: dummyLabel
-        }));
-        trainingData = [...staticData, ...dummySamples];
-        console.log(`Added ${dummySamples.length} dummy samples to reach 2 classes`);
+    const rehearsal = [];
+    Object.keys(buckets).forEach((label) => {
+        const shuffled = shuffleArray(buckets[label]);
+        rehearsal.push(...shuffled.slice(0, perLabelLimit));
+    });
+
+    return rehearsal;
+}
+
+function withDummyClassIfNeeded(samples, labels) {
+    if (labels.length >= 2) {
+        return { trainingData: samples, trainingLabels: labels };
     }
 
-    statusMsg.innerText = "🔄 Training static model (this may take 1-2 minutes)...";
-    console.log(`Starting static training with ${trainingData.length} samples, ${uniqueLabels.length} classes`);
+    const dummyLabel = `${DUMMY_LABEL_PREFIX}_${labels[0]}`;
+    const dummyCount = Math.max(1, Math.ceil(samples.length * 0.2));
+    const dummySamples = samples.slice(0, dummyCount).map((sample) => ({
+        ...sample,
+        label: dummyLabel
+    }));
 
-    const labelMap = {};
-    uniqueLabels.forEach((l, i) => labelMap[l] = i);
+    return {
+        trainingData: [...samples, ...dummySamples],
+        trainingLabels: [labels[0], dummyLabel]
+    };
+}
 
-    const xs = tf.tensor2d(trainingData.map(d => d.landmarks));
-    const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), uniqueLabels.length);
+function toPublicLabels(labels) {
+    return labels.filter(l => !l.startsWith(DUMMY_LABEL_PREFIX));
+}
 
+function normalizeLegacySamplesAsTrained(hasStaticModel, hasDynamicModel) {
+    let changed = false;
+    collectedData.forEach((sample) => {
+        if (sample.isTrained !== undefined) return;
+        if (hasStaticModel && isStaticSample(sample)) {
+            sample.isTrained = true;
+            changed = true;
+        }
+        if (hasDynamicModel && isDynamicSample(sample)) {
+            sample.isTrained = true;
+            changed = true;
+        }
+    });
+    return changed;
+}
+
+async function ensureTrainingModelsLoaded() {
+    if (!model) model = {};
+
+    if (!model.static) {
+        const savedStaticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
+        if (savedStaticLabels) {
+            try {
+                model.static = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-static`);
+                model.staticLabels = JSON.parse(savedStaticLabels);
+            } catch (err) {
+                console.warn('Unable to load saved static model for incremental training:', err);
+            }
+        }
+    }
+
+    if (!model.dynamic) {
+        const savedDynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
+        if (savedDynamicLabels) {
+            try {
+                model.dynamic = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
+                model.dynamicLabels = JSON.parse(savedDynamicLabels);
+                const handReqRaw = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`);
+                model.dynamicHandRequirements = handReqRaw ? JSON.parse(handReqRaw) : {};
+            } catch (err) {
+                console.warn('Unable to load saved dynamic model for incremental training:', err);
+            }
+        }
+    }
+}
+
+function createStaticModel(outputUnits) {
     const staticModel = tf.sequential();
     staticModel.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [63] }));
     staticModel.add(tf.layers.dropout({ rate: 0.2 }));
     staticModel.add(tf.layers.dense({ units: 32, activation: 'relu' }));
-    staticModel.add(tf.layers.dense({ units: uniqueLabels.length, activation: 'softmax' }));
-
+    staticModel.add(tf.layers.dense({ units: outputUnits, activation: 'softmax' }));
     staticModel.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
-
-    try {
-        console.log('Starting fit...');
-
-        // Allow UI to update before starting training
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        await staticModel.fit(xs, ys, {
-            epochs: 30, // Reduced from 50 for faster training
-            batchSize: 16,
-            shuffle: true,
-            verbose: 1,
-            callbacks: {
-                onEpochEnd: async (epoch, logs) => {
-                    const msg = `🔄 Static Model: Epoch ${epoch + 1}/30 | Loss: ${logs.loss.toFixed(4)} | Acc: ${logs.acc.toFixed(3)}`;
-                    statusMsg.innerText = msg;
-                    console.log(`Epoch ${epoch + 1}: Loss=${logs.loss.toFixed(4)}, Acc=${logs.acc.toFixed(3)}`);
-                    // Allow UI to update every few epochs
-                    if (epoch % 5 === 0) {
-                        await tf.nextFrame();
-                    }
-                }
-            }
-        });
-
-        console.log('Fit complete, setting model variable...');
-        // Save to global model variable
-        // Extract original labels (remove _dummy suffix)
-        const originalLabels = uniqueLabels.map(l => l.endsWith('_dummy') ? l.replace('_dummy', '') : l).filter((v, i, a) => a.indexOf(v) === i);
-        model = { static: staticModel, staticLabels: originalLabels };
-        console.log('Static model training complete. Model state:', { hasStatic: !!model.static, labelsCount: model.staticLabels?.length });
-    } catch (error) {
-        console.error('Static model training error:', error);
-        throw new Error(`Static model training failed: ${error.message}`);
-    } finally {
-        console.log('Cleaning up tensors...');
-        xs.dispose();
-        ys.dispose();
-    }
+    return staticModel;
 }
 
-async function trainDynamicModel(dynamicData) {
-    console.log(`trainDynamicModel called with ${dynamicData.length} samples`);
-    let uniqueLabels = [...new Set(dynamicData.map(d => d.label))];
-    console.log(`Unique dynamic labels: ${uniqueLabels.join(', ')}`);
-
-    // Ensure at least 2 classes for oneHot (required by TensorFlow)
-    let trainingData = [...dynamicData];
-    if (uniqueLabels.length < 2) {
-        const dummyLabel = uniqueLabels[0] + '_dummy';
-        uniqueLabels = [uniqueLabels[0], dummyLabel];
-        // Add dummy samples (duplicate of first class with dummy label)
-        const dummySamples = dynamicData.slice(0, Math.max(1, Math.ceil(dynamicData.length * 0.2))).map(d => ({
-            ...d,
-            label: dummyLabel
-        }));
-        trainingData = [...dynamicData, ...dummySamples];
-        console.log(`Added ${dummySamples.length} dummy samples to reach 2 classes`);
-    }
-
-    statusMsg.innerText = "🔄 Training dynamic model (this may take 1-2 minutes)...";
-    console.log(`Starting dynamic training with ${trainingData.length} samples, ${uniqueLabels.length} classes`);
-
-    const labelMap = {};
-    uniqueLabels.forEach((l, i) => labelMap[l] = i);
-
-    const handRequirementMap = {};
-    uniqueLabels.forEach((label) => {
-        const labelSamples = trainingData.filter(d => d.label === label);
-        const observed = new Set(
-            labelSamples
-                .map(d => {
-                    const raw = Number(d.handCount ?? d.requiredHands);
-                    return raw === 2 ? 2 : (raw === 1 ? 1 : null);
-                })
-                .filter(v => v !== null)
-        );
-
-        if (observed.size === 1) {
-            handRequirementMap[label] = [...observed][0];
-        } else {
-            handRequirementMap[label] = 'any';
-        }
-    });
-
-    // Pad/truncate sequences to fixed length
-    const paddedSequences = trainingData.map(d => {
-        const frames = d.frames || [];
-        if (frames.length < MAX_DYNAMIC_FRAMES) {
-            // Pad with last frame
-            const lastFrame = frames[frames.length - 1] || new Array(63).fill(0);
-            return [...frames, ...Array(MAX_DYNAMIC_FRAMES - frames.length).fill(lastFrame)];
-        } else {
-            // Truncate
-            return frames.slice(0, MAX_DYNAMIC_FRAMES);
-        }
-    });
-
-    const xs = tf.tensor3d(paddedSequences); // [samples, timesteps, features]
-    const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), uniqueLabels.length);
-
+function createDynamicModel(outputUnits) {
     const dynamicModel = tf.sequential();
-    // Use glorotUniform instead of default orthogonal for faster initialization
     dynamicModel.add(tf.layers.lstm({
         units: 64,
         returnSequences: true,
@@ -846,51 +774,412 @@ async function trainDynamicModel(dynamicData) {
         kernelInitializer: 'glorotUniform',
         recurrentInitializer: 'glorotUniform'
     }));
-    dynamicModel.add(tf.layers.dense({ units: uniqueLabels.length, activation: 'softmax' }));
-
+    dynamicModel.add(tf.layers.dense({ units: outputUnits, activation: 'softmax' }));
     dynamicModel.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
+    return dynamicModel;
+}
+
+function computeDynamicHandRequirements(trainingData, labels) {
+    const handRequirementMap = {};
+    labels.forEach((label) => {
+        if (label.startsWith(DUMMY_LABEL_PREFIX)) {
+            handRequirementMap[label] = 'any';
+            return;
+        }
+
+        const labelSamples = trainingData.filter(d => d.label === label);
+        const observed = new Set(
+            labelSamples
+                .map(d => {
+                    const raw = Number(d.handCount ?? d.requiredHands);
+                    return raw === 2 ? 2 : (raw === 1 ? 1 : null);
+                })
+                .filter(v => v !== null)
+        );
+
+        handRequirementMap[label] = observed.size === 1 ? [...observed][0] : 'any';
+    });
+
+    return handRequirementMap;
+}
+
+function getMetricAccuracy(logs) {
+    return (logs?.acc ?? logs?.accuracy ?? 0).toFixed(3);
+}
+
+trainBtn.addEventListener('click', async () => {
+    statusMsg.innerText = "Preparing data...";
+    trainBtn.disabled = true;
+    saveBtn.disabled = true;
 
     try {
-        console.log('Starting fit...');
+        await ensureTrainingModelsLoaded();
 
-        // Allow UI to update before starting training
-        await new Promise(resolve => setTimeout(resolve, 100));
+        const staticData = collectedData.filter(isStaticSample);
+        const dynamicData = collectedData.filter(isDynamicSample);
 
-        await dynamicModel.fit(xs, ys, {
-            epochs: 20, // Reduced from 30 for faster training
+        const legacyFlagsChanged = normalizeLegacySamplesAsTrained(Boolean(model?.static), Boolean(model?.dynamic));
+
+        const newStaticData = staticData.filter(d => d.isTrained === false);
+        const newDynamicData = dynamicData.filter(d => d.isTrained === false);
+
+        if (!model.static && !model.dynamic && (staticData.length + dynamicData.length) < 10) {
+            alert("Collect more data (min 10 samples)!");
+            trainBtn.disabled = false;
+            saveBtn.disabled = false;
+            return;
+        }
+
+        if (newStaticData.length === 0 && newDynamicData.length === 0 && (model.static || model.dynamic)) {
+            statusMsg.innerText = "No new samples found. Add new recordings, then train.";
+            trainBtn.disabled = false;
+            saveBtn.disabled = false;
+            if (legacyFlagsChanged) await saveToServer();
+            return;
+        }
+
+        let trainedAnything = false;
+        let flagsChanged = legacyFlagsChanged;
+
+        if (newStaticData.length > 0 || (!model.static && staticData.length >= 5)) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const staticResult = await trainStaticModel(staticData, newStaticData);
+            if (staticResult.trained) {
+                newStaticData.forEach((sample) => {
+                    sample.isTrained = true;
+                    sample.trainedAt = Date.now();
+                });
+                flagsChanged = true;
+                trainedAnything = true;
+            }
+        }
+
+        if (newDynamicData.length > 0 || (!model.dynamic && dynamicData.length >= 5)) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const dynamicResult = await trainDynamicModel(dynamicData, newDynamicData);
+            if (dynamicResult.trained) {
+                newDynamicData.forEach((sample) => {
+                    sample.isTrained = true;
+                    sample.trainedAt = Date.now();
+                });
+                flagsChanged = true;
+                trainedAnything = true;
+            }
+        }
+
+        if (!trainedAnything) {
+            throw new Error("Not enough new static/dynamic samples to train. Need at least 5 samples for a model type.");
+        }
+
+        if (flagsChanged) await saveToServer();
+
+        const modelTypes = [];
+        if (model.static) modelTypes.push("Static ✋");
+        if (model.dynamic) modelTypes.push("Dynamic 🔄");
+
+        statusMsg.innerText = `✅ Incremental training complete! (${modelTypes.join(', ')}) - Click 'Save to Application' to use your updated models.`;
+        trainBtn.disabled = false;
+        saveBtn.disabled = false;
+    } catch (error) {
+        console.error("Training error:", error);
+        statusMsg.innerText = `❌ Training failed: ${error.message}`;
+        trainBtn.disabled = false;
+        saveBtn.disabled = true;
+        alert(`Training failed: ${error.message}\n\nCheck browser console for more details.`);
+    }
+});
+
+async function trainStaticModel(staticData, newStaticData) {
+    const hasExistingModel = Boolean(model?.static);
+    const existingLabels = model?.staticLabels || [];
+
+    if (!hasExistingModel) {
+        if (staticData.length < 5) return { trained: false };
+
+        let baseLabels = getUniqueLabels(staticData);
+        const prepared = withDummyClassIfNeeded(staticData, baseLabels);
+        const trainingData = prepared.trainingData;
+        const trainingLabels = prepared.trainingLabels;
+        const labelMap = {};
+        trainingLabels.forEach((label, index) => { labelMap[label] = index; });
+
+        statusMsg.innerText = "🔄 Training static model from base dataset...";
+
+        const xs = tf.tensor2d(trainingData.map(d => d.landmarks));
+        const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), trainingLabels.length);
+        const staticModel = createStaticModel(trainingLabels.length);
+
+        try {
+            await staticModel.fit(xs, ys, {
+                epochs: 30,
+                batchSize: 16,
+                shuffle: true,
+                verbose: 1,
+                callbacks: {
+                    onEpochEnd: async (epoch, logs) => {
+                        statusMsg.innerText = `🔄 Static Model: Epoch ${epoch + 1}/30 | Loss: ${logs.loss.toFixed(4)} | Acc: ${getMetricAccuracy(logs)}`;
+                        if (epoch % 5 === 0) await tf.nextFrame();
+                    }
+                }
+            });
+            model.static = staticModel;
+            model.staticLabels = toPublicLabels(trainingLabels);
+            return { trained: true };
+        } finally {
+            xs.dispose();
+            ys.dispose();
+        }
+    }
+
+    if (newStaticData.length === 0) return { trained: false };
+
+    const newLabels = getUniqueLabels(newStaticData);
+    const unseenLabels = newLabels.filter(label => !existingLabels.includes(label));
+
+    if (unseenLabels.length === 0) {
+        const outputUnits = model.static.layers[model.static.layers.length - 1].units;
+        const internalLabels = [...existingLabels];
+        while (internalLabels.length < outputUnits) {
+            internalLabels.push(`${DUMMY_LABEL_PREFIX}_static_${internalLabels.length}`);
+        }
+
+        const labelMap = {};
+        internalLabels.forEach((label, index) => { labelMap[label] = index; });
+
+        statusMsg.innerText = `🔄 Incremental static training on ${newStaticData.length} new samples...`;
+
+        const xs = tf.tensor2d(newStaticData.map(d => d.landmarks));
+        const ys = tf.oneHot(tf.tensor1d(newStaticData.map(d => labelMap[d.label]), 'int32'), internalLabels.length);
+
+        try {
+            await model.static.fit(xs, ys, {
+                epochs: 12,
+                batchSize: 16,
+                shuffle: true,
+                verbose: 1,
+                callbacks: {
+                    onEpochEnd: async (epoch, logs) => {
+                        statusMsg.innerText = `🔄 Static Incremental: Epoch ${epoch + 1}/12 | Loss: ${logs.loss.toFixed(4)} | Acc: ${getMetricAccuracy(logs)}`;
+                        if (epoch % 4 === 0) await tf.nextFrame();
+                    }
+                }
+            });
+            return { trained: true };
+        } finally {
+            xs.dispose();
+            ys.dispose();
+        }
+    }
+
+    const rehearsalPool = staticData.filter(d => d.isTrained === true && existingLabels.includes(d.label));
+    const rehearsalSamples = getRehearsalSamplesPerLabel(rehearsalPool, STATIC_REHEARSAL_PER_LABEL);
+    const rebuildData = [...rehearsalSamples, ...newStaticData];
+    let rebuildLabels = getUniqueLabels(rebuildData);
+
+    if (rebuildData.length < 5) {
+        throw new Error("Need at least 5 static samples for new-label update.");
+    }
+
+    const prepared = withDummyClassIfNeeded(rebuildData, rebuildLabels);
+    const trainingData = prepared.trainingData;
+    const trainingLabels = prepared.trainingLabels;
+    const labelMap = {};
+    trainingLabels.forEach((label, index) => { labelMap[label] = index; });
+
+    statusMsg.innerText = `🔄 New static labels detected (${unseenLabels.join(', ')}). Rebuilding static model with rehearsal data...`;
+
+    const xs = tf.tensor2d(trainingData.map(d => d.landmarks));
+    const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), trainingLabels.length);
+    const rebuiltStaticModel = createStaticModel(trainingLabels.length);
+
+    try {
+        await rebuiltStaticModel.fit(xs, ys, {
+            epochs: 25,
+            batchSize: 16,
+            shuffle: true,
+            verbose: 1,
+            callbacks: {
+                onEpochEnd: async (epoch, logs) => {
+                    statusMsg.innerText = `🔄 Static Rebuild: Epoch ${epoch + 1}/25 | Loss: ${logs.loss.toFixed(4)} | Acc: ${getMetricAccuracy(logs)}`;
+                    if (epoch % 5 === 0) await tf.nextFrame();
+                }
+            }
+        });
+        model.static = rebuiltStaticModel;
+        model.staticLabels = toPublicLabels(trainingLabels);
+        return { trained: true };
+    } finally {
+        xs.dispose();
+        ys.dispose();
+    }
+}
+
+async function trainDynamicModel(dynamicData, newDynamicData) {
+    const hasExistingModel = Boolean(model?.dynamic);
+    const existingLabels = model?.dynamicLabels || [];
+
+    if (!hasExistingModel) {
+        if (dynamicData.length < 5) return { trained: false };
+
+        let baseLabels = getUniqueLabels(dynamicData);
+        const prepared = withDummyClassIfNeeded(dynamicData, baseLabels);
+        const trainingData = prepared.trainingData;
+        const trainingLabels = prepared.trainingLabels;
+        const labelMap = {};
+        trainingLabels.forEach((label, index) => { labelMap[label] = index; });
+
+        const handRequirementMap = computeDynamicHandRequirements(trainingData, trainingLabels);
+
+        const paddedSequences = trainingData.map(d => {
+            const frames = d.frames || [];
+            if (frames.length < MAX_DYNAMIC_FRAMES) {
+                const lastFrame = frames[frames.length - 1] || new Array(63).fill(0);
+                return [...frames, ...Array(MAX_DYNAMIC_FRAMES - frames.length).fill(lastFrame)];
+            }
+            return frames.slice(0, MAX_DYNAMIC_FRAMES);
+        });
+
+        statusMsg.innerText = "🔄 Training dynamic model from base dataset...";
+
+        const xs = tf.tensor3d(paddedSequences);
+        const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), trainingLabels.length);
+        const dynamicModel = createDynamicModel(trainingLabels.length);
+
+        try {
+            await dynamicModel.fit(xs, ys, {
+                epochs: 20,
+                batchSize: 8,
+                shuffle: true,
+                verbose: 1,
+                callbacks: {
+                    onEpochEnd: async (epoch, logs) => {
+                        statusMsg.innerText = `🔄 Dynamic Model: Epoch ${epoch + 1}/20 | Loss: ${logs.loss.toFixed(4)} | Acc: ${getMetricAccuracy(logs)}`;
+                        if (epoch % 5 === 0) await tf.nextFrame();
+                    }
+                }
+            });
+            model.dynamic = dynamicModel;
+            model.dynamicLabels = toPublicLabels(trainingLabels);
+            model.dynamicHandRequirements = Object.fromEntries(
+                Object.entries(handRequirementMap).filter(([label]) => !label.startsWith(DUMMY_LABEL_PREFIX))
+            );
+            return { trained: true };
+        } finally {
+            xs.dispose();
+            ys.dispose();
+        }
+    }
+
+    if (newDynamicData.length === 0) return { trained: false };
+
+    const newLabels = getUniqueLabels(newDynamicData);
+    const unseenLabels = newLabels.filter(label => !existingLabels.includes(label));
+
+    if (unseenLabels.length === 0) {
+        const outputUnits = model.dynamic.layers[model.dynamic.layers.length - 1].units;
+        const internalLabels = [...existingLabels];
+        while (internalLabels.length < outputUnits) {
+            internalLabels.push(`${DUMMY_LABEL_PREFIX}_dynamic_${internalLabels.length}`);
+        }
+
+        const labelMap = {};
+        internalLabels.forEach((label, index) => { labelMap[label] = index; });
+
+        const paddedSequences = newDynamicData.map(d => {
+            const frames = d.frames || [];
+            if (frames.length < MAX_DYNAMIC_FRAMES) {
+                const lastFrame = frames[frames.length - 1] || new Array(63).fill(0);
+                return [...frames, ...Array(MAX_DYNAMIC_FRAMES - frames.length).fill(lastFrame)];
+            }
+            return frames.slice(0, MAX_DYNAMIC_FRAMES);
+        });
+
+        statusMsg.innerText = `🔄 Incremental dynamic training on ${newDynamicData.length} new samples...`;
+
+        const xs = tf.tensor3d(paddedSequences);
+        const ys = tf.oneHot(tf.tensor1d(newDynamicData.map(d => labelMap[d.label]), 'int32'), internalLabels.length);
+
+        try {
+            await model.dynamic.fit(xs, ys, {
+                epochs: 10,
+                batchSize: 8,
+                shuffle: true,
+                verbose: 1,
+                callbacks: {
+                    onEpochEnd: async (epoch, logs) => {
+                        statusMsg.innerText = `🔄 Dynamic Incremental: Epoch ${epoch + 1}/10 | Loss: ${logs.loss.toFixed(4)} | Acc: ${getMetricAccuracy(logs)}`;
+                        if (epoch % 3 === 0) await tf.nextFrame();
+                    }
+                }
+            });
+
+            const handReqFromNew = computeDynamicHandRequirements(newDynamicData, existingLabels);
+            model.dynamicHandRequirements = {
+                ...(model.dynamicHandRequirements || {}),
+                ...Object.fromEntries(
+                    Object.entries(handReqFromNew).filter(([label]) => !label.startsWith(DUMMY_LABEL_PREFIX))
+                )
+            };
+            return { trained: true };
+        } finally {
+            xs.dispose();
+            ys.dispose();
+        }
+    }
+
+    const rehearsalPool = dynamicData.filter(d => d.isTrained === true && existingLabels.includes(d.label));
+    const rehearsalSamples = getRehearsalSamplesPerLabel(rehearsalPool, DYNAMIC_REHEARSAL_PER_LABEL);
+    const rebuildData = [...rehearsalSamples, ...newDynamicData];
+
+    if (rebuildData.length < 5) {
+        throw new Error("Need at least 5 dynamic samples for new-label update.");
+    }
+
+    let rebuildLabels = getUniqueLabels(rebuildData);
+    const prepared = withDummyClassIfNeeded(rebuildData, rebuildLabels);
+    const trainingData = prepared.trainingData;
+    const trainingLabels = prepared.trainingLabels;
+    const labelMap = {};
+    trainingLabels.forEach((label, index) => { labelMap[label] = index; });
+
+    const handRequirementMap = computeDynamicHandRequirements(trainingData, trainingLabels);
+
+    const paddedSequences = trainingData.map(d => {
+        const frames = d.frames || [];
+        if (frames.length < MAX_DYNAMIC_FRAMES) {
+            const lastFrame = frames[frames.length - 1] || new Array(63).fill(0);
+            return [...frames, ...Array(MAX_DYNAMIC_FRAMES - frames.length).fill(lastFrame)];
+        }
+        return frames.slice(0, MAX_DYNAMIC_FRAMES);
+    });
+
+    statusMsg.innerText = `🔄 New dynamic labels detected (${unseenLabels.join(', ')}). Rebuilding dynamic model with rehearsal data...`;
+
+    const xs = tf.tensor3d(paddedSequences);
+    const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), trainingLabels.length);
+    const rebuiltDynamicModel = createDynamicModel(trainingLabels.length);
+
+    try {
+        await rebuiltDynamicModel.fit(xs, ys, {
+            epochs: 16,
             batchSize: 8,
             shuffle: true,
             verbose: 1,
             callbacks: {
                 onEpochEnd: async (epoch, logs) => {
-                    const msg = `🔄 Dynamic Model: Epoch ${epoch + 1}/20 | Loss: ${logs.loss.toFixed(4)} | Acc: ${logs.acc.toFixed(3)}`;
-                    statusMsg.innerText = msg;
-                    console.log(`Epoch ${epoch + 1}: Loss=${logs.loss.toFixed(4)}, Acc=${logs.acc.toFixed(3)}`);
-                    // Allow UI to update every few epochs
-                    if (epoch % 5 === 0) {
-                        await tf.nextFrame();
-                    }
+                    statusMsg.innerText = `🔄 Dynamic Rebuild: Epoch ${epoch + 1}/16 | Loss: ${logs.loss.toFixed(4)} | Acc: ${getMetricAccuracy(logs)}`;
+                    if (epoch % 4 === 0) await tf.nextFrame();
                 }
             }
         });
 
-        console.log('Fit complete, setting model variable...');
-        // Merge with model object
-        if (!model) {
-            console.log('Model is null, creating new model object');
-            model = {};
-        }
-        // Extract original labels (remove _dummy suffix)
-        const originalLabels = uniqueLabels.map(l => l.endsWith('_dummy') ? l.replace('_dummy', '') : l).filter((v, i, a) => a.indexOf(v) === i);
-        model.dynamic = dynamicModel;
-        model.dynamicLabels = originalLabels;
-        model.dynamicHandRequirements = handRequirementMap;
-        console.log('Dynamic model training complete. Model state:', { hasDynamic: !!model.dynamic, labelsCount: model.dynamicLabels?.length });
-    } catch (error) {
-        console.error('Dynamic model training error:', error);
-        throw new Error(`Dynamic model training failed: ${error.message}`);
+        model.dynamic = rebuiltDynamicModel;
+        model.dynamicLabels = toPublicLabels(trainingLabels);
+        model.dynamicHandRequirements = Object.fromEntries(
+            Object.entries(handRequirementMap).filter(([label]) => !label.startsWith(DUMMY_LABEL_PREFIX))
+        );
+        return { trained: true };
     } finally {
-        console.log('Cleaning up tensors...');
         xs.dispose();
         ys.dispose();
     }
@@ -978,10 +1267,16 @@ uploadInput.addEventListener('change', (e) => {
                 });
 
                 if (valid) {
-                    collectedData = collectedData.concat(imported);
+                    const normalizedImported = imported.map((sample) => ({
+                        ...sample,
+                        type: sample.type || 'static',
+                        isTrained: false,
+                        recordedAt: sample.recordedAt || Date.now()
+                    }));
+                    collectedData = collectedData.concat(normalizedImported);
                     await saveToServer();
                     renderDataList();
-                    alert(`Imported ${imported.length} samples successfully.`);
+                    alert(`Imported ${normalizedImported.length} samples successfully.`);
                 } else {
                     alert("Invalid data format. Expected array with 'label' and either 'landmarks' (static) or 'frames' (dynamic).");
                 }
