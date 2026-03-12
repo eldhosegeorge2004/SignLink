@@ -30,11 +30,12 @@
         }
 
         .translation-main {
-            width: min(1280px, 96vw);
+            width: min(800px, 96vw);
             display: grid;
-            grid-template-columns: 1.45fr 1.15fr;
+            grid-template-columns: 1fr;
             gap: 18px;
             align-items: stretch;
+            margin: 0 auto;
         }
 
         .back-btn {
@@ -98,17 +99,19 @@
 
         /* Speech to Sign Container */
         .speech-container {
-            width: 100%;
-            height: 100%;
+            width: calc(100% - 24px);
+            position: absolute;
+            bottom: 20px;
+            left: 12px;
             display: none;
             flex-direction: column;
             justify-content: flex-start;
             align-items: stretch;
-            background: rgba(15, 23, 42, 0.82);
-            border: 1px solid rgba(148, 163, 184, 0.26);
-            border-radius: 12px;
-            padding: 12px;
-            min-height: 0;
+            background: transparent; /* Removed background */
+            backdrop-filter: none;    /* Removed blur */
+            border: none;             /* Removed border */
+            padding: 16px;
+            z-index: 150;
         }
 
         .speech-container.active {
@@ -122,19 +125,20 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8); /* Added shadow for legibility */
         }
 
         .speech-caption-log {
             flex: 1;
-            min-height: 140px;
-            max-height: 36vh;
+            min-height: 100px;
+            max-height: 30vh;
             overflow-y: auto;
-            border: 1px solid rgba(148, 163, 184, 0.26);
-            border-radius: 10px;
-            background: rgba(2, 6, 23, 0.55);
-            padding: 10px;
+            border: none;
+            background: transparent; /* Seamless HUD */
+            padding: 5px;
             color: #fff;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
         }
 
         .speech-caption-line {
@@ -142,19 +146,19 @@
             line-height: 1.35;
             color: #e2e8f0;
             word-break: break-word;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.9); /* Added shadow for legibility */
         }
 
         .sign-cards-area {
             width: 100%;
             max-width: none;
             height: 320px;
-            margin-top: 10px;
-            border: 2px dashed rgba(255, 255, 255, 0.1);
+            border: none; /* Removed border */
             border-radius: 12px;
             display: flex;
             justify-content: flex-start;
             align-items: flex-start;
-            background: rgba(0, 0, 0, 0.2);
+            background: transparent; /* Removed background */
             color: rgba(255, 255, 255, 0.3);
             font-size: 1rem;
             overflow-y: auto;
@@ -186,6 +190,12 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            display: block; /* Shown by default in sign mode */
+        }
+
+        /* Hide entire sign-result HUD in voice mode definitely */
+        body.voice-mode-active .result-overlay {
+            display: none !important;
         }
 
         .control-bar {
@@ -196,39 +206,155 @@
             z-index: 210;
         }
 
-        /* Subtitles for Voice Mode */
+        /* Subtitles for Voice Mode - Hidden in favor of HUD captions */
         .voice-subtitles {
-            position: absolute;
-            bottom: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
-            max-width: 85%;
-            text-align: center;
-            font-size: 1rem;
-            font-family: 'Inter', sans-serif;
-            z-index: 100;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            display: none;
+            display: none !important;
+        }
+
+        /* HUD Live Captions Styling */
+        .listening-indicator {
+            font-size: 1.1rem;
+            color: #3b82f6;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 500;
+        }
+        
+        #listening-text {
+            color: #fff;
+            opacity: 0.9;
+            font-style: italic;
+        }
+
+        body:not(.voice-mode-active) .speech-container {
+            display: none !important;
         }
 
         @media (max-width: 980px) {
             .translation-main {
-                grid-template-columns: 1fr;
-            }
-
-            .video-container {
-                left: 0;
+                width: 96vw;
             }
 
             .speech-container {
-                min-height: 260px;
+                max-height: 50vh;
             }
         }
-    </style>
+
+        /* ════════════════════════════════════════
+           MOBILE — Native App Style (≤600px)
+           ════════════════════════════════════════ */
+        @media (max-width: 600px) {
+
+            /* Full-screen container — no scroll */
+            .translation-container {
+                padding: 0;
+                gap: 0;
+                overflow: hidden;
+                height: 100dvh;
+                min-height: 100dvh;
+                justify-content: flex-start;
+                background: #000;
+            }
+
+            /* Single-column grid, camera fills all space */
+            .translation-main {
+                grid-template-columns: 1fr;
+                width: 100%;
+                flex: 1;
+                height: 100%;
+                gap: 0;
+            }
+
+            /* Camera fills entire screen */
+            .video-container {
+                left: 0;
+                width: 100%;
+                height: 100dvh;
+                aspect-ratio: unset;
+                border-radius: 0;
+                border: none;
+                box-shadow: none;
+            }
+
+            /* Back button: icon-only circle */
+            .back-btn {
+                top: 14px;
+                left: 14px;
+                padding: 8px;
+                border-radius: 50%;
+                gap: 0;
+                background: rgba(0, 0, 0, 0.5);
+                backdrop-filter: blur(6px);
+            }
+
+            .back-btn span:last-child {
+                display: none; /* hide "Back to Home" text */
+            }
+
+            /* Translation result strip — compact */
+            .result-overlay {
+                bottom: 80px;
+                padding: 10px 18px;
+                font-size: 0.95rem;
+                max-width: 90%;
+                border-radius: 30px;
+            }
+
+            /* Control bar — fits in one tight row */
+            .control-bar {
+                bottom: 12px;
+                gap: 8px;
+            }
+
+            /* Shrink lang select to be compact */
+            #lang-select {
+                padding: 8px 10px !important;
+                font-size: 0.8rem !important;
+                border-radius: 16px !important;
+            }
+
+            /* Speech panel: floated overlay contents */
+            .speech-container {
+                position: absolute;
+                bottom: 80px;
+                left: 12px;
+                right: 12px;
+                height: auto;
+                max-height: 55dvh;
+                min-height: 0;
+                border: none;
+                background: transparent;
+                backdrop-filter: none;
+                padding: 14px;
+                box-shadow: none;
+            }
+
+            .speech-caption-log {
+                max-height: 20vh;
+                min-height: 80px;
+            }
+
+            .sign-cards-area {
+                height: 160px;
+            }
+
+            /* Spelling overlay: smaller on mobile */
+            #spelling-overlay {
+                top: 14px !important;
+                left: 50% !important;
+                transform: translateX(-50%) !important;
+                padding: 6px 16px !important;
+                border-radius: 8px !important;
+            }
+
+            #spelling-text {
+                font-size: 1.4rem !important;
+                letter-spacing: 3px !important;
+            }
+        }
+</style>
 
     <!-- Dependencies -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -257,53 +383,53 @@
                 <video id="input-video" autoplay playsinline muted></video>
                 <canvas id="output-canvas"></canvas>
 
-            <!-- Camera Off Placeholder -->
-            <div id="camera-off-placeholder"
-                style="display: none; flex-direction: column; align-items: center; justify-content: center; position: absolute; top:0; left:0; width:100%; height:100%; background: #000; z-index: 10;">
-                <span class="material-icons" style="font-size: 64px; color: #555;">videocam_off</span>
-                <p style="color: #777; margin-top: 10px;">Camera is Off</p>
-            </div>
+                <!-- Camera Off Placeholder -->
+                <div id="camera-off-placeholder"
+                    style="display: none; flex-direction: column; align-items: center; justify-content: center; position: absolute; top:0; left:0; width:100%; height:100%; background: #000; z-index: 10;">
+                    <span class="material-icons" style="font-size: 64px; color: #555;">videocam_off</span>
+                    <p style="color: #777; margin-top: 10px;">Camera is Off</p>
+                </div>
 
                 <div class="result-overlay">
                     <span id="stt-result">Translated Text Will Appear Here...</span>
                 </div>
 
-            <!-- Voice Mode Subtitles -->
+                <!-- Voice Mode Subtitles -->
                 <div class="voice-subtitles" id="voice-subtitles"></div>
 
-            <!-- Spelling Overlay (Top Left) -->
+                <!-- Spelling Overlay (Top Left) -->
                 <div id="spelling-overlay" style="
-                position: absolute;
-                top: 20px;
-                left: 20px;
-                background: rgba(0, 0, 0, 0.8);
-                padding: 10px 20px;
-                border-radius: 10px;
-                display: none; /* Hidden by default */
-                z-index: 100;
-                pointer-events: none;
-                ">
+                    position: absolute;
+                    top: 20px;
+                    left: 20px;
+                    background: rgba(0, 0, 0, 0.8);
+                    padding: 10px 20px;
+                    border-radius: 10px;
+                    display: none; /* Hidden by default */
+                    z-index: 100;
+                    pointer-events: none;
+                    ">
                     <span id="spelling-text" style="
-                    color: white;
-                    font-size: 2rem;
-                    font-weight: bold;
-                    font-family: 'Outfit', sans-serif;
-                    letter-spacing: 2px;
-                "></span>
+                        color: white;
+                        font-size: 2rem;
+                        font-weight: bold;
+                        font-family: 'Outfit', sans-serif;
+                        letter-spacing: 2px;
+                    "></span>
                 </div>
-            </div>
 
-            <!-- Speech Panel (shown in voice mode beside camera) -->
-            <div id="speech-panel" class="speech-container">
-                <div class="listening-indicator">
-                    <span class="material-icons" style="font-size: 22px;">mic</span>
-                    <span id="listening-text">Listening...</span>
-                </div>
-                <div id="speech-caption-log" class="speech-caption-log">
-                    <div class="speech-caption-line">Speech captions will appear here.</div>
-                </div>
-                <div class="sign-cards-area">
-                    <p>Sign Language Cards Display</p>
+                <!-- Speech Panel (shown in voice mode as overlay) -->
+                <div id="speech-panel" class="speech-container">
+                    <div class="listening-indicator">
+                        <span class="material-icons" style="font-size: 22px;">mic</span>
+                        <span id="listening-text">Listening...</span>
+                    </div>
+                    <div id="speech-caption-log" class="speech-caption-log">
+                        <div class="speech-caption-line">Speech captions will appear here.</div>
+                    </div>
+                    <div class="sign-cards-area">
+                        <p>Sign Language Cards Display</p>
+                    </div>
                 </div>
             </div>
 

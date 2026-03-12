@@ -1147,7 +1147,10 @@ function initSpeechRecognition() {
 
         const displayText = interimTranscript || finalTranscript;
         if (displayText) {
-            voiceSubtitles.innerText = displayText.trim();
+            // Write interim transcript to the HUD instead of the separate box
+            if (listeningText) {
+                listeningText.innerText = displayText.trim();
+            }
         }
     };
 
@@ -1511,14 +1514,15 @@ function bindSignVoiceToggle() {
 
     toggleBtn.addEventListener('click', () => {
         isSignMode = !isSignMode;
+        
+        // Use body class for robust CSS-based UI toggling
+        document.body.classList.toggle('voice-mode-active', !isSignMode);
 
         if (isSignMode) {
             // Switch to Sign Mode
             toggleBtn.innerHTML = '<span class="material-icons">pan_tool</span>';
             toggleBtn.title = 'Switch to Voice Mode';
             sttResult.style.display = 'inline-block';
-            voiceSubtitles.style.display = 'none';
-            voiceSubtitles.innerText = '';
             if (speechPanel) speechPanel.classList.remove('active');
 
             if (isCamOn && !localStream) startCamera();
@@ -1528,8 +1532,9 @@ function bindSignVoiceToggle() {
             toggleBtn.innerHTML = '<span class="material-icons">mic</span>';
             toggleBtn.title = 'Switch to Sign Mode';
             sttResult.style.display = 'none';
-            voiceSubtitles.style.display = 'block';
             if (speechPanel) speechPanel.classList.add('active');
+            if (listeningText) listeningText.innerText = "Listening...";
+            
             if (isCamOn && !localStream) startCamera();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 

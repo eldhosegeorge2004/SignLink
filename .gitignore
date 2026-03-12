@@ -13,3 +13,7 @@ public/dataset.json
 # Temporary Test Pages
 public/test_asl.html
 public/test_final.html
+
+# Secrets and local scripts
+scripts/serviceAccountKey.json
+scripts/
