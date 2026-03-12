@@ -17,3 +17,4 @@ public/test_final.html
 # Secrets and local scripts
 scripts/serviceAccountKey.json
 scripts/
+.env

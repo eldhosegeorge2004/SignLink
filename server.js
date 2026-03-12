@@ -3,13 +3,13 @@ const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http, {
     cors: { origin: "*" },
-    transports: ['websocket', 'polling'] // Prioritize websockets
+    transports: ['websocket', 'polling']
 });
 const path = require('path');
 const fs = require('fs');
+const { supabase } = require('./supabase-config');
 
 // --- Production Middleware ---
-// Redirect HTTP to HTTPS (Required for Camera/Mic/Speech to work)
 app.use((req, res, next) => {
     if (req.headers['x-forwarded-proto'] === 'http') {
         return res.redirect(`https://${req.headers.host}${req.url}`);
@@ -17,40 +17,174 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const TRAINING_DATA_FILE = path.join(__dirname, 'public', 'training_data.json');
-const DEFAULT_TRAINING_DATA = { ISL: [], ASL: [] };
+const STORAGE_BUCKET = 'sign-cards';
 
-// GET /api/training-data — read stored training data
-app.get('/api/training-data', (req, res) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// ONE-TIME MIGRATION: If Supabase training_data table is empty, seed from local file
+// ─────────────────────────────────────────────────────────────────────────────
+async function migrateLocalDataToSupabase() {
     try {
-        if (!fs.existsSync(TRAINING_DATA_FILE)) {
-            return res.json(DEFAULT_TRAINING_DATA);
+        const { count, error } = await supabase
+            .from('training_data')
+            .select('id', { count: 'exact', head: true });
+
+        if (error) {
+            console.error('Migration check error:', error.message);
+            return;
         }
+
+        if (count > 0) {
+            console.log(`✅ Supabase already has ${count} training samples. Skipping migration.`);
+            return;
+        }
+
+        if (!fs.existsSync(TRAINING_DATA_FILE)) {
+            console.log('No local training_data.json found. Starting fresh in Supabase.');
+            return;
+        }
+
+        console.log('🔄 Migrating local training_data.json → Supabase (this runs once)...');
         const raw = fs.readFileSync(TRAINING_DATA_FILE, 'utf8');
-        res.json(JSON.parse(raw));
+        const allData = JSON.parse(raw);
+
+        for (const lang of ['ISL', 'ASL']) {
+            const samples = allData[lang] || [];
+            if (samples.length === 0) continue;
+
+            // Insert in batches of 500 to avoid Supabase payload limits
+            const BATCH = 500;
+            let inserted = 0;
+            for (let i = 0; i < samples.length; i += BATCH) {
+                const batch = samples.slice(i, i + BATCH).map(s => ({
+                    lang,
+                    label: s.label,
+                    type: s.type || 'static',
+                    landmarks: s.landmarks || null,
+                    frames: s.frames || null,
+                    hand_count: s.handCount || null,
+                    is_trained: s.isTrained !== undefined ? s.isTrained : true,
+                    recorded_at: s.recordedAt || null,
+                    trained_at: s.trainedAt || null
+                }));
+
+                const { error: insertErr } = await supabase
+                    .from('training_data')
+                    .insert(batch);
+
+                if (insertErr) {
+                    console.error(`Migration insert error (${lang}, batch ${i}):`, insertErr.message);
+                } else {
+                    inserted += batch.length;
+                    process.stdout.write(`  ${lang}: ${inserted}/${samples.length} rows migrated\r`);
+                }
+            }
+            console.log(`  ✅ ${lang}: ${inserted} rows migrated to Supabase`);
+        }
+        console.log('✅ Migration complete!');
     } catch (err) {
-        console.error('Error reading training data:', err);
+        console.error('Migration failed:', err.message);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/training-data — read training data from Supabase
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/training-data', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('training_data')
+            .select('*')
+            .order('id', { ascending: true });
+
+        if (error) throw error;
+
+        // Group by lang and reshape back to the format the client expects
+        const result = { ISL: [], ASL: [] };
+        for (const row of data) {
+            const sample = {
+                label: row.label,
+                type: row.type,
+                isTrained: row.is_trained,
+                recordedAt: row.recorded_at,
+                trainedAt: row.trained_at,
+            };
+            if (row.type === 'dynamic') {
+                sample.frames = row.frames;
+                sample.handCount = row.hand_count;
+                sample.frameCount = row.frames ? row.frames.length : 0;
+            } else {
+                sample.landmarks = row.landmarks;
+            }
+            if (!result[row.lang]) result[row.lang] = [];
+            result[row.lang].push(sample);
+        }
+
+        res.json(result);
+    } catch (err) {
+        console.error('Error reading training data from Supabase:', err.message);
         res.status(500).json({ error: 'Failed to read training data' });
     }
 });
 
-// POST /api/training-data — save training data
-app.post('/api/training-data', (req, res) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/training-data — save training data to Supabase
+// Replaces ALL data for the language(s) in the payload (same as before)
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/training-data', async (req, res) => {
     try {
-        const data = req.body;
-        fs.writeFileSync(TRAINING_DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+        const allData = req.body; // { ISL: [...], ASL: [...] }
+
+        for (const lang of Object.keys(allData)) {
+            const samples = allData[lang] || [];
+
+            // Delete existing rows for this language
+            const { error: deleteErr } = await supabase
+                .from('training_data')
+                .delete()
+                .eq('lang', lang);
+
+            if (deleteErr) throw deleteErr;
+
+            if (samples.length === 0) continue;
+
+            // Insert in batches of 500
+            const BATCH = 500;
+            for (let i = 0; i < samples.length; i += BATCH) {
+                const batch = samples.slice(i, i + BATCH).map(s => ({
+                    lang,
+                    label: s.label,
+                    type: s.type || 'static',
+                    landmarks: s.landmarks || null,
+                    frames: s.frames || null,
+                    hand_count: s.handCount || null,
+                    is_trained: s.isTrained !== undefined ? s.isTrained : false,
+                    recorded_at: s.recordedAt || null,
+                    trained_at: s.trainedAt || null
+                }));
+
+                const { error: insertErr } = await supabase
+                    .from('training_data')
+                    .insert(batch);
+
+                if (insertErr) throw insertErr;
+            }
+        }
+
         res.json({ success: true });
     } catch (err) {
-        console.error('Error saving training data:', err);
+        console.error('Error saving training data to Supabase:', err.message);
         res.status(500).json({ error: 'Failed to save training data' });
     }
 });
 
-// POST /api/upload-sign-card — upload a sign card image
-app.post('/api/upload-sign-card', (req, res) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/upload-sign-card — upload sign card image to Supabase Storage
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/upload-sign-card', async (req, res) => {
     try {
         const { lang, label, imageBase64, extension } = req.body;
 
@@ -60,74 +194,133 @@ app.post('/api/upload-sign-card', (req, res) => {
 
         const safeLabel = label.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-');
         const langFolder = lang.toLowerCase();
+        const filePath = `${langFolder}/${safeLabel}.${extension}`;
 
-        // Remove valid 'data:image/...;base64,' prefix
+        // Strip data URL prefix
         const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
         const imageBuffer = Buffer.from(base64Data, 'base64');
 
+        const contentType = extension === 'png' ? 'image/png'
+            : extension === 'gif' ? 'image/gif'
+            : extension === 'webp' ? 'image/webp'
+            : 'image/jpeg';
+
+        // Upload to Supabase Storage (upsert = overwrite if exists)
+        const { error: uploadErr } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .upload(filePath, imageBuffer, {
+                contentType,
+                upsert: true
+            });
+
+        if (uploadErr) throw uploadErr;
+
+        // Get public URL
+        const { data: urlData } = supabase.storage
+            .from(STORAGE_BUCKET)
+            .getPublicUrl(filePath);
+
+        const publicUrl = urlData.publicUrl;
+
+        // Save URL to sign_cards table
+        const { error: upsertErr } = await supabase
+            .from('sign_cards')
+            .upsert({ lang: langFolder, label: safeLabel, url: publicUrl, extension, updated_at: new Date().toISOString() },
+                { onConflict: 'lang,label' });
+
+        if (upsertErr) throw upsertErr;
+
+        // Also save locally for backward-compat with the existing image check system
         const uploadsDir = path.join(__dirname, 'public', 'signs-images', langFolder);
+        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-        // Ensure directory exists
-        if (!fs.existsSync(uploadsDir)) {
-            fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-
-        // Clean up previous image formats for this label to avoid duplicates showing up incorrectly
-        const formats = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-        formats.forEach(ext => {
-            const oldFilePath = path.join(uploadsDir, `${safeLabel}.${ext}`);
-            if (fs.existsSync(oldFilePath)) {
-                fs.unlinkSync(oldFilePath);
-            }
+        // Remove old formats
+        ['jpg', 'jpeg', 'png', 'gif', 'webp'].forEach(ext => {
+            const old = path.join(uploadsDir, `${safeLabel}.${ext}`);
+            if (fs.existsSync(old)) fs.unlinkSync(old);
         });
+        fs.writeFileSync(path.join(uploadsDir, `${safeLabel}.${extension}`), imageBuffer);
 
-        const targetFilePath = path.join(uploadsDir, `${safeLabel}.${extension}`);
-        fs.writeFileSync(targetFilePath, imageBuffer);
-
-        res.json({ success: true, path: `/signs-images/${langFolder}/${safeLabel}.${extension}` });
+        res.json({ success: true, path: `/signs-images/${langFolder}/${safeLabel}.${extension}`, url: publicUrl });
 
     } catch (err) {
-        console.error('Error saving sign card image:', err);
-        res.status(500).json({ error: 'Failed to save sign card image' });
+        console.error('Error uploading sign card:', err.message);
+        res.status(500).json({ error: 'Failed to upload sign card' });
     }
 });
 
-// POST /api/delete-sign-card — delete a sign card image
-app.post('/api/delete-sign-card', (req, res) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/delete-sign-card — delete sign card from Supabase Storage & DB
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/delete-sign-card', async (req, res) => {
     try {
         const { lang, label } = req.body;
-
-        if (!lang || !label) {
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
+        if (!lang || !label) return res.status(400).json({ error: 'Missing required fields' });
 
         const safeLabel = label.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-');
         const langFolder = lang.toLowerCase();
 
+        // Get extension from sign_cards table
+        const { data: cardData } = await supabase
+            .from('sign_cards')
+            .select('extension')
+            .eq('lang', langFolder)
+            .eq('label', safeLabel)
+            .single();
+
+        if (cardData) {
+            const filePath = `${langFolder}/${safeLabel}.${cardData.extension}`;
+            await supabase.storage.from(STORAGE_BUCKET).remove([filePath]);
+        }
+
+        // Delete from sign_cards table
+        await supabase.from('sign_cards').delete().eq('lang', langFolder).eq('label', safeLabel);
+
+        // Also delete local copy
         const uploadsDir = path.join(__dirname, 'public', 'signs-images', langFolder);
-
-        let deleted = false;
-
-        // Check and delete any matching format
         if (fs.existsSync(uploadsDir)) {
-            const formats = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-            formats.forEach(ext => {
+            ['jpg', 'jpeg', 'png', 'gif', 'webp'].forEach(ext => {
                 const filePath = path.join(uploadsDir, `${safeLabel}.${ext}`);
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                    deleted = true;
-                }
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
             });
         }
 
-        res.json({ success: true, deleted });
-
+        res.json({ success: true });
     } catch (err) {
-        console.error('Error deleting sign card image:', err);
-        res.status(500).json({ error: 'Failed to delete sign card image' });
+        console.error('Error deleting sign card:', err.message);
+        res.status(500).json({ error: 'Failed to delete sign card' });
     }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/sign-cards — list all sign card URLs from Supabase (for preloading)
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/sign-cards', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('sign_cards')
+            .select('lang, label, url, extension')
+            .order('lang', { ascending: true });
+
+        if (error) throw error;
+
+        // Group by lang
+        const result = {};
+        for (const card of data) {
+            if (!result[card.lang]) result[card.lang] = [];
+            result[card.lang].push({ label: card.label, url: card.url, extension: card.extension });
+        }
+
+        res.json(result);
+    } catch (err) {
+        console.error('Error listing sign cards from Supabase:', err.message);
+        res.status(500).json({ error: 'Failed to list sign cards' });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Socket.IO — real-time video call signaling (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
 io.on("connection", socket => {
     console.log(`User connected: ${socket.id}`);
 
@@ -138,21 +331,10 @@ io.on("connection", socket => {
         socket.to(room).emit("user-joined", socket.id);
     });
 
-    socket.on("offer", data => {
-        socket.to(data.room).emit("offer", data);
-    });
-
-    socket.on("answer", data => {
-        socket.to(data.room).emit("answer", data);
-    });
-
-    socket.on("ice", data => {
-        socket.to(data.room).emit("ice", data);
-    });
-
-    socket.on("sign-message", data => {
-        socket.to(data.room).emit("sign-message", data);
-    });
+    socket.on("offer", data => { socket.to(data.room).emit("offer", data); });
+    socket.on("answer", data => { socket.to(data.room).emit("answer", data); });
+    socket.on("ice", data => { socket.to(data.room).emit("ice", data); });
+    socket.on("sign-message", data => { socket.to(data.room).emit("sign-message", data); });
 
     socket.on("chat-message", data => {
         const room = data.room;
@@ -161,32 +343,31 @@ io.on("connection", socket => {
         socket.to(room).emit("chat-message", data);
     });
 
-    socket.on("speech-message", data => {
-        socket.to(data.room).emit("speech-message", data);
-    });
-
-    socket.on("volume-level", data => {
-        socket.to(data.room).emit("volume-level", data);
-    });
-
-    socket.on("emoji-pop", data => {
-        socket.to(data.room).emit("emoji-pop", data);
-    });
+    socket.on("speech-message", data => { socket.to(data.room).emit("speech-message", data); });
+    socket.on("volume-level", data => { socket.to(data.room).emit("volume-level", data); });
+    socket.on("emoji-pop", data => { socket.to(data.room).emit("emoji-pop", data); });
 
     socket.on("disconnecting", () => {
         socket.rooms.forEach(room => {
-            if (room !== socket.id) {
-                socket.to(room).emit("user-left", socket.id);
-            }
+            if (room !== socket.id) socket.to(room).emit("user-left", socket.id);
         });
     });
 
-    socket.on("disconnect", () => {
-        console.log(`User disconnected: ${socket.id}`);
-    });
+    socket.on("disconnect", () => { console.log(`User disconnected: ${socket.id}`); });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Start Server (with one-time migration)
+// ─────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+
+migrateLocalDataToSupabase().then(() => {
+    http.listen(PORT, () => {
+        console.log(`🚀 Server running on http://localhost:${PORT}`);
+    });
+}).catch(err => {
+    console.error('Failed to run migration, starting anyway:', err.message);
+    http.listen(PORT, () => {
+        console.log(`🚀 Server running on http://localhost:${PORT}`);
+    });
 });

@@ -243,6 +243,27 @@ async function loadSignPhraseMap() {
 }
 loadSignPhraseMap();
 
+// Preload sign card URLs from Supabase into cache so cards render instantly
+async function preloadSignCardsFromSupabase() {
+    try {
+        const response = await fetch('/api/sign-cards', { cache: 'no-cache' });
+        if (!response.ok) return;
+        const cards = await response.json(); // { isl: [{label, url}], asl: [...] }
+        let count = 0;
+        for (const [lang, items] of Object.entries(cards)) {
+            for (const item of items) {
+                // Cache the Supabase public URL as available
+                vcImageExistsCache.set(item.url, true);
+                count++;
+            }
+        }
+        if (count > 0) console.log(`✅ Preloaded ${count} sign card URLs from Supabase`);
+    } catch (err) {
+        console.warn('Failed to preload sign cards from Supabase:', err);
+    }
+}
+preloadSignCardsFromSupabase();
+
 function getVCVisibleCardCapacity() {
     if (!predictionSignCardsContainer) return 8;
 
