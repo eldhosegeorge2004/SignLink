@@ -25,6 +25,17 @@ const MAX_DYNAMIC_FRAMES = 30;
 const DYNAMIC_ANALYZE_MS = 1500;
 let dynamicBufferStartTime = 0;
 const BIG_MOTION_CHANGE_THRESHOLD = 0.06;
+const ASL_Z_MIN_CONFIDENCE = 0.82;
+const ASL_Z_MIN_FRAMES = 6;
+const ASL_Z_MIN_X_RANGE = 0.06;
+const ASL_Z_MIN_Y_RANGE = 0.015;
+const ASL_Z_MIN_PATH_DISTANCE = 0.12;
+const ASL_Z_MIN_HORIZONTAL_TRAVEL = 0.09;
+const ASL_Z_MIN_VERTICAL_TRAVEL = 0.02;
+const ASL_Z_MIN_DIRECTION_CHANGES = 1;
+const ASL_Z_MIN_CURVATURE_RATIO = 1.03;
+const ASL_Z_MIN_WHOLE_HAND_PATH = 0.11;
+const ASL_Z_MIN_ACTIVE_LANDMARK_RATIO = 0.28;
 let lastDisplayedPrediction = null;
 let lastDisplayedFrame = null;
 const STATIC_STILL_DURATION_MS = 1000;
@@ -1523,6 +1534,120 @@ function isASLDynamicSpellingLetter(label) {
     return label.toUpperCase() === 'Z';
 }
 
+function getASLZMotionMetrics(frameBuffer) {
+    const tipPoints = (frameBuffer || [])
+        .filter(frame => Array.isArray(frame) && frame.length >= 26)
+        .map(frame => ({ x: frame[24], y: frame[25] }));
+
+    if (tipPoints.length < 2) {
+        return {
+            frameCount: tipPoints.length,
+            xRange: 0,
+            yRange: 0,
+            pathDistance: 0,
+            horizontalTravel: 0,
+            verticalTravel: 0,
+            directionChanges: 0,
+            endToEndDistance: 0,
+            curvatureRatio: 0
+        };
+    }
+
+    let pathDistance = 0;
+    let horizontalTravel = 0;
+    let verticalTravel = 0;
+    let directionChanges = 0;
+    let lastHorizontalDirection = 0;
+    let wholeHandPathDistance = 0;
+    let activeLandmarkComparisons = 0;
+    let totalLandmarkComparisons = 0;
+
+    for (let index = 1; index < tipPoints.length; index += 1) {
+        const dx = tipPoints[index].x - tipPoints[index - 1].x;
+        const dy = tipPoints[index].y - tipPoints[index - 1].y;
+        pathDistance += Math.hypot(dx, dy);
+        horizontalTravel += Math.abs(dx);
+        verticalTravel += Math.abs(dy);
+
+        const currentFrame = frameBuffer[index];
+        const previousFrame = frameBuffer[index - 1];
+        if (Array.isArray(currentFrame) && Array.isArray(previousFrame) && currentFrame.length >= 63 && previousFrame.length >= 63) {
+            for (let landmark = 0; landmark < 21; landmark += 1) {
+                const base = landmark * 3;
+                const lx = currentFrame[base] - previousFrame[base];
+                const ly = currentFrame[base + 1] - previousFrame[base + 1];
+                const lz = currentFrame[base + 2] - previousFrame[base + 2];
+                const landmarkDelta = Math.hypot(lx, ly, lz);
+
+                wholeHandPathDistance += landmarkDelta;
+                totalLandmarkComparisons += 1;
+                if (landmarkDelta >= 0.01) {
+                    activeLandmarkComparisons += 1;
+                }
+            }
+        }
+
+        const direction = Math.abs(dx) >= 0.01 ? Math.sign(dx) : 0;
+        if (direction !== 0) {
+            if (lastHorizontalDirection !== 0 && direction !== lastHorizontalDirection) {
+                directionChanges += 1;
+            }
+            lastHorizontalDirection = direction;
+        }
+    }
+
+    const xValues = tipPoints.map(point => point.x);
+    const yValues = tipPoints.map(point => point.y);
+    const xRange = Math.max(...xValues) - Math.min(...xValues);
+    const yRange = Math.max(...yValues) - Math.min(...yValues);
+    const start = tipPoints[0];
+    const end = tipPoints[tipPoints.length - 1];
+    const endToEndDistance = Math.hypot(end.x - start.x, end.y - start.y);
+    const curvatureRatio = endToEndDistance > 0 ? pathDistance / endToEndDistance : 0;
+    const normalizedWholeHandPath = totalLandmarkComparisons > 0 ? (wholeHandPathDistance / totalLandmarkComparisons) : 0;
+    const activeLandmarkRatio = totalLandmarkComparisons > 0 ? (activeLandmarkComparisons / totalLandmarkComparisons) : 0;
+
+    return {
+        frameCount: tipPoints.length,
+        xRange,
+        yRange,
+        pathDistance,
+        horizontalTravel,
+        verticalTravel,
+        directionChanges,
+        endToEndDistance,
+        curvatureRatio,
+        wholeHandPathDistance: normalizedWholeHandPath,
+        activeLandmarkRatio
+    };
+}
+
+function hasStrongASLZMotion(label, confidence, frameBuffer) {
+    if (!isASLDynamicSpellingLetter(label)) return true;
+    if (confidence < ASL_Z_MIN_CONFIDENCE) return false;
+
+    const metrics = getASLZMotionMetrics(frameBuffer);
+    if (metrics.frameCount < ASL_Z_MIN_FRAMES) return false;
+
+    const hasMinimumTravel = metrics.xRange >= ASL_Z_MIN_X_RANGE
+        && metrics.yRange >= ASL_Z_MIN_Y_RANGE
+        && metrics.pathDistance >= ASL_Z_MIN_PATH_DISTANCE
+        && metrics.horizontalTravel >= ASL_Z_MIN_HORIZONTAL_TRAVEL
+        && metrics.verticalTravel >= ASL_Z_MIN_VERTICAL_TRAVEL;
+
+    if (!hasMinimumTravel) return false;
+
+    const hasWholeHandMovement = metrics.wholeHandPathDistance >= ASL_Z_MIN_WHOLE_HAND_PATH
+        && metrics.activeLandmarkRatio >= ASL_Z_MIN_ACTIVE_LANDMARK_RATIO;
+    if (!hasWholeHandMovement) return false;
+
+    // Reject tiny transition jitter, but allow real Z without requiring a perfect trace.
+    const hasDirectionOrCurvature = metrics.directionChanges >= ASL_Z_MIN_DIRECTION_CHANGES
+        || metrics.curvatureRatio >= ASL_Z_MIN_CURVATURE_RATIO;
+
+    return hasDirectionOrCurvature;
+}
+
 function applyISLHandCountDisambiguation(label, detectedHandCount) {
     if (currentMode !== 'ISL') return label;
     if (typeof label !== 'string') return label;
@@ -1641,7 +1766,8 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 // Boost confidence for dynamic signs to compete with static scores
                 const boostedConf = Math.min(conf * 1.2, 1.0);
                 const allowDynamicDuringSpelling = accumulatedWord.length === 0 || isASLDynamicSpellingLetter(predictedDynamicLabel);
-                if (allowDynamicDuringSpelling && labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
+                const strongEnoughForZ = hasStrongASLZMotion(predictedDynamicLabel, conf, paddedFrames);
+                if (allowDynamicDuringSpelling && strongEnoughForZ && labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
                     candidates.push({
                         label: predictedDynamicLabel,
                         conf: boostedConf,

@@ -796,6 +796,7 @@ async function ensureTrainingModelsLoaded() {
             try {
                 model.static = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-static`);
                 model.staticLabels = JSON.parse(savedStaticLabels);
+                ensureModelCompiled(model.static, 'static model');
             } catch (err) {
                 console.warn('Unable to load saved static model for incremental training:', err);
             }
@@ -810,6 +811,7 @@ async function ensureTrainingModelsLoaded() {
                 model.dynamicLabels = JSON.parse(savedDynamicLabels);
                 const handReqRaw = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`);
                 model.dynamicHandRequirements = handReqRaw ? JSON.parse(handReqRaw) : {};
+                ensureModelCompiled(model.dynamic, 'dynamic model');
             } catch (err) {
                 console.warn('Unable to load saved dynamic model for incremental training:', err);
             }
@@ -846,6 +848,18 @@ function createDynamicModel(outputUnits) {
     dynamicModel.add(tf.layers.dense({ units: outputUnits, activation: 'softmax' }));
     dynamicModel.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
     return dynamicModel;
+}
+
+function ensureModelCompiled(modelInstance, modelType = 'model') {
+    if (!modelInstance) return;
+    if (modelInstance.optimizer) return;
+
+    modelInstance.compile({
+        optimizer: 'adam',
+        loss: 'categoricalCrossentropy',
+        metrics: ['accuracy']
+    });
+    console.log(`Recompiled ${modelType} for incremental training.`);
 }
 
 function computeDynamicHandRequirements(trainingData, labels) {
@@ -1006,6 +1020,8 @@ async function trainStaticModel(staticData, newStaticData) {
     const unseenLabels = newLabels.filter(label => !existingLabels.includes(label));
 
     if (unseenLabels.length === 0) {
+        ensureModelCompiled(model.static, 'static model');
+
         const outputUnits = model.static.layers[model.static.layers.length - 1].units;
         const internalLabels = [...existingLabels];
         while (internalLabels.length < outputUnits) {
@@ -1145,6 +1161,8 @@ async function trainDynamicModel(dynamicData, newDynamicData) {
     const unseenLabels = newLabels.filter(label => !existingLabels.includes(label));
 
     if (unseenLabels.length === 0) {
+        ensureModelCompiled(model.dynamic, 'dynamic model');
+
         const outputUnits = model.dynamic.layers[model.dynamic.layers.length - 1].units;
         const internalLabels = [...existingLabels];
         while (internalLabels.length < outputUnits) {
