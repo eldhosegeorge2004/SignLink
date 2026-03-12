@@ -45,6 +45,34 @@ let heldLetter = null;
 const DYNAMIC_LETTER_COOLDOWN_MS = 1200;
 let lastDynamicLetterAddedAt = 0;
 
+function normalizeAlphabetLabel(label) {
+    if (typeof label !== 'string') return label;
+    return /^[a-zA-Z]$/.test(label) ? label.toUpperCase() : label;
+}
+
+function normalizeLabelList(labels) {
+    let changed = false;
+    const normalized = (labels || []).map((label) => {
+        const nextLabel = normalizeAlphabetLabel(label);
+        if (nextLabel !== label) changed = true;
+        return nextLabel;
+    });
+    return { labels: normalized, changed };
+}
+
+function normalizeHandRequirementMap(map) {
+    let changed = false;
+    const normalized = {};
+
+    Object.entries(map || {}).forEach(([label, requirement]) => {
+        const nextLabel = normalizeAlphabetLabel(label);
+        if (nextLabel !== label) changed = true;
+        normalized[nextLabel] = requirement;
+    });
+
+    return { map: normalized, changed };
+}
+
 async function updateModeVariables() {
     if (currentMode === 'ISL') {
         dbCollection = 'gestures';
@@ -1096,7 +1124,7 @@ async function loadModelsAndLabels() {
     try {
         const response = await fetch('labels.json');
         if (response.ok) {
-            serverLabels = await response.json();
+            serverLabels = normalizeLabelList(await response.json()).labels;
             serverModel = await tf.loadLayersModel(serverModelPath);
             console.log(`Server model loaded (${serverLabels.length} labels)`);
         } else {
@@ -1110,7 +1138,11 @@ async function loadModelsAndLabels() {
     try {
         const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
         if (localLabelData) {
-            uniqueLabels = JSON.parse(localLabelData);
+            const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
+            uniqueLabels = normalizedLocalLabels.labels;
+            if (normalizedLocalLabels.changed) {
+                localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
+            }
             try {
                 model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
                 console.log(`Local static model loaded (${uniqueLabels.length} labels)`);
@@ -1127,9 +1159,17 @@ async function loadModelsAndLabels() {
     try {
         const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
         if (dynamicLabelData) {
-            uniqueLabelsDynamic = JSON.parse(dynamicLabelData);
+            const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
+            uniqueLabelsDynamic = normalizedDynamicLabels.labels;
+            if (normalizedDynamicLabels.changed) {
+                localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
+            }
             const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
-            dynamicLabelHandRequirements = dynamicReqData ? JSON.parse(dynamicReqData) : {};
+            const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
+            dynamicLabelHandRequirements = normalizedHandReqs.map;
+            if (normalizedHandReqs.changed) {
+                localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
+            }
             try {
                 modelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
                 console.log(`Local dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
@@ -1554,7 +1594,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             const pred = serverModel.predict(input);
             const conf = pred.max().dataSync()[0];
             const idx = pred.argMax(-1).dataSync()[0];
-            const label = serverLabels[idx];
+            const label = normalizeAlphabetLabel(serverLabels[idx]);
             if (!shouldSkipStaticLabel(label)) {
                 candidates.push({ label, conf, source: 'server' });
             }
@@ -1565,7 +1605,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             const pred = model.predict(input);
             const conf = pred.max().dataSync()[0];
             const idx = pred.argMax(-1).dataSync()[0];
-            const label = uniqueLabels[idx];
+            const label = normalizeAlphabetLabel(uniqueLabels[idx]);
             if (!shouldSkipStaticLabel(label)) {
                 candidates.push({ label, conf, source: 'local' });
             }
@@ -1596,7 +1636,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 const predDynamic = modelDynamic.predict(tensorDynamic);
                 const conf = predDynamic.max().dataSync()[0];
                 const idx = predDynamic.argMax(-1).dataSync()[0];
-                const predictedDynamicLabel = uniqueLabelsDynamic[idx];
+                const predictedDynamicLabel = normalizeAlphabetLabel(uniqueLabelsDynamic[idx]);
 
                 // Boost confidence for dynamic signs to compete with static scores
                 const boostedConf = Math.min(conf * 1.2, 1.0);
@@ -1623,7 +1663,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             } else if (lastDisplayedPrediction) {
                 // Only show last prediction if not spelling
                 const last = lastDisplayedPrediction;
-                const displayText = last.isDynamic ? `${last.label} 🔄` : last.label;
+                const displayText = last.isDynamic ? `${normalizeAlphabetLabel(last.label)} 🔄` : normalizeAlphabetLabel(last.label);
                 setPredictionText(`Sign: ${displayText} (${Math.round(last.conf * 100)}%)`);
             }
             // Don't show "Listening..." - just keep previous prediction or blank
@@ -1632,7 +1672,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
 
         const best = chooseBestCandidateWithLocalPriority(candidates);
         if (!best) return;
-        const rawOutputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
+        const rawOutputLabel = best.isDynamic ? normalizeAlphabetLabel(best.label) : normalizeAlphabetLabel(getSmoothedPrediction(best.label));
         const outputLabel = applyISLHandCountDisambiguation(rawOutputLabel, detectedHandCount);
         updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatLandmarks);
 

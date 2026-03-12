@@ -62,6 +62,34 @@ const predictionBuffer = [];
 let localStorageModelKey = 'my-isl-model'; // Default
 let localStorageLabelKey = 'isl_labels';
 
+function normalizeAlphabetLabel(label) {
+    if (typeof label !== 'string') return label;
+    return /^[a-zA-Z]$/.test(label) ? label.toUpperCase() : label;
+}
+
+function normalizeLabelList(labels) {
+    let changed = false;
+    const normalized = (labels || []).map((label) => {
+        const nextLabel = normalizeAlphabetLabel(label);
+        if (nextLabel !== label) changed = true;
+        return nextLabel;
+    });
+    return { labels: normalized, changed };
+}
+
+function normalizeHandRequirementMap(map) {
+    let changed = false;
+    const normalized = {};
+
+    Object.entries(map || {}).forEach(([label, requirement]) => {
+        const nextLabel = normalizeAlphabetLabel(label);
+        if (nextLabel !== label) changed = true;
+        normalized[nextLabel] = requirement;
+    });
+
+    return { map: normalized, changed };
+}
+
 // Language Selector Logic
 const langSelect = document.getElementById('lang-select');
 if (langSelect) {
@@ -125,7 +153,7 @@ async function loadSavedModelAndLabels() {
 
                 const response = await fetch(labelsPath);
                 if (response.ok) {
-                    serverLabels = await response.json();
+                    serverLabels = normalizeLabelList(await response.json()).labels;
                     try {
                         serverModel = await tf.loadLayersModel(modelPath);
                         console.log(`Server Model loaded (${serverLabels.length} labels from ${labelsPath})`);
@@ -150,7 +178,11 @@ async function loadSavedModelAndLabels() {
             try {
                 const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
                 if (localLabelData) {
-                    localLabels = JSON.parse(localLabelData);
+                    const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
+                    localLabels = normalizedLocalLabels.labels;
+                    if (normalizedLocalLabels.changed) {
+                        localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(localLabels));
+                    }
                     console.log(`Diagnostic -> Loaded Local Static Labels for ${localStorageLabelKey}:`, localLabels);
                     try {
                         localModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
@@ -174,9 +206,17 @@ async function loadSavedModelAndLabels() {
             try {
                 const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
                 if (dynamicLabelData) {
-                    localLabelsDynamic = JSON.parse(dynamicLabelData);
+                    const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
+                    localLabelsDynamic = normalizedDynamicLabels.labels;
+                    if (normalizedDynamicLabels.changed) {
+                        localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(localLabelsDynamic));
+                    }
                     const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
-                    dynamicLabelHandRequirements = dynamicReqData ? JSON.parse(dynamicReqData) : {};
+                    const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
+                    dynamicLabelHandRequirements = normalizedHandReqs.map;
+                    if (normalizedHandReqs.changed) {
+                        localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
+                    }
                     try {
                         localModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
                         console.log(`Local Dynamic Model loaded (${localLabelsDynamic.length} labels)`);
@@ -349,7 +389,7 @@ function predictSingleModel(modelInstance, labels, tensor) {
     const idx = pred.argMax(-1).dataSync()[0];
 
     // Cleanup happens in tf.tidy in caller
-    return { label: labels[idx], conf: conf };
+    return { label: normalizeAlphabetLabel(labels[idx]), conf: conf };
 }
 
 function normalizeHandRequirement(rawValue) {
@@ -505,7 +545,7 @@ function runPrediction(landmarks, detectedHandCount = 1) {
                 const predDynamic = localModelDynamic.predict(tensorDynamic);
                 const conf = predDynamic.max().dataSync()[0];
                 const idx = predDynamic.argMax(-1).dataSync()[0];
-                const predictedDynamicLabel = localLabelsDynamic[idx];
+                const predictedDynamicLabel = normalizeAlphabetLabel(localLabelsDynamic[idx]);
 
                 // Keep dynamic predictions unboosted to reduce false positives,
                 // but still enforce hand-count requirements when available.
@@ -529,7 +569,7 @@ function runPrediction(landmarks, detectedHandCount = 1) {
         // 5. Threshold & Display
         if (best) {
             console.log(`Live Prediction -> Best Candidate: ${best.label} (${best.conf * 100}%) from ${best.source}`); // Diagnostic for 8/9
-            let outputLabel = best.isDynamic ? best.label : getSmoothedPrediction(best.label);
+            let outputLabel = best.isDynamic ? normalizeAlphabetLabel(best.label) : normalizeAlphabetLabel(getSmoothedPrediction(best.label));
 
             // Hardcoded overrides for ASL explicitly requested by user to fix misclassifications
             if (localStorageModelKey === 'my-asl-model' && best.source && best.source.startsWith('Server')) {
@@ -588,7 +628,7 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             } else if (lastDisplayedPrediction) {
                 // Only show last prediction if not spelling
                 const last = lastDisplayedPrediction;
-                const displayText = last.isDynamic ? `${last.label} 🔄` : last.label;
+                const displayText = last.isDynamic ? `${normalizeAlphabetLabel(last.label)} 🔄` : normalizeAlphabetLabel(last.label);
                 sttResult.innerText = `Sign: ${displayText} (${Math.round(last.conf * 100)}%)`;
             }
             // Don't show "Listening..." - just keep previous prediction or blank
