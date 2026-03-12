@@ -14,6 +14,7 @@ const totalSamplesBadge = document.getElementById('totalSamples');
 const recIndicator = document.getElementById('recIndicator');
 const uploadBtn = document.getElementById('uploadBtn');
 const uploadInput = document.getElementById('uploadInput');
+const revertBtn = document.getElementById('revertBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const testBtn = document.getElementById('testBtn');
 const testResult = document.getElementById('testResult');
@@ -86,6 +87,18 @@ function normalizeDatasetLabels(samples) {
     return { normalized, changed };
 }
 
+function getUntrainedSampleCount() {
+    return collectedData.filter(sample => sample.isTrained === false).length;
+}
+
+function updateRevertButtonState() {
+    if (!revertBtn) return;
+
+    const untrainedCount = getUntrainedSampleCount();
+    revertBtn.disabled = untrainedCount === 0;
+    revertBtn.innerHTML = `<span class="material-icons">undo</span>Revert New Data${untrainedCount ? ` (${untrainedCount})` : ''}`;
+}
+
 // Storage Keys
 const STORAGE_KEYS = {
     'ISL': { model: 'my-isl-model', labels: 'isl_labels', data: 'isl_data' },
@@ -98,6 +111,7 @@ async function init() {
     await loadDataFromServer();
     checkForSavedModels(); // Check if models already exist in localStorage
     renderDataList();
+    updateRevertButtonState();
     setupModeToggle();
 }
 
@@ -597,6 +611,7 @@ async function saveToServer() {
 
 function updateUIStats() {
     totalSamplesBadge.innerText = collectedData.length;
+    updateRevertButtonState();
     // Throttle rendering the list if data is huge
     if (Math.random() > 0.9) renderDataList();
 }
@@ -631,6 +646,25 @@ function renderDataList() {
     `}).join('');
 
     totalSamplesBadge.innerText = collectedData.length;
+    updateRevertButtonState();
+}
+
+if (revertBtn) {
+    revertBtn.addEventListener('click', async () => {
+        const untrainedCount = getUntrainedSampleCount();
+        if (untrainedCount === 0) {
+            statusMsg.textContent = 'No new untrained data to revert.';
+            return;
+        }
+
+        const confirmed = confirm(`Delete ${untrainedCount} newly added sample(s) that are not yet trained?`);
+        if (!confirmed) return;
+
+        collectedData = collectedData.filter(sample => sample.isTrained !== false);
+        await saveToServer();
+        renderDataList();
+        statusMsg.textContent = `Reverted ${untrainedCount} new sample(s).`;
+    });
 }
 
 window.deleteLabel = async (label) => {
