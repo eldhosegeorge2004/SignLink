@@ -38,6 +38,12 @@
             margin: 0 auto;
         }
 
+        /* Two-column layout when voice mode is active on desktop */
+        body.voice-mode-active .translation-main {
+            width: min(1400px, 96vw);
+            grid-template-columns: 1.2fr 1fr;
+        }
+
         .back-btn {
             position: absolute;
             top: 20px;
@@ -75,6 +81,12 @@
             box-shadow: 0 0 40px rgba(0, 0, 0, 0.3);
         }
 
+        /* Grid positioning for voice mode on desktop */
+        body.voice-mode-active .video-container {
+            grid-column: 1;
+            grid-row: 1;
+        }
+
         video {
             position: absolute;
             top: 0;
@@ -107,15 +119,35 @@
             flex-direction: column;
             justify-content: flex-start;
             align-items: stretch;
-            background: transparent; /* Removed background */
-            backdrop-filter: none;    /* Removed blur */
-            border: none;             /* Removed border */
+            background: transparent;
+            backdrop-filter: none;
+            border: none;
             padding: 16px;
             z-index: 150;
         }
 
         .speech-container.active {
             display: flex;
+        }
+
+        /* Desktop voice mode: position as grid item */
+        body.voice-mode-active .speech-container {
+            position: relative;
+            width: 100%;
+            bottom: auto;
+            left: auto;
+            display: flex;
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            overflow-y: auto;
+            grid-column: 2;
+            grid-row: 1;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
         }
 
         .listening-indicator {
@@ -134,11 +166,34 @@
             max-height: 30vh;
             overflow-y: auto;
             border: none;
-            background: transparent; /* Seamless HUD */
+            background: transparent;
             padding: 5px;
             color: #fff;
             font-size: 0.9rem;
             margin-bottom: 15px;
+            display: none;
+        }
+
+        /* Desktop voice mode: captions as fixed overlay on video */
+        body.voice-mode-active .speech-caption-log {
+            position: fixed;
+            display: block;
+            left: 80px;
+            top: calc(55% + 30px);
+            min-height: auto;
+            max-height: 30vh;
+            width: 50vw;
+            background: transparent;
+            padding: 0;
+            margin: 0;
+            z-index: 100;
+            border: none;
+            flex: none;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.6);
+        }
+
+        body.voice-mode-active .speech-caption-log.show {
+            display: block !important;
         }
 
         .speech-caption-line {
@@ -146,7 +201,14 @@
             line-height: 1.35;
             color: #e2e8f0;
             word-break: break-word;
-            text-shadow: 0 1px 3px rgba(0,0,0,0.9); /* Added shadow for legibility */
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.6);
+        }
+
+        /* Desktop voice mode: styled caption line */
+        body.voice-mode-active .speech-caption-line {
+            margin-bottom: 6px;
+            line-height: 1.4;
+            font-size: 0.85rem;
         }
 
         .sign-cards-area {
@@ -163,6 +225,29 @@
             font-size: 1rem;
             overflow-y: auto;
             padding: 10px;
+        }
+
+        /* Desktop voice mode: styled sign cards in right panel */
+        body.voice-mode-active .sign-cards-area {
+            position: relative;
+            width: calc(100% + 32px);
+            margin: 0 -16px -16px -16px;
+            height: auto;
+            min-height: auto;
+            border-bottom: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0 0 12px 12px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+            gap: 10px;
+            background: rgba(15, 23, 42, 0.3);
+            padding: 12px 16px;
+            font-size: 0.8rem;
+            justify-content: flex-start;
+            align-items: flex-start;
+            top: auto;
+            left: auto;
+            z-index: auto;
         }
 
         @media (max-width: 1200px) {
@@ -211,25 +296,53 @@
             display: none !important;
         }
 
-        /* HUD Live Captions Styling */
         .listening-indicator {
             font-size: 1.1rem;
             color: #3b82f6;
             margin-bottom: 12px;
-            display: flex;
+            display: none;
             align-items: center;
             gap: 10px;
             font-weight: 500;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.6);
+        }
+
+        /* Desktop voice mode: captions overlay on video */
+        body.voice-mode-active .listening-indicator {
+            position: fixed;
+            display: flex;
+            left: 80px;
+            top: 55%;
+            transform: translateY(-100%);
+            z-index: 100;
+            background: transparent;
+            margin: 0;
+        }
+
+        body.voice-mode-active .listening-indicator.show {
+            display: flex !important;
         }
         
         #listening-text {
             color: #fff;
             opacity: 0.9;
             font-style: italic;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.6);
         }
 
         body:not(.voice-mode-active) .speech-container {
             display: none !important;
+        }
+
+        /* Show captions as overlay in voice mode on desktop */
+        @media (min-width: 601px) {
+            body.voice-mode-active .listening-indicator {
+                display: flex;
+            }
+
+            body.voice-mode-active .speech-caption-log {
+                display: block;
+            }
         }
 
         @media (max-width: 980px) {
@@ -246,6 +359,12 @@
            MOBILE — Native App Style (≤600px)
            ════════════════════════════════════════ */
         @media (max-width: 600px) {
+
+            /* Override desktop voice mode layout on mobile */
+            body.voice-mode-active .translation-main {
+                grid-template-columns: 1fr;
+                width: 96vw;
+            }
 
             /* Full-screen container — no scroll */
             .translation-container {
@@ -317,27 +436,84 @@
 
             /* Speech panel: floated overlay contents */
             .speech-container {
-                position: absolute;
+                position: absolute !important;
                 bottom: 80px;
                 left: 12px;
                 right: 12px;
+                width: auto !important;
                 height: auto;
                 max-height: 55dvh;
                 min-height: 0;
-                border: none;
-                background: transparent;
-                backdrop-filter: none;
+                border: none !important;
+                background: transparent !important;
+                backdrop-filter: none !important;
                 padding: 14px;
                 box-shadow: none;
+                grid-column: auto !important;
+                grid-row: auto !important;
+            }
+
+            body.voice-mode-active .speech-container {
+                position: absolute !important;
+                background: transparent !important;
+                backdrop-filter: none !important;
+                border: none !important;
+            }
+
+            .listening-indicator {
+                position: absolute !important;
+                display: none !important;
+                left: 12px;
+                top: 12px;
+                z-index: 50;
+                margin: 0 !important;
+            }
+
+            body.voice-mode-active .listening-indicator {
+                display: none !important;
+            }
+
+            body.voice-mode-active .listening-indicator.show {
+                display: flex !important;
             }
 
             .speech-caption-log {
                 max-height: 20vh;
                 min-height: 80px;
+                position: absolute !important;
+                display: none !important;
+                left: 12px;
+                top: 50px;
+                z-index: 50;
+                width: calc(100% - 24px);
+                background: transparent !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                border: none !important;
+            }
+
+            body.voice-mode-active .speech-caption-log {
+                max-height: 20vh !important;
+                min-height: 80px !important;
+            }
+
+            body.voice-mode-active .speech-caption-log.show {
+                display: block !important;
             }
 
             .sign-cards-area {
                 height: 160px;
+            }
+
+            body.voice-mode-active .sign-cards-area {
+                width: calc(100% + 28px) !important;
+                margin: 0 -14px -14px -14px !important;
+                height: 160px !important;
+                grid-template-columns: auto !important;
+                display: flex !important;
+                border-top: none !important;
+                border-radius: 12px !important;
+                background: transparent !important;
             }
 
             /* Spelling overlay: smaller on mobile */
@@ -417,19 +593,21 @@
                         letter-spacing: 2px;
                     "></span>
                 </div>
+            </div>
 
-                <!-- Speech Panel (shown in voice mode as overlay) -->
-                <div id="speech-panel" class="speech-container">
-                    <div class="listening-indicator">
-                        <span class="material-icons" style="font-size: 22px;">mic</span>
-                        <span id="listening-text">Listening...</span>
-                    </div>
-                    <div id="speech-caption-log" class="speech-caption-log">
-                        <div class="speech-caption-line">Speech captions will appear here.</div>
-                    </div>
-                    <div class="sign-cards-area">
-                        <p>Sign Language Cards Display</p>
-                    </div>
+            <!-- Captions Overlay (shown in voice mode as overlay on video) -->
+            <div class="listening-indicator">
+                <span class="material-icons" style="font-size: 22px;">mic</span>
+                <span id="listening-text">Listening...</span>
+            </div>
+            <div id="speech-caption-log" class="speech-caption-log">
+                <div class="speech-caption-line">Speech captions will appear here.</div>
+            </div>
+
+            <!-- Speech Panel (shown in voice mode as separate panel) -->
+            <div id="speech-panel" class="speech-container">
+                <div class="sign-cards-area">
+                    <p>Sign Language Cards Display</p>
                 </div>
             </div>
 
