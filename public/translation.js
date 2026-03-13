@@ -1335,6 +1335,17 @@ function displaySignCards(text) {
     const cardArea = document.querySelector('.sign-cards-area-right');
     if (!cardArea) return;
 
+    const triggerSignCardsPopup = () => {
+        cardArea.classList.remove('popup-in');
+        // Force reflow so the animation can replay for each new transcript.
+        void cardArea.offsetWidth;
+        cardArea.classList.add('popup-in');
+
+        cardArea.addEventListener('animationend', () => {
+            cardArea.classList.remove('popup-in');
+        }, { once: true });
+    };
+
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length === 0) {
         cardArea.innerHTML = '<div class="placeholder-msg">Sign Cards will appear here.</div>';
@@ -1408,6 +1419,8 @@ function displaySignCards(text) {
             lineGroups.push(currentLine);
         }
 
+        let animatedCardIndex = 0;
+
         lineGroups.forEach((line) => {
             const lineEl = document.createElement('div');
             lineEl.style.display = 'flex';
@@ -1425,6 +1438,9 @@ function displaySignCards(text) {
 
                 group.forEach((token) => {
                     const card = document.createElement('div');
+                    card.classList.add('sign-card-item');
+                    card.style.animationDelay = `${Math.min(animatedCardIndex * 45, 320)}ms`;
+                    animatedCardIndex += 1;
                     card.style.width = '78px';
                     card.style.height = '88px';
                     card.style.border = '1px solid rgba(148,163,184,0.35)';
@@ -1472,6 +1488,7 @@ function displaySignCards(text) {
         
         // Auto-scroll to the bottom as new cards are added
         cardArea.scrollTop = cardArea.scrollHeight;
+        triggerSignCardsPopup();
     })();
 }
 
@@ -1505,11 +1522,17 @@ function bindSignVoiceToggle() {
     if (toggleBtn.dataset.bound === 'true') return;
     toggleBtn.dataset.bound = 'true';
 
+    const syncModeClass = () => {
+        document.body.classList.toggle('voice-mode-active', !isSignMode);
+    };
+
+    syncModeClass();
+
     toggleBtn.addEventListener('click', () => {
         isSignMode = !isSignMode;
         
         // Use body class for robust CSS-based UI toggling
-        document.body.classList.toggle('voice-mode-active', !isSignMode);
+        syncModeClass();
 
         if (isSignMode) {
             // Switch to Sign Mode
