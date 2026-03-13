@@ -1,7 +1,8 @@
 import { db } from './firebase-config.js';
 import { collection, addDoc, getDocs, deleteDoc, doc } from "firebase/firestore";
 
-const socket = io();
+// Note: supabaseClient is initialized globally in videocall.html
+let supabaseChannel = null;
 
 // --- Persistence Configuration (Firestore) ---
 // Default to ISL
@@ -439,8 +440,7 @@ document.addEventListener('click', () => {
     }
 }, { once: true });
 
-socket.on('connect', () => console.log("Connected to signaling server with ID:", socket.id));
-socket.on('connect_error', (err) => console.error("Socket Connection Error:", err));
+// Supabase connection handled during join-room
 
 const rtcConfig = {
     iceServers: [
@@ -544,7 +544,14 @@ function initSTT() {
             appendCaptionLog('You', trimmed);
             displayVCSignCards(trimmed);
             // Send finalized text to remote peer
-            socket.emit('speech-message', { room: roomName, text: trimmed });
+            // Send finalized text to remote peer
+            if (supabaseChannel) {
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'speech-message',
+                    payload: { text: trimmed }
+                });
+            }
         } else {
             // Show interim words in real-time
             updateVCCaptionDisplay(interimTranscript.trim());
@@ -863,7 +870,13 @@ async function initAudioAnalysis(stream) {
 
             if (volume > 0.02) {
                 localVolumeMeter.classList.add('volume-active');
-                socket.emit('volume-level', { room: roomName, level: volume });
+            if (supabaseChannel) {
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'volume-level',
+                    payload: { level: volume }
+                });
+            }
             } else {
                 localVolumeMeter.classList.remove('volume-active');
             }
@@ -1028,7 +1041,131 @@ joinBtn.addEventListener('click', async () => {
     meetingRoom.classList.add('active');
     meetingCodeDisplay.innerText = roomName;
 
-    socket.emit("join-room", roomName);
+    // Supabase Channel Setup
+    supabaseChannel = window.supabaseClient.channel(roomName, {
+        config: {
+            broadcast: { self: false },
+            presence: { key: roomName }
+        }
+    });
+
+    supabaseChannel
+        .on('broadcast', { event: 'user-joined' }, (payload) => {
+            console.log("New peer joined room:", payload.id);
+            updatePeopleList(payload.id);
+            if (localStream) {
+                handlePeerJoined(payload.id);
+            }
+        })
+        .on('broadcast', { event: 'offer' }, async (payload) => {
+            console.log("Offer received from peer");
+            if (!pc) createPeerConnection();
+            await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            processBufferedIceCandidates();
+            const answer = await pc.createAnswer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+            });
+            answer.sdp = setMaxBitrate(answer.sdp, 1000);
+            await pc.setLocalDescription(answer);
+            console.log("Sending answer...");
+            supabaseChannel.send({
+                type: 'broadcast',
+                event: 'answer',
+                payload: { sdp: answer }
+            });
+        })
+        .on('broadcast', { event: 'answer' }, async (payload) => {
+            console.log("Answer received from peer");
+            if (pc) {
+                await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                processBufferedIceCandidates();
+            }
+        })
+        .on('broadcast', { event: 'ice' }, async (payload) => {
+            if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+                } catch (e) {
+                    console.error("Error adding ICE candidate:", e);
+                }
+            } else {
+                iceCandidatesBuffer.push(payload.candidate);
+            }
+        })
+        .on('broadcast', { event: 'sign-message' }, data => {
+            const payload = data.payload || data; // Handle different payload structures
+            remotePredictionDiv.innerText = payload.text;
+            remoteCaptionOverlay.classList.remove('hidden');
+            setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
+
+            const now = Date.now();
+            const wordLastSpoken = remoteWordLastSpoken[payload.text] || 0;
+            const timeSinceAny = now - lastRemoteSpokenTime;
+            const timeSinceSame = now - wordLastSpoken;
+
+            if (isTTSOn && timeSinceSame > 4000 && timeSinceAny > 800) {
+                speak(payload.text);
+                lastRemoteSpokenText = payload.text;
+                lastRemoteSpokenTime = now;
+                remoteWordLastSpoken[payload.text] = now;
+            }
+        })
+        .on('broadcast', { event: 'speech-message' }, data => {
+            const payload = data.payload || data;
+            if (payload.text && payload.text.trim()) {
+                if (vcCaptionBar && !vcCaptionBar.classList.contains('active')) {
+                    vcCaptionBar.classList.add('active');
+                }
+                const remoteText = payload.text.trim();
+                appendVCCaption(remoteText);
+                appendCaptionLog('They', remoteText);
+                displayVCSignCards(remoteText);
+            }
+        })
+        .on('broadcast', { event: 'chat-message' }, (data) => {
+            const payload = data.payload || data;
+            appendMessage({ ...payload, sender: 'Remote User' }, 'remote');
+            if (!chatPanel.classList.contains('open') && chatToggleBtn) {
+                chatToggleBtn.style.color = '#e37400';
+            }
+        })
+        .on('broadcast', { event: 'volume-level' }, data => {
+            const payload = data.payload || data;
+            if (remoteVolumeMeter) {
+                if (payload.level > 0.02) {
+                    remoteVolumeMeter.classList.add('volume-active');
+                } else {
+                    remoteVolumeMeter.classList.remove('volume-active');
+                }
+            }
+        })
+        .on('broadcast', { event: 'emoji-pop' }, data => {
+            const payload = data.payload || data;
+            popEmojis(payload.emoji);
+        })
+        .on('broadcast', { event: 'user-left' }, (payload) => {
+            console.log("Peer left room:", payload.id);
+            updatePeopleList(null);
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            if (remoteVideo) {
+                remoteVideo.srcObject = null;
+            }
+        })
+        .subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                console.log("Subscribed to Supabase Channel:", roomName);
+                // Notify others that we joined
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'user-joined',
+                    payload: { id: 'peer-' + Math.random().toString(36).substring(7) }
+                });
+            }
+        });
 
     if (window.speechSynthesis) {
         const primingUtterance = new SpeechSynthesisUtterance("");
@@ -1856,11 +1993,23 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 lastSpokenTime = now;
                 localWordLastSpoken[outputLabel] = now;
 
-                socket.emit("sign-message", { room: roomName, text: outputLabel });
+                if (supabaseChannel) {
+                    supabaseChannel.send({
+                        type: 'broadcast',
+                        event: 'sign-message',
+                        payload: { text: outputLabel }
+                    });
+                }
 
                 if (EMOJI_MAP[outputLabel.toUpperCase()]) {
                     popEmojis(EMOJI_MAP[outputLabel.toUpperCase()]);
-                    socket.emit("emoji-pop", { room: roomName, emoji: EMOJI_MAP[outputLabel.toUpperCase()] });
+                    if (supabaseChannel) {
+                        supabaseChannel.send({
+                            type: 'broadcast',
+                            event: 'emoji-pop',
+                            payload: { emoji: EMOJI_MAP[outputLabel.toUpperCase()] }
+                        });
+                    }
                 }
             }
         }
@@ -1939,8 +2088,14 @@ function finishSpelling(forceSpeak = false) {
     // Speak locally if TTS is on
     if (isTTSOn || forceSpeak) speak(wordToSpeak);
 
-    // Send to remote user (send original uppercase or title case? Let's send Title Case for them too)
-    socket.emit("sign-message", { room: roomName, text: wordToSpeak });
+    // Send to remote user
+    if (supabaseChannel) {
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'sign-message',
+            payload: { text: wordToSpeak }
+        });
+    }
 
     // Show in local toast
     setPredictionText(`Spelled: ${wordToSpeak}`);
@@ -2054,140 +2209,35 @@ clearBtn.addEventListener('click', () => {
 });
 
 // --- Signaling & WebRTC ---
-socket.on("user-joined", async (id) => {
-    console.log("New peer joined room:", id);
-    updatePeopleList(id); // Update the People panel
-    if (!localStream) {
-        console.warn("Local stream not ready. Peer connection delayed.");
-        return;
-    }
+// Peer logic refactored into Supabase Channel setup
+async function handlePeerJoined(id) {
     createPeerConnection();
     const offer = await pc.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
     });
-    // Set max bitrate to 1000kbps (stable for 480p)
     offer.sdp = setMaxBitrate(offer.sdp, 1000);
     await pc.setLocalDescription(offer);
     console.log("Sending offer to peer...");
-    socket.emit("offer", { room: roomName, sdp: offer });
-});
-
-socket.on("user-left", (id) => {
-    console.log("Peer left room:", id);
-    updatePeopleList(null); // Remove from People panel
-    // Cleanup peer connection if it matches
-    if (pc) {
-        pc.close();
-        pc = null;
-    }
-    // Remote video cleanup
-    if (remoteVideo) {
-        remoteVideo.srcObject = null;
-    }
-});
-
-socket.on("offer", async (data) => {
-    console.log("Offer received from peer");
-    if (!pc) createPeerConnection();
-    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-    processBufferedIceCandidates();
-    const answer = await pc.createAnswer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
+    supabaseChannel.send({
+        type: 'broadcast',
+        event: 'offer',
+        payload: { sdp: offer }
     });
-    // Set max bitrate to 1000kbps (stable for 480p)
-    answer.sdp = setMaxBitrate(answer.sdp, 1000);
-    await pc.setLocalDescription(answer);
-    console.log("Sending answer...");
-    socket.emit("answer", { room: roomName, sdp: answer });
-});
-
-socket.on("answer", async (data) => {
-    console.log("Answer received from peer");
-    if (pc) {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        processBufferedIceCandidates();
-    }
-});
-
-socket.on("ice", async (data) => {
-    if (pc && pc.remoteDescription && pc.remoteDescription.type) {
-        try {
-            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (e) {
-            console.error("Error adding ICE candidate:", e);
-        }
-    } else {
-        iceCandidatesBuffer.push(data.candidate);
-    }
-});
-
-async function processBufferedIceCandidates() {
-    console.log(`Processing ${iceCandidatesBuffer.length} buffered ICE candidates`);
-    while (iceCandidatesBuffer.length > 0) {
-        const candidate = iceCandidatesBuffer.shift();
-        try {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (e) {
-            console.error("Error adding buffered ICE candidate:", e);
-        }
-    }
 }
-
-socket.on("sign-message", data => {
-    remotePredictionDiv.innerText = data.text;
-    remoteCaptionOverlay.classList.remove('hidden');
-    setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
-
-    const now = Date.now();
-    const wordLastSpoken = remoteWordLastSpoken[data.text] || 0;
-    const timeSinceAny = now - lastRemoteSpokenTime;
-    const timeSinceSame = now - wordLastSpoken;
-
-    // Symmetric logic for remote signs to avoid redundant peer-side chatter
-    // Same rule: 4s for same-word repeat, 800ms for fluent different-word sequence
-    if (isTTSOn && timeSinceSame > 4000 && timeSinceAny > 800) {
-        speak(data.text);
-        lastRemoteSpokenText = data.text;
-        lastRemoteSpokenTime = now;
-        remoteWordLastSpoken[data.text] = now;
-    }
-});
-
-socket.on("speech-message", data => {
-    // Show remote STT text in the caption bar (auto-shows if STT is on)
-    if (data.text && data.text.trim()) {
-        if (vcCaptionBar && !vcCaptionBar.classList.contains('active')) {
-            vcCaptionBar.classList.add('active');
-        }
-        const remoteText = data.text.trim();
-        appendVCCaption(remoteText);
-        appendCaptionLog('They', remoteText);
-        displayVCSignCards(remoteText);
-    }
-});
-
-socket.on("volume-level", data => {
-    if (remoteVolumeMeter) {
-        if (data.level > 0.02) {
-            remoteVolumeMeter.classList.add('volume-active');
-        } else {
-            remoteVolumeMeter.classList.remove('volume-active');
-        }
-    }
-});
-
-socket.on("emoji-pop", data => {
-    popEmojis(data.emoji);
-});
 
 function createPeerConnection() {
     pc = new RTCPeerConnection(rtcConfig);
 
     pc.onicecandidate = (event) => {
         if (event.candidate) {
-            socket.emit("ice", { room: roomName, candidate: event.candidate });
+        if (event.candidate && supabaseChannel) {
+            supabaseChannel.send({
+                type: 'broadcast',
+                event: 'ice',
+                payload: { candidate: event.candidate }
+            });
+        }
         }
     };
 
@@ -2402,7 +2452,13 @@ function sendMessage() {
 
     // Emit to server
     const msgData = { room: roomName, text: text, sender: 'You', timestamp: Date.now() };
-    socket.emit('chat-message', msgData);
+    if (supabaseChannel) {
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'chat-message',
+            payload: msgData
+        });
+    }
 
     // Display locally
     appendMessage(msgData, 'self');
@@ -2412,13 +2468,7 @@ function sendMessage() {
     sendChatBtn.disabled = true;
 }
 
-socket.on('chat-message', (data) => {
-    appendMessage({ ...data, sender: 'Remote User' }, 'remote');
-    if (!chatPanel.classList.contains('open') && chatToggleBtn) {
-        // Optional: Show notification dot on chat button
-        chatToggleBtn.style.color = '#e37400'; // Orange alert
-    }
-});
+// Chat events refactored into Supabase Channel setup
 
 function updatePeopleList(remoteId = null) {
     if (!peopleList) return;
