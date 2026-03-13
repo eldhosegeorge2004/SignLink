@@ -1135,6 +1135,38 @@ video {
     border: 1px solid var(--glass-border);
 }
 
+.mobile-meeting-code {
+    display: none;
+}
+
+.mobile-meeting-code-label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.mobile-meeting-code-btn {
+    width: 100%;
+    background: rgba(59, 130, 246, 0.16);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+    color: #dbeafe;
+    border-radius: 12px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    font-family: var(--font-body);
+}
+
+.mobile-meeting-code-btn .material-icons {
+    font-size: 18px;
+}
+
 .message-wrapper {
     display: flex;
     flex-direction: column;
@@ -1643,13 +1675,17 @@ video {
     }
 
     #meetingCodeContainer {
-        display: block !important;
-        position: static;
-        bottom: auto;
-        right: auto;
-        z-index: auto;
-        width: fit-content;
-        transform: none;
+        display: none !important;
+    }
+
+    .control-left {
+        display: none !important;
+    }
+
+    .mobile-meeting-code {
+        display: block;
+        width: 100%;
+        margin-bottom: 10px;
     }
 
     .meeting-code-bubble {

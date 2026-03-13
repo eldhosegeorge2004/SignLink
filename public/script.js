@@ -137,6 +137,7 @@ const remoteVideo = document.getElementById('remoteVideo');
 const localCanvas = document.getElementById('localCanvas');
 const ctx = localCanvas.getContext('2d');
 const meetingCodeDisplay = document.getElementById('meetingCodeDisplay');
+const mobileMeetingCodeDisplay = document.getElementById('mobileMeetingCodeDisplay');
 const predictionOverlay = document.getElementById('prediction-overlay');
 const predictionDiv = document.getElementById('prediction');
 const predictionSignCardsContainer = document.getElementById('prediction-sign-cards-container');
@@ -187,6 +188,7 @@ const peopleList = document.getElementById('peopleList');
 const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
 const sendChatBtn = document.getElementById('sendChatBtn');
+const mobileCopyCodeBtn = document.getElementById('mobileCopyCodeBtn');
 
 // --- Global State ---
 let localStream;
@@ -684,6 +686,12 @@ function displayVCSignCards(text) {
 
     const renderSeq = ++vcCardRenderSeq;
     const langFolder = currentMode.toLowerCase(); // 'isl' or 'asl'
+    const isMobileViewport = window.innerWidth <= 768;
+
+    // On mobile, each new utterance should replace previous cards to avoid stacked rows.
+    if (isMobileViewport) {
+        vcCardQueue = [];
+    }
 
     (async () => {
         const newTokens = [];
@@ -699,7 +707,7 @@ function displayVCSignCards(text) {
 
         if (renderSeq !== vcCardRenderSeq) return;
 
-        if (vcCardQueue.length && vcCardQueue[vcCardQueue.length - 1]?.type !== 'linebreak') {
+        if (!isMobileViewport && vcCardQueue.length && vcCardQueue[vcCardQueue.length - 1]?.type !== 'linebreak') {
             vcCardQueue.push({ type: 'linebreak' });
         }
         vcCardQueue.push(...newTokens);
@@ -1074,6 +1082,7 @@ joinBtn.addEventListener('click', async () => {
     joinScreen.classList.remove('active');
     meetingRoom.classList.add('active');
     meetingCodeDisplay.innerText = roomName;
+    if (mobileMeetingCodeDisplay) mobileMeetingCodeDisplay.innerText = roomName;
 
     socket.emit("join-room", roomName);
 
@@ -2596,15 +2605,29 @@ if (moreBtn && secondaryControls) {
 
 // Copy Code Logic
 const copyCodeBtn = document.getElementById('copyCodeBtn');
-if (copyCodeBtn) {
-    copyCodeBtn.addEventListener('click', () => {
-        const code = meetingCodeDisplay.innerText;
-        navigator.clipboard.writeText(code).then(() => {
-            const originalText = meetingCodeDisplay.innerText;
-            meetingCodeDisplay.innerText = "COPIED!";
-            setTimeout(() => {
-                meetingCodeDisplay.innerText = originalText;
-            }, 1500);
-        });
+
+function copyMeetingCode() {
+    const code = roomName || (meetingCodeDisplay ? meetingCodeDisplay.innerText : '');
+    if (!code) return;
+
+    navigator.clipboard.writeText(code).then(() => {
+        const desktopOriginal = meetingCodeDisplay ? meetingCodeDisplay.innerText : null;
+        const mobileOriginal = mobileMeetingCodeDisplay ? mobileMeetingCodeDisplay.innerText : null;
+
+        if (meetingCodeDisplay) meetingCodeDisplay.innerText = 'COPIED!';
+        if (mobileMeetingCodeDisplay) mobileMeetingCodeDisplay.innerText = 'COPIED!';
+
+        setTimeout(() => {
+            if (meetingCodeDisplay && desktopOriginal !== null) meetingCodeDisplay.innerText = desktopOriginal;
+            if (mobileMeetingCodeDisplay && mobileOriginal !== null) mobileMeetingCodeDisplay.innerText = mobileOriginal;
+        }, 1500);
     });
+}
+
+if (copyCodeBtn) {
+    copyCodeBtn.addEventListener('click', copyMeetingCode);
+}
+
+if (mobileCopyCodeBtn) {
+    mobileCopyCodeBtn.addEventListener('click', copyMeetingCode);
 }
