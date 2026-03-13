@@ -135,6 +135,9 @@ const modeSelect = document.getElementById('modeSelect');
 const localVideo = document.getElementById('localVideo');
 const remoteVideo = document.getElementById('remoteVideo');
 const localCanvas = document.getElementById('localCanvas');
+const mainStageElement = document.querySelector('.main-stage');
+const localContainerElement = document.getElementById('localContainer');
+const spellingOverlayElement = document.getElementById('spelling-overlay');
 const ctx = localCanvas.getContext('2d');
 const meetingCodeDisplay = document.getElementById('meetingCodeDisplay');
 const mobileMeetingCodeDisplay = document.getElementById('mobileMeetingCodeDisplay');
@@ -443,6 +446,20 @@ function setPredictionText(text) {
 }
 
 setPredictionText("Waiting for sign...");
+
+function syncSpellingOverlayPlacement() {
+    if (!spellingOverlayElement || !mainStageElement || !localContainerElement) return;
+
+    const isMobileViewport = window.innerWidth <= 768;
+    const targetParent = isMobileViewport ? localContainerElement : mainStageElement;
+
+    if (spellingOverlayElement.parentElement !== targetParent) {
+        targetParent.appendChild(spellingOverlayElement);
+    }
+}
+
+syncSpellingOverlayPlacement();
+window.addEventListener('resize', syncSpellingOverlayPlacement);
 
 // Resume audio on any user interaction
 document.addEventListener('click', () => {

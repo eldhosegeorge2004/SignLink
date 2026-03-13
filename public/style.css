@@ -1838,6 +1838,22 @@ video {
         padding: 6px 8px;
     }
 
+    #localContainer #spelling-overlay {
+        top: auto !important;
+        left: auto !important;
+        right: 8px !important;
+        bottom: 8px !important;
+        padding: 6px 10px !important;
+        border-radius: 8px !important;
+        background: rgba(0, 0, 0, 0.74) !important;
+        z-index: 25 !important;
+    }
+
+    #localContainer #spelling-text {
+        font-size: 1.2rem !important;
+        letter-spacing: 1px !important;
+    }
+
     /* Hide Remote User label in bottom left for mobile */
     .remote-view-container .userInfo {
         display: none !important;
@@ -1928,6 +1944,17 @@ video {
     .prediction-sign-card {
         width: clamp(42px, 9vw, 54px);
         height: clamp(52px, 11vw, 64px);
+    }
+
+    #localContainer #spelling-overlay {
+        right: 6px !important;
+        bottom: 6px !important;
+        padding: 5px 8px !important;
+        border-radius: 7px !important;
+    }
+
+    #localContainer #spelling-text {
+        font-size: 1rem !important;
     }
 
     .caption-overlay {
