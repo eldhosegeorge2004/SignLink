@@ -18,6 +18,10 @@ const revertBtn = document.getElementById('revertBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const testBtn = document.getElementById('testBtn');
 const testResult = document.getElementById('testResult');
+const dataPanel = document.querySelector('.data-panel');
+const openDataPanelBtn = document.getElementById('openDataPanelBtn');
+const closeDataPanelBtn = document.getElementById('closeDataPanelBtn');
+const drawerBackdrop = document.getElementById('drawerBackdrop');
 
 // Sign Card Elements
 const signCardBtn = document.getElementById('signCardBtn');
@@ -113,6 +117,41 @@ async function init() {
     renderDataList();
     updateRevertButtonState();
     setupModeToggle();
+    setupMobileDataDrawer();
+}
+
+function setupMobileDataDrawer() {
+    if (!dataPanel) return;
+
+    const openDrawer = () => {
+        dataPanel.classList.add('open');
+        if (drawerBackdrop) drawerBackdrop.classList.add('active');
+    };
+
+    const closeDrawer = () => {
+        dataPanel.classList.remove('open');
+        if (drawerBackdrop) drawerBackdrop.classList.remove('active');
+    };
+
+    if (openDataPanelBtn) {
+        openDataPanelBtn.addEventListener('click', openDrawer);
+    }
+    if (closeDataPanelBtn) {
+        closeDataPanelBtn.addEventListener('click', closeDrawer);
+    }
+    if (drawerBackdrop) {
+        drawerBackdrop.addEventListener('click', closeDrawer);
+    }
+
+    window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeDrawer();
+    });
+
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 980) {
+            closeDrawer();
+        }
+    });
 }
 
 // Check if models are already saved in localStorage
