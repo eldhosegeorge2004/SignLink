@@ -342,6 +342,232 @@
             background: #21262d;
             border-color: #58a6ff;
         }
+
+        .mobile-data-toggle {
+            display: none;
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            z-index: 15;
+            background: rgba(13, 17, 23, 0.92);
+            color: #e6edf3;
+            border: 1px solid #30363d;
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .drawer-close-btn {
+            display: none;
+            background: transparent;
+            color: #8b949e;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            width: 34px;
+            height: 34px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .drawer-close-btn:hover {
+            color: #e6edf3;
+            border-color: #8b949e;
+        }
+
+        .drawer-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(2px);
+            z-index: 28;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .drawer-backdrop.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        @media (max-width: 1200px) {
+            .studio-layout {
+                grid-template-columns: 300px 1fr 280px;
+            }
+        }
+
+        @media (max-width: 980px) {
+            body {
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+
+            .studio-layout {
+                display: flex;
+                flex-direction: column;
+                width: 100%;
+                height: auto;
+                min-height: 100dvh;
+            }
+
+            .workspace {
+                order: 1;
+            }
+
+            .sidebar {
+                order: 2;
+            }
+
+            .data-panel {
+                order: 3;
+            }
+
+            .sidebar {
+                border-right: none;
+                border-bottom: 1px solid #30363d;
+                padding: 16px;
+                gap: 14px;
+            }
+
+            .workspace {
+                padding: 14px 14px 24px;
+                justify-content: flex-start;
+            }
+
+            .mobile-data-toggle {
+                display: inline-flex;
+            }
+
+            .camera-wrapper {
+                max-width: none;
+                width: 100%;
+            }
+
+            .capture-fab {
+                position: fixed;
+                left: 50%;
+                transform: translateX(-50%);
+                bottom: calc(12px + env(safe-area-inset-bottom));
+                width: 68px;
+                height: 68px;
+                z-index: 20;
+            }
+
+            .capture-fab:hover {
+                transform: translateX(-50%);
+            }
+
+            .capture-fab:active {
+                transform: translateX(-50%) scale(0.95);
+            }
+
+            .capture-inner {
+                width: 50px;
+                height: 50px;
+            }
+
+            .capture-fab.active .capture-inner {
+                width: 28px;
+                height: 28px;
+            }
+
+            #captureHint {
+                text-align: center;
+                padding: 0 8px;
+            }
+
+            #dynamicControls {
+                width: 100%;
+            }
+
+            #startRecordBtn,
+            #stopRecordBtn,
+            #recordingProgress {
+                width: min(100%, 320px) !important;
+            }
+
+            #testResult {
+                position: static !important;
+                left: auto !important;
+                bottom: auto !important;
+                transform: none !important;
+                margin-top: 12px;
+                white-space: normal !important;
+                max-width: 100%;
+                text-align: center;
+            }
+
+            .data-panel {
+                position: fixed;
+                top: 0;
+                right: 0;
+                width: min(86vw, 380px);
+                max-width: 100%;
+                height: 100dvh;
+                transform: translateX(100%);
+                transition: transform 0.25s ease;
+                border-left: 1px solid #30363d;
+                border-top: none;
+                z-index: 30;
+                min-height: 100dvh;
+                box-shadow: -20px 0 40px rgba(0, 0, 0, 0.35);
+            }
+
+            .data-panel.open {
+                transform: translateX(0);
+            }
+
+            .list-header {
+                padding: 14px 16px;
+            }
+
+            .drawer-close-btn {
+                display: inline-flex;
+            }
+
+            .data-list {
+                max-height: none;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .sidebar {
+                padding: 12px;
+            }
+
+            .panel-section {
+                padding: 12px;
+            }
+
+            .section-title {
+                font-size: 0.78rem;
+                margin-bottom: 10px;
+            }
+
+            .recording-indicator {
+                top: 10px;
+                right: 10px;
+                font-size: 0.72rem;
+                padding: 4px 10px;
+            }
+
+            .mobile-data-toggle {
+                top: 10px;
+                right: 10px;
+                padding: 7px 10px;
+                font-size: 0.78rem;
+            }
+
+            .data-panel {
+                width: 92vw;
+            }
+        }
     </style>
 
     <!-- Dependencies -->
@@ -451,6 +677,11 @@
 
         <!-- WORKSPACE (Camera) -->
         <div class="workspace">
+            <button id="openDataPanelBtn" class="mobile-data-toggle" type="button">
+                <span class="material-icons" style="font-size: 16px;">menu</span>
+                Data
+            </button>
+
             <div class="camera-wrapper">
                 <video id="inputVideo" autoplay playsinline muted></video>
                 <canvas id="outputCanvas"></canvas>
@@ -499,8 +730,13 @@
         <div class="data-panel">
             <div class="list-header">
                 <span style="font-weight: 600;">Collected Data</span>
-                <span id="totalSamples"
-                    style="background: #21262d; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem;">0</span>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span id="totalSamples"
+                        style="background: #21262d; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem;">0</span>
+                    <button id="closeDataPanelBtn" class="drawer-close-btn" type="button" aria-label="Close data panel">
+                        <span class="material-icons" style="font-size: 18px;">close</span>
+                    </button>
+                </div>
             </div>
             <div id="dataList" class="data-list">
                 <!-- Data items injected here -->
@@ -522,6 +758,8 @@
         </div>
 
     </div>
+
+    <div id="drawerBackdrop" class="drawer-backdrop"></div>
 
     <script src="training.js"></script>
 </body>
