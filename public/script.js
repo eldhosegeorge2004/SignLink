@@ -2309,10 +2309,10 @@ clearBtn.addEventListener('click', () => {
 // Peer logic refactored into Supabase Channel setup
 async function handlePeerJoined(id) {
     if (pc && (pc.connectionState === 'connected' || pc.connectionState === 'connecting')) {
-        console.log("Peer jointed but we are already connected/connecting. Skipping offer.");
+        console.log("Peer already connected/connecting. Skipping offer.");
         return;
     }
-    
+
     // Add a small jittered delay to avoid simultaneous offer collision
     await new Promise(r => setTimeout(r, Math.random() * 500 + 200));
 
@@ -2343,8 +2343,55 @@ function processBufferedIceCandidates() {
 }
 
 function createPeerConnection() {
-    pc = new RTCPeerConnection(rtcConfig);
+    // Close any stale connection before creating a new one
+    if (pc) {
+        console.log("Closing existing peer connection before creating a new one.");
+        pc.close();
+        pc = null;
+    }
 
+    pc = new RTCPeerConnection(rtcConfig);
+    console.log("RTCPeerConnection created.");
+
+    // Add all local media tracks so the remote peer receives them
+    if (localStream) {
+        console.log(`Adding ${localStream.getTracks().length} local tracks to PeerConnection`);
+        localStream.getTracks().forEach(track => {
+            pc.addTrack(track, localStream);
+        });
+    } else {
+        console.error("localStream is null when createPeerConnection is called!");
+    }
+
+    // When remote tracks arrive, display the remote video
+    pc.ontrack = (event) => {
+        console.log("Remote track received:", event.track.kind);
+
+        if (event.streams && event.streams[0]) {
+            if (remoteVideo.srcObject !== event.streams[0]) {
+                remoteVideo.srcObject = event.streams[0];
+                console.log("Attached remote stream from event.");
+            }
+        } else {
+            // Fallback: manually build a MediaStream from individual tracks
+            if (!remoteVideo.srcObject || !(remoteVideo.srcObject instanceof MediaStream)) {
+                remoteVideo.srcObject = new MediaStream();
+            }
+            remoteVideo.srcObject.addTrack(event.track);
+        }
+
+        // Ensure remote audio plays (browsers may block autoplay)
+        remoteVideo.muted = false;
+        remoteVideo.volume = 1.0;
+        const playPromise = remoteVideo.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(err => {
+                console.warn("Autoplay blocked — user interaction required:", err);
+            });
+        }
+    };
+
+    // Send our ICE candidates to the remote peer via Supabase
     pc.onicecandidate = (event) => {
         if (event.candidate && supabaseChannel) {
             supabaseChannel.send({
@@ -2355,59 +2402,29 @@ function createPeerConnection() {
         }
     };
 
-    pc.ontrack = (event) => {
-        console.log("Remote track received:", event.track.kind);
-
-        // Prefer using the stream provided by the event, this handles audio+video sync better
-        if (event.streams && event.streams[0]) {
-            if (remoteVideo.srcObject !== event.streams[0]) {
-                remoteVideo.srcObject = event.streams[0];
-                console.log("Attached remote stream from event");
-            }
-        } else {
-            // Fallback: manually manage the stream if event.streams is missing
-            if (!remoteVideo.srcObject || !(remoteVideo.srcObject instanceof MediaStream)) {
-                remoteVideo.srcObject = new MediaStream();
-            }
-            remoteVideo.srcObject.addTrack(event.track);
-        }
-
-        // Ensure the remote video is unmuted and plays
-        remoteVideo.muted = false;
-        remoteVideo.volume = 1.0;
-
-        // Final attempt to play, catching block errors
-        const playPromise = remoteVideo.play();
-        if (playPromise !== undefined) {
-            playPromise.then(_ => {
-                console.log("Autoplay success!");
-            }).catch(error => {
-                console.warn("Autoplay was prevented. User must interact with page first.");
-            });
-        }
-    };
-
-    if (localStream) {
-        console.log(`Adding ${localStream.getTracks().length} local tracks to PeerConnection`);
-        localStream.getTracks().forEach(track => {
-            pc.addTrack(track, localStream);
-        });
-    } else {
-        console.error("localStream is null when createPeerConnection is called!");
-    }
-
+    // Update the meeting status bar
     pc.onconnectionstatechange = () => {
-        console.log("WebRTC Connection State:", pc.connectionState);
-        if (pc.connectionState === 'failed') {
-            const statusEl = document.getElementById('status');
-            if (statusEl) statusEl.innerText = "Connection Failed. Retrying...";
-            // Optional: Auto-retry logic
+        const state = pc ? pc.connectionState : 'closed';
+        console.log("WebRTC Connection State:", state);
+        const statusText = document.getElementById('meeting-status-text');
+        const statusBar = document.getElementById('meeting-status-bar');
+        if (statusText) {
+            if (state === 'connected') {
+                statusText.innerText = 'Connected';
+                if (statusBar) statusBar.className = 'meeting-status-bar success';
+            } else if (state === 'disconnected' || state === 'failed') {
+                statusText.innerText = 'Peer disconnected';
+                if (statusBar) statusBar.className = 'meeting-status-bar error';
+            } else if (state === 'connecting') {
+                statusText.innerText = 'Connecting...';
+                if (statusBar) statusBar.className = 'meeting-status-bar info';
+            }
         }
     };
 
     pc.oniceconnectionstatechange = () => {
-        console.log("WebRTC ICE Connection State:", pc.iceConnectionState);
-        if (pc.iceConnectionState === 'disconnected') {
+        console.log("WebRTC ICE Connection State:", pc ? pc.iceConnectionState : 'n/a');
+        if (pc && pc.iceConnectionState === 'disconnected') {
             console.warn("Peer disconnected. Waiting for reconnection...");
         }
     };
