@@ -61,7 +61,7 @@ body {
 .sign-cards-area {
     width: 100%;
     max-width: 800px;
-    height: 400px;
+    height: clamp(200px, 30vh, 400px);
     border: 2px dashed rgba(255, 255, 255, 0.1);
     border-radius: 20px;
     display: flex;
@@ -69,7 +69,10 @@ body {
     align-items: center;
     background: rgba(0, 0, 0, 0.2);
     color: rgba(255, 255, 255, 0.3);
-    font-size: 1.5rem;
+    font-size: clamp(1rem, 3vw, 1.5rem);
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
 }
 
 .material-icons {
@@ -96,12 +99,21 @@ body {
     overflow-y: auto;
 }
 
+#join-screen:not(.active) {
+    pointer-events: none;
+    visibility: hidden;
+}
+
 header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 30px 60px;
     z-index: 10;
+}
+
+#join-screen:not(.active) header {
+    display: none !important;
 }
 
 .logo {
@@ -480,7 +492,7 @@ footer {
 #meeting-room {
     background: transparent;
     position: relative;
-    padding: 18px;
+    padding: clamp(8px, 2vw, 18px);
     gap: 12px;
 }
 
@@ -494,7 +506,7 @@ footer {
     height: calc(100% - 84px);
     overflow: visible;
     padding: 0;
-    gap: 20px;
+    gap: clamp(8px, 1.5vw, 20px);
     align-items: stretch;
 }
 
@@ -513,6 +525,7 @@ footer {
     justify-content: center;
     border: 1px solid var(--glass-border);
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    aspect-ratio: 16 / 10;
 }
 
 video {
@@ -549,6 +562,7 @@ video {
     display: flex;
     align-items: center;
     justify-content: center;
+    aspect-ratio: 16 / 10;
 }
 
 .local-view-container::before {
@@ -637,10 +651,12 @@ video {
     bottom: auto;
     left: auto;
     transform: none;
-    margin: 0 auto;
-    width: fit-content;
+    width: 100%;
     background: rgba(15, 23, 42, 0.85);
     border-color: var(--primary-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .prediction-sign-cards-container {
@@ -663,7 +679,10 @@ video {
     justify-content: flex-start;
     gap: 10px;
     overflow-y: auto;
+    overflow-x: auto;
     z-index: 52;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
 }
 
 .prediction-sign-cards-container.active {
@@ -683,10 +702,19 @@ video {
     flex-wrap: nowrap;
     align-items: flex-start;
     gap: 10px;
+    margin-right: 20px;
+    padding-right: 15px;
+    border-right: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.prediction-word-group:last-child {
+    margin-right: 0;
+    padding-right: 0;
+    border-right: none;
 }
 
 .prediction-sign-card {
-    width: 100%;
+    width: auto;
     max-width: 76px;
     min-width: 60px;
     height: 84px;
@@ -698,6 +726,7 @@ video {
     align-items: center;
     justify-content: center;
     padding: 6px;
+    flex-shrink: 0;
 }
 
 .prediction-sign-card.no-image {
@@ -754,6 +783,7 @@ video {
     flex-direction: column;
     overflow: hidden;
     backdrop-filter: blur(8px);
+    min-width: clamp(200px, 25vw, 280px);
 }
 
 .caption-log-header {
@@ -782,11 +812,13 @@ video {
     background: rgba(30, 41, 59, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 10px;
-    padding: 8px 10px;
+    padding: clamp(6px, 1.5vw, 8px) clamp(8px, 2vw, 10px);
     color: #ffffff;
-    font-size: 0.8rem;
+    font-size: clamp(0.7rem, 1.5vw, 0.8rem);
     line-height: 1.35;
     word-break: break-word;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
 .caption-log-speaker {
@@ -819,6 +851,7 @@ video {
     gap: 40px;
     border: 1px solid var(--glass-border);
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+    flex-wrap: wrap;
 }
 
 .control-left,
@@ -826,16 +859,20 @@ video {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
 .control-right {
     justify-content: flex-end;
+    min-width: auto;
 }
 
 .control-center {
     display: flex;
-    gap: 16px;
+    gap: 12px;
     align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
 }
 
 /* Secondary Controls (Dropdown for Everyone) */
@@ -873,6 +910,13 @@ video {
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
+    min-width: 52px;
+    min-height: 52px;
+    flex-shrink: 0;
+}
+
+.control-btn:active {
+    transform: scale(0.95);
 }
 
 .control-btn:hover {
@@ -940,7 +984,7 @@ video {
     top: 20px;
     right: -400px;
     bottom: 20px;
-    width: 380px;
+    width: clamp(300px, 90vw, 380px);
     height: auto;
     background: rgba(20, 20, 30, 0.85);
     backdrop-filter: blur(24px);
@@ -951,10 +995,11 @@ video {
     display: flex;
     flex-direction: column;
     box-shadow: -10px 0 40px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
 }
 
 .side-panel.open {
-    transform: translateX(-400px);
+    transform: translateX(calc(-100% - 40px));
 }
 
 .panel-header {
@@ -1307,7 +1352,9 @@ video {
 .userInfo {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: clamp(4px, 1vw, 8px);
+    font-size: clamp(0.7rem, 1.5vw, 0.85rem);
+    padding: clamp(4px, 1vw, 6px) clamp(8px, 2vw, 12px);
 }
 
 .volume-meter {
@@ -1377,6 +1424,40 @@ video {
 }
 
 /* --- Responsive Layouts --- */
+@media (max-width: 1024px) {
+    .main-stage {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: minmax(220px, 1fr) auto minmax(160px, auto);
+        height: auto;
+    }
+
+    .caption-log-panel {
+        grid-column: 1;
+        grid-row: 1 / 3;
+        max-height: 400px;
+    }
+
+    .remote-view-container {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    .local-view-container {
+        grid-column: 2;
+        grid-row: 2;
+    }
+
+    #prediction-overlay {
+        grid-column: 1 / 3;
+        grid-row: 3;
+    }
+
+    .prediction-sign-cards-container {
+        grid-column: 1 / 3;
+        grid-row: 4;
+    }
+}
+
 @media (max-width: 768px) {
     .lobby-content {
         flex-direction: column;
@@ -1386,7 +1467,7 @@ video {
     }
 
     .lobby-left h1 {
-        font-size: 2.5rem;
+        font-size: clamp(2rem, 6vw, 2.5rem);
     }
 
     .lobby-left p {
@@ -1403,11 +1484,14 @@ video {
     .input-group {
         width: 100%;
         min-width: 0;
+        padding: clamp(12px, 2.5vw, 14px) clamp(16px, 3vw, 20px);
     }
 
     .btn-primary {
         width: 100%;
         justify-content: center;
+        padding: clamp(12px, 2.5vw, 16px) clamp(24px, 5vw, 32px);
+        font-size: clamp(0.9rem, 2vw, 1rem);
     }
 
     .features-grid {
@@ -1438,25 +1522,36 @@ video {
 
     .main-stage {
         grid-template-columns: 1fr;
-        grid-template-rows: minmax(220px, auto) minmax(220px, auto) auto minmax(160px, 210px);
+        grid-template-rows: auto auto auto auto;
         height: auto;
+        gap: 12px;
     }
 
     .caption-log-panel {
         grid-column: 1;
         grid-row: 1;
-        max-height: 220px;
+        max-height: 140px;
+        min-height: 140px;
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        margin: 0;
+        border-radius: 12px 12px 0 0;
     }
 
     .remote-view-container {
         grid-column: 1;
         grid-row: 2;
+        min-height: 180px;
+        margin-top: 150px;
     }
 
     .local-view-container {
         grid-column: 1;
         grid-row: 3;
-        min-height: 220px;
+        min-height: 140px;
     }
 
     #prediction-overlay {
@@ -1467,34 +1562,52 @@ video {
     .prediction-sign-cards-container {
         grid-column: 1;
         grid-row: 5;
+        max-height: 150px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        flex-direction: row;
+        padding: 8px;
+    }
+
+    .prediction-sign-line {
+        flex-wrap: nowrap;
     }
 
     .control-bar {
         width: 100%;
         margin-left: 0;
-        gap: 10px;
-        padding: 8px 16px;
-        justify-content: center;
+        gap: 6px;
+        padding: 8px 12px;
+        justify-content: space-around;
+        flex-wrap: wrap;
+    }
+
+    .control-left,
+    .control-center,
+    .control-right {
+        gap: 6px;
+        min-width: auto;
     }
 
     .secondary-controls {
-        right: 15px;
-        bottom: 140px;
+        right: 12px;
+        bottom: 120px;
+        padding: 8px;
     }
 
     #meetingCodeContainer {
         display: block !important;
         position: fixed;
-        bottom: 68px;
-        right: 20px;
+        bottom: 72px;
+        right: 12px;
         z-index: 250;
         width: fit-content;
         transform: none;
     }
 
     .meeting-code-bubble {
-        padding: 6px 12px;
-        font-size: 0.75rem;
+        padding: 6px 10px;
+        font-size: clamp(0.65rem, 2vw, 0.75rem);
         background: rgba(15, 23, 42, 0.85);
         border: 1px solid var(--glass-border);
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
@@ -1503,6 +1616,16 @@ video {
     .control-btn {
         width: 44px;
         height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        font-size: clamp(18px, 4vw, 24px);
+    }
+
+    .control-btn.small-btn {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
     }
 
     .side-panel {
@@ -1519,20 +1642,22 @@ video {
     /* Better Stacked Overlays for mobile */
     .caption-overlay {
         width: 90%;
-        max-width: 360px;
-        font-size: 0.8rem;
-        padding: 10px 16px;
+        max-width: 330px;
+        font-size: clamp(0.7rem, 2vw, 0.8rem);
+        padding: 8px 12px;
         left: 50% !important;
         transform: translateX(-50%) !important;
         bottom: auto;
     }
 
     .stt-overlay {
-        bottom: 130px !important;
+        bottom: 110px !important;
     }
 
     #prediction-overlay {
         bottom: auto !important;
+        padding: 8px 12px;
+        font-size: clamp(0.8rem, 2vw, 0.9rem);
     }
 
     .prediction-sign-cards-container {
@@ -1540,16 +1665,21 @@ video {
     }
 
     .prediction-sign-card {
-        width: 74px;
-        height: 84px;
+        width: clamp(46px, 10vw, 62px);
+        height: clamp(58px, 12vw, 74px);
+        min-width: clamp(46px, 10vw, 62px);
     }
 
     .prediction-sign-card img {
-        height: 54px;
+        height: clamp(33px, 7vw, 46px);
+    }
+
+    .prediction-sign-card-label {
+        font-size: clamp(0.5rem, 1.3vw, 0.58rem);
     }
 
     #remote-caption-overlay {
-        bottom: 14px !important;
+        bottom: 10px !important;
     }
 
     .caption-log-panel {
@@ -1557,27 +1687,127 @@ video {
     }
 
     .caption-log-header {
-        font-size: 0.76rem;
+        font-size: 0.75rem;
+        padding: 8px 10px;
     }
 
     .caption-log-entry {
-        font-size: 0.74rem;
+        font-size: 0.72rem;
+        padding: 6px 8px;
     }
 
     /* Hide Remote User label in bottom left for mobile */
     .remote-view-container .userInfo {
         display: none !important;
     }
+
+    /* Better responsive header */
+    header {
+        padding: clamp(12px, 3vw, 20px) clamp(16px, 4vw, 30px);
+    }
+
+    .logo {
+        font-size: clamp(16px, 4vw, 20px);
+        gap: 8px;
+    }
+
+    .logo .material-icons {
+        font-size: clamp(20px, 5vw, 24px);
+        padding: 4px 6px;
+    }
+
+    .clock {
+        font-size: clamp(0.7rem, 2vw, 0.9rem);
+        padding: 4px 10px;
+    }
 }
 
 @media (max-width: 480px) {
     .lobby-left h1 {
-        font-size: 1.8rem;
+        font-size: clamp(1.4rem, 6vw, 1.8rem);
     }
 
     .control-btn {
         width: 40px;
         height: 40px;
+        min-width: 40px;
+        min-height: 40px;
+    }
+
+    .control-btn.small-btn {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        min-height: 36px;
+    }
+
+    .control-bar {
+        gap: 4px;
+        padding: 6px 8px;
+    }
+
+    .meeting-code-bubble {
+        padding: 4px 8px;
+        font-size: 0.6rem;
+    }
+
+    .main-stage {
+        gap: 8px;
+    }
+
+    .caption-log-panel {
+        max-height: 140px;
+        min-height: 140px;
+    }
+
+    .remote-view-container {
+        min-height: 160px;
+    }
+
+    .local-view-container {
+        min-height: 120px;
+    }
+
+    .prediction-sign-cards-container {
+        max-height: 120px;
+    }
+
+    .prediction-sign-card {
+        width: clamp(42px, 9vw, 54px);
+        height: clamp(52px, 11vw, 64px);
+    }
+
+    .caption-overlay {
+        max-width: 290px;
+        font-size: 0.7rem;
+        padding: 6px 10px;
+    }
+
+    #stttext {
+        font-size: 0.9rem;
+    }
+
+    header {
+        padding: 10px 12px;
+        gap: 8px;
+    }
+
+    .logo {
+        font-size: clamp(14px, 3.5vw, 18px);
+    }
+
+    .logo .material-icons {
+        font-size: clamp(18px, 4vw, 20px);
+        padding: 3px 5px;
+    }
+
+    .side-panel {
+        width: 100%;
+        padding: 0;
+    }
+
+    .panel-content {
+        padding: 16px;
     }
 }
 
@@ -1701,4 +1931,4 @@ video {
     footer {
         display: none !important;
     }
-}
+}
