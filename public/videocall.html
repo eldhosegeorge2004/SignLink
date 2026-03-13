@@ -127,10 +127,12 @@
         </footer>
     </div>
 
-    <!-- Main Meeting Room -->
     <div id="meeting-room" class="screen">
+        <div id="meeting-status-bar" class="meeting-status-bar">
+            <span class="status-dot"></span>
+            <span id="meeting-status-text">Connecting...</span>
+        </div>
         <div class="main-stage">
-
             <!-- Remoter User (Main View) -->
             <div class="remote-view-container">
                 <video id="remoteVideo" autoplay playsinline></video>

@@ -480,8 +480,54 @@ footer {
 #meeting-room {
     background: transparent;
     position: relative;
-    padding: 18px;
-    gap: 12px;
+    padding: 10px 18px 18px 18px;
+    gap: 8px;
+}
+
+.meeting-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(12px);
+    padding: 6px 16px;
+    border-radius: 30px;
+    width: fit-content;
+    margin: 0 auto 10px auto;
+    border: 1px solid var(--glass-border);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    transition: all 0.3s ease;
+    z-index: 100;
+}
+
+.meeting-status-bar .status-dot {
+    width: 8px;
+    height: 8px;
+    background: #64748b;
+    border-radius: 50%;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+.meeting-status-bar.success {
+    color: #4db6ac;
+    border-color: rgba(77, 182, 172, 0.3);
+}
+
+.meeting-status-bar.success .status-dot {
+    background: #4db6ac;
+    box-shadow: 0 0 12px rgba(77, 182, 172, 0.6);
+}
+
+.meeting-status-bar.error {
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.meeting-status-bar.error .status-dot {
+    background: #ef4444;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
 }
 
 .main-stage {

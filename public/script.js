@@ -989,7 +989,7 @@ newMeetingBtn.addEventListener('click', () => {
 });
 
 joinBtn.addEventListener('click', async () => {
-    roomName = startRoomInput.value.trim();
+    roomName = startRoomInput.value.trim().replace(/[^a-zA-Z0-9-]/g, '-');
     if (!roomName) return;
 
     lobbyStatus.innerText = "Joining...";
@@ -1045,10 +1045,30 @@ joinBtn.addEventListener('click', async () => {
     supabaseChannel = window.supabaseClient.channel(roomName, {
         config: {
             broadcast: { self: false },
-            presence: { key: roomName }
+            presence: { key: 'user-' + Math.random().toString(36).substring(7) }
         }
     });
 
+    const updateStatus = (text, type = 'info') => {
+        const statusEl = document.getElementById('status');
+        const meetingStatusText = document.getElementById('meeting-status-text');
+        const meetingStatusBar = document.getElementById('meeting-status-bar');
+
+        if (statusEl) {
+            statusEl.innerText = text;
+            statusEl.style.color = type === 'error' ? '#ef4444' : (type === 'success' ? '#4db6ac' : '#aaa');
+        }
+
+        if (meetingStatusText) {
+            meetingStatusText.innerText = text;
+        }
+
+        if (meetingStatusBar) {
+            meetingStatusBar.className = `meeting-status-bar ${type}`;
+        }
+        
+        console.log(`[Status] ${text}`);
+    };
     supabaseChannel
         .on('broadcast', { event: 'user-joined' }, (payload) => {
             console.log("New peer joined room:", payload.id);
@@ -1057,40 +1077,54 @@ joinBtn.addEventListener('click', async () => {
                 handlePeerJoined(payload.id);
             }
         })
-        .on('broadcast', { event: 'offer' }, async (payload) => {
+        .on('broadcast', { event: 'offer' }, async ({ payload }) => {
             console.log("Offer received from peer");
-            if (!pc) createPeerConnection();
-            await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-            processBufferedIceCandidates();
-            const answer = await pc.createAnswer({
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: true
-            });
-            answer.sdp = setMaxBitrate(answer.sdp, 1000);
-            await pc.setLocalDescription(answer);
-            console.log("Sending answer...");
-            supabaseChannel.send({
-                type: 'broadcast',
-                event: 'answer',
-                payload: { sdp: answer }
-            });
-        })
-        .on('broadcast', { event: 'answer' }, async (payload) => {
-            console.log("Answer received from peer");
-            if (pc) {
+            try {
+                if (!pc) createPeerConnection();
+                if (pc.signalingState !== "stable") {
+                    console.log("Signaling state not stable, ignoring offer (might be a collision)");
+                    return;
+                }
                 await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
                 processBufferedIceCandidates();
+                const answer = await pc.createAnswer();
+                answer.sdp = setMaxBitrate(answer.sdp, 1000);
+                await pc.setLocalDescription(answer);
+                console.log("Sending answer...");
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'answer',
+                    payload: { sdp: answer }
+                });
+                updateStatus("Connected to peer", "success");
+            } catch (e) {
+                console.error("Error handling offer:", e);
+                updateStatus("Connection failed: " + e.message, "error");
             }
         })
-        .on('broadcast', { event: 'ice' }, async (payload) => {
+        .on('broadcast', { event: 'answer' }, async ({ payload }) => {
+            console.log("Answer received from peer");
+            try {
+                if (pc) {
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                    processBufferedIceCandidates();
+                    updateStatus("Connected to peer", "success");
+                }
+            } catch (e) {
+                console.error("Error handling answer:", e);
+                updateStatus("Connection error", "error");
+            }
+        })
+        .on('broadcast', { event: 'ice' }, async ({ payload }) => {
+            const candidate = payload.candidate;
             if (pc && pc.remoteDescription && pc.remoteDescription.type) {
                 try {
-                    await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 } catch (e) {
                     console.error("Error adding ICE candidate:", e);
                 }
             } else {
-                iceCandidatesBuffer.push(payload.candidate);
+                iceCandidatesBuffer.push(candidate);
             }
         })
         .on('broadcast', { event: 'sign-message' }, data => {
@@ -1157,13 +1191,20 @@ joinBtn.addEventListener('click', async () => {
         })
         .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
-                console.log("Subscribed to Supabase Channel:", roomName);
+                updateStatus("Connected to signaling server", "success");
                 // Notify others that we joined
-                supabaseChannel.send({
-                    type: 'broadcast',
-                    event: 'user-joined',
-                    payload: { id: 'peer-' + Math.random().toString(36).substring(7) }
-                });
+                // Use a small delay for the new person to broadcast, ensuring others are ready
+                setTimeout(() => {
+                    supabaseChannel.send({
+                        type: 'broadcast',
+                        event: 'user-joined',
+                        payload: { id: 'peer-' + Math.random().toString(36).substring(7) }
+                    });
+                }, 500);
+            } else if (status === 'CHANNEL_ERROR') {
+                updateStatus("Signaling connection error", "error");
+            } else if (status === 'TIMED_OUT') {
+                updateStatus("Signaling timed out", "error");
             }
         });
 
@@ -2211,6 +2252,14 @@ clearBtn.addEventListener('click', () => {
 // --- Signaling & WebRTC ---
 // Peer logic refactored into Supabase Channel setup
 async function handlePeerJoined(id) {
+    if (pc && (pc.connectionState === 'connected' || pc.connectionState === 'connecting')) {
+        console.log("Peer jointed but we are already connected/connecting. Skipping offer.");
+        return;
+    }
+    
+    // Add a small jittered delay to avoid simultaneous offer collision
+    await new Promise(r => setTimeout(r, Math.random() * 500 + 200));
+
     createPeerConnection();
     const offer = await pc.createOffer({
         offerToReceiveAudio: true,
@@ -2293,10 +2342,18 @@ function createPeerConnection() {
 
     pc.onconnectionstatechange = () => {
         console.log("WebRTC Connection State:", pc.connectionState);
+        if (pc.connectionState === 'failed') {
+            const statusEl = document.getElementById('status');
+            if (statusEl) statusEl.innerText = "Connection Failed. Retrying...";
+            // Optional: Auto-retry logic
+        }
     };
 
     pc.oniceconnectionstatechange = () => {
         console.log("WebRTC ICE Connection State:", pc.iceConnectionState);
+        if (pc.iceConnectionState === 'disconnected') {
+            console.warn("Peer disconnected. Waiting for reconnection...");
+        }
     };
 }
 
