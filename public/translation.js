@@ -1424,10 +1424,10 @@ function displaySignCards(text) {
         lineGroups.forEach((line) => {
             const lineEl = document.createElement('div');
             lineEl.style.display = 'flex';
-            lineEl.style.flexWrap = 'wrap';
+            lineEl.style.flexWrap = 'nowrap';
             lineEl.style.alignItems = 'flex-start';
             lineEl.style.gap = '10px';
-            lineEl.style.width = '100%';
+            lineEl.style.width = 'max-content';
 
             line.forEach((group) => {
                 const wordGroupEl = document.createElement('div');
@@ -1488,6 +1488,7 @@ function displaySignCards(text) {
         
         // Auto-scroll to the bottom as new cards are added
         cardArea.scrollTop = cardArea.scrollHeight;
+        cardArea.scrollLeft = cardArea.scrollWidth;
         triggerSignCardsPopup();
     })();
 }

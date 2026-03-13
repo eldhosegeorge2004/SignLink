@@ -550,12 +550,20 @@
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                font-size: 0;
+                color: transparent;
             }
-            .back-btn span:last-child {
-                display: none;
+
+            .back-btn::before {
+                content: "\2190";
+                color: #fff;
+                font-size: 1.5rem;
+                line-height: 1;
+                font-weight: 600;
             }
+
             .back-btn .material-icons {
-                font-size: 24px;
+                display: none;
             }
 
             /* Translation result strip — compact */
