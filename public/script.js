@@ -128,8 +128,9 @@ const joinScreen = document.getElementById('join-screen');
 const meetingRoom = document.getElementById('meeting-room');
 const newMeetingBtn = document.getElementById('newMeetingBtn');
 const startRoomInput = document.getElementById('startRoomInput');
-const joinBtn = document.getElementById('joinBtn');
 const lobbyStatus = document.getElementById('status');
+const userNameInput = document.getElementById('userNameInput');
+const joinBtn = document.getElementById('joinBtn');
 const clockElement = document.getElementById('clock');
 const modeSelect = document.getElementById('modeSelect');
 
@@ -206,6 +207,8 @@ let lastRemoteSpokenText = "";
 let speakTimeout = null;           // NEW: Track pending speech to avoid race conditions
 let iceCandidatesBuffer = []; // Buffer for ICE candidates
 let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actually running
+let localName = "You";
+let remoteName = "Remote User";
 
 // --- YouTube-style Caption State (Video Call) ---
 let vcCaptionLineA = '';
@@ -542,7 +545,6 @@ function initSTT() {
             const trimmed = finalTranscript.trim();
             appendVCCaption(trimmed);
             appendCaptionLog('You', trimmed);
-            displayVCSignCards(trimmed);
             // Send finalized text to remote peer
             // Send finalized text to remote peer
             if (supabaseChannel) {
@@ -931,9 +933,14 @@ function popEmojis(emoji) {
 }
 
 // --- Initialization & UI ---
-startRoomInput.addEventListener('input', (e) => {
-    joinBtn.disabled = e.target.value.trim().length === 0;
-});
+function validateLobby() {
+    const room = startRoomInput.value.trim();
+    const name = userNameInput ? userNameInput.value.trim() : "";
+    joinBtn.disabled = (room.length === 0 || name.length === 0);
+}
+
+startRoomInput.addEventListener('input', validateLobby);
+if (userNameInput) userNameInput.addEventListener('input', validateLobby);
 
 // Mode Selector Logic
 if (modeSelect) {
@@ -984,8 +991,20 @@ newMeetingBtn.addEventListener('click', () => {
         room = Math.random().toString(36).substring(7);
         startRoomInput.value = room;
     }
-    joinBtn.disabled = false;
-    joinBtn.click();
+    
+    validateLobby();
+
+    if (joinBtn.disabled) {
+        if (userNameInput) {
+            userNameInput.focus();
+            userNameInput.style.borderColor = "#ef4444";
+            setTimeout(() => userNameInput.style.borderColor = "", 2000);
+        }
+        lobbyStatus.innerText = "Please enter your name first!";
+        lobbyStatus.style.color = "#ef4444";
+    } else {
+        joinBtn.click();
+    }
 });
 
 joinBtn.addEventListener('click', async () => {
@@ -1041,6 +1060,12 @@ joinBtn.addEventListener('click', async () => {
     meetingRoom.classList.add('active');
     meetingCodeDisplay.innerText = roomName;
 
+    // Capture Local Name
+    localName = userNameInput.value.trim() || "You";
+    const localNameSpan = document.getElementById('localUserName');
+    if (localNameSpan) localNameSpan.innerText = localName + " (You)";
+    updatePeopleList();
+
     // Supabase Channel Setup
     supabaseChannel = window.supabaseClient.channel(roomName, {
         config: {
@@ -1071,14 +1096,29 @@ joinBtn.addEventListener('click', async () => {
     };
     supabaseChannel
         .on('broadcast', { event: 'user-joined' }, (payload) => {
-            console.log("New peer joined room:", payload.id);
+            console.log("New peer joined room:", payload.id, "Name:", payload.name);
+            if (payload.name) {
+                remoteName = payload.name;
+                const remoteNameSpan = document.getElementById('remoteUserName');
+                if (remoteNameSpan) remoteNameSpan.innerText = remoteName;
+                const remoteSaysLabel = document.getElementById('remote-says-label');
+                if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+            }
             updatePeopleList(payload.id);
             if (localStream) {
                 handlePeerJoined(payload.id);
             }
         })
         .on('broadcast', { event: 'offer' }, async ({ payload }) => {
-            console.log("Offer received from peer");
+            console.log("Offer received from peer. Name:", payload.name);
+            if (payload.name) {
+                remoteName = payload.name;
+                const remoteNameSpan = document.getElementById('remoteUserName');
+                if (remoteNameSpan) remoteNameSpan.innerText = remoteName;
+                const remoteSaysLabel = document.getElementById('remote-says-label');
+                if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+                updatePeopleList('peer-id'); // Ensure remote name is updated in people list
+            }
             try {
                 if (!pc) createPeerConnection();
                 if (pc.signalingState !== "stable") {
@@ -1103,7 +1143,15 @@ joinBtn.addEventListener('click', async () => {
             }
         })
         .on('broadcast', { event: 'answer' }, async ({ payload }) => {
-            console.log("Answer received from peer");
+            console.log("Answer received from peer. Name:", payload.name);
+            if (payload.name) {
+                remoteName = payload.name;
+                const remoteNameSpan = document.getElementById('remoteUserName');
+                if (remoteNameSpan) remoteNameSpan.innerText = remoteName;
+                const remoteSaysLabel = document.getElementById('remote-says-label');
+                if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+                updatePeopleList('peer-id');
+            }
             try {
                 if (pc) {
                     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
@@ -1130,6 +1178,11 @@ joinBtn.addEventListener('click', async () => {
         .on('broadcast', { event: 'sign-message' }, data => {
             const payload = data.payload || data; // Handle different payload structures
             remotePredictionDiv.innerText = payload.text;
+            
+            // Update remote says label if it was "Remote User Says:"
+            const remoteSaysLabel = document.getElementById('remote-says-label');
+            if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+
             remoteCaptionOverlay.classList.remove('hidden');
             setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
 
@@ -1153,7 +1206,7 @@ joinBtn.addEventListener('click', async () => {
                 }
                 const remoteText = payload.text.trim();
                 appendVCCaption(remoteText);
-                appendCaptionLog('They', remoteText);
+                appendCaptionLog(remoteName, remoteText);
                 displayVCSignCards(remoteText);
             }
         })
@@ -1198,7 +1251,10 @@ joinBtn.addEventListener('click', async () => {
                     supabaseChannel.send({
                         type: 'broadcast',
                         event: 'user-joined',
-                        payload: { id: 'peer-' + Math.random().toString(36).substring(7) }
+                        payload: { 
+                            id: 'peer-' + Math.random().toString(36).substring(7),
+                            name: localName
+                        }
                     });
                 }, 500);
             } else if (status === 'CHANNEL_ERROR') {
@@ -2271,7 +2327,7 @@ async function handlePeerJoined(id) {
     supabaseChannel.send({
         type: 'broadcast',
         event: 'offer',
-        payload: { sdp: offer }
+        payload: { sdp: offer, name: localName }
     });
 }
 
@@ -2539,11 +2595,14 @@ function sendMessage() {
 function updatePeopleList(remoteId = null) {
     if (!peopleList) return;
 
+    let localInit = (localName || "Y").charAt(0).toUpperCase();
+    let remoteInit = (remoteName || "R").charAt(0).toUpperCase();
+
     let html = `
         <div class="person-item">
-            <div class="person-avatar">Y</div>
+            <div class="person-avatar">${localInit}</div>
             <div class="person-info">
-                <div class="person-name">You (Local)</div>
+                <div class="person-name">${localName} (You)</div>
                 <div class="person-status">Connected</div>
             </div>
         </div>
@@ -2552,9 +2611,9 @@ function updatePeopleList(remoteId = null) {
     if (remoteId) {
         html += `
             <div class="person-item">
-                <div class="person-avatar" style="background: #e37400;">R</div>
+                <div class="person-avatar" style="background: #e37400;">${remoteInit}</div>
                 <div class="person-info">
-                    <div class="person-name">Remote User</div>
+                    <div class="person-name">${remoteName}</div>
                     <div class="person-status" style="color: #4db6ac;">Connected</div>
                 </div>
             </div>
