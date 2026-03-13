@@ -2213,10 +2213,6 @@ socket.on("sign-message", data => {
     }
 
     remotePredictionDiv.innerText = data.text;
-    if (remoteCaptionOverlay && window.innerWidth > 768) {
-        remoteCaptionOverlay.classList.remove('hidden');
-        setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
-    }
 
     const now = Date.now();
     const wordLastSpoken = remoteWordLastSpoken[data.text] || 0;

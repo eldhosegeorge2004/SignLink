@@ -808,6 +808,7 @@ video {
 }
 
 #remote-caption-overlay {
+    display: none !important;
     bottom: 16px;
     background: rgba(0, 77, 64, 0.9);
     color: #80cbc4;
