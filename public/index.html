@@ -283,31 +283,88 @@
         }
 
         /* --- Mobile Improvements --- */
+        @media (max-width: 900px) {
+            html, body {
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+
+            body {
+                height: auto;
+                min-height: 100dvh;
+                justify-content: flex-start;
+                padding: 24px 16px 28px;
+            }
+
+            header {
+                margin-bottom: 24px;
+            }
+
+            .cards-container {
+                flex: 0 0 auto;
+                width: 100%;
+                max-width: 560px;
+                gap: 14px;
+                align-items: stretch;
+                padding-bottom: 10px;
+            }
+
+            .card {
+                flex: 1 1 auto;
+                max-width: none;
+            }
+        }
+
         @media (max-width: 600px) {
             body {
                 padding: 24px 20px;
-                justify-content: center;
+                justify-content: flex-start;
                 overflow-y: auto;
             }
 
             header {
-                margin-bottom: 30px;
+                margin-bottom: 20px;
             }
 
             h1 { font-size: 2.2rem; }
 
+            .subtitle {
+                max-width: 320px;
+                margin: 0 auto;
+            }
+
             .cards-container {
                 flex-direction: column;
-                gap: 16px;
+                gap: 12px;
+                max-width: 100%;
             }
 
             .card {
                 max-width: 100%;
-                padding: 24px;
+                padding: 18px;
                 border-radius: 24px;
             }
 
-            .card-image-wrapper { height: 140px; }
+            .card-image-wrapper { height: 120px; }
+
+            .card h2 {
+                font-size: 1.35rem;
+            }
+
+            .card p {
+                font-size: 0.92rem;
+                margin-bottom: 14px;
+            }
+
+            .card-icon {
+                font-size: 22px;
+                padding: 10px;
+            }
+
+            .card:hover {
+                transform: none;
+                box-shadow: none;
+            }
         }
     </style>
 </head>
@@ -376,6 +433,7 @@
         const header = document.querySelector('header');
         const canvas = document.getElementById('spline-canvas');
         const ctx = canvas.getContext('2d');
+        const isTouchLike = window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
 
         let width, height;
         let mouse = { x: -1000, y: -1000 };
@@ -386,6 +444,10 @@
         }
         window.addEventListener('resize', resize);
         resize();
+
+        if (isTouchLike) {
+            glow.style.display = 'none';
+        }
 
         // Spline Data
         const splines = [];
@@ -430,7 +492,8 @@
         }
         drawSplines(0);
 
-        document.addEventListener('mousemove', (e) => {
+        if (!isTouchLike) {
+            document.addEventListener('mousemove', (e) => {
             const { clientX, clientY } = e;
             mouse.x = clientX;
             mouse.y = clientY;
@@ -469,12 +532,13 @@
             header.style.transform = `translate(${headerX}px, ${headerY}px)`;
         });
 
-        document.addEventListener('mouseleave', () => {
-            mouse.x = -1000;
-            mouse.y = -1000;
-            cards.forEach(card => card.style.transform = '');
-            header.style.transform = '';
-        });
+            document.addEventListener('mouseleave', () => {
+                mouse.x = -1000;
+                mouse.y = -1000;
+                cards.forEach(card => card.style.transform = '');
+                header.style.transform = '';
+            });
+        }
     </script>
 </body>
 
