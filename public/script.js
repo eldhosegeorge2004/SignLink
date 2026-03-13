@@ -2226,18 +2226,27 @@ async function handlePeerJoined(id) {
     });
 }
 
+function processBufferedIceCandidates() {
+    if (!pc || !pc.remoteDescription) return;
+    console.log(`Processing ${iceCandidatesBuffer.length} buffered ICE candidates`);
+    iceCandidatesBuffer.forEach(candidate => {
+        pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
+            console.error("Error adding buffered ICE candidate:", e);
+        });
+    });
+    iceCandidatesBuffer = [];
+}
+
 function createPeerConnection() {
     pc = new RTCPeerConnection(rtcConfig);
 
     pc.onicecandidate = (event) => {
-        if (event.candidate) {
         if (event.candidate && supabaseChannel) {
             supabaseChannel.send({
                 type: 'broadcast',
                 event: 'ice',
                 payload: { candidate: event.candidate }
             });
-        }
         }
     };
 
