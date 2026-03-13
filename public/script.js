@@ -140,6 +140,10 @@ const meetingCodeDisplay = document.getElementById('meetingCodeDisplay');
 const mobileMeetingCodeDisplay = document.getElementById('mobileMeetingCodeDisplay');
 const predictionOverlay = document.getElementById('prediction-overlay');
 const predictionDiv = document.getElementById('prediction');
+const localSignOverlay = document.getElementById('local-sign-overlay');
+const localSignOverlayText = document.getElementById('localSignOverlayText');
+const remoteSignOverlay = document.getElementById('remote-sign-overlay');
+const remoteSignOverlayText = document.getElementById('remoteSignOverlayText');
 const predictionSignCardsContainer = document.getElementById('prediction-sign-cards-container');
 const remotePredictionDiv = document.getElementById('remotePrediction');
 const remoteCaptionOverlay = document.getElementById('remote-caption-overlay');
@@ -431,6 +435,10 @@ let volumeInterval;
 function setPredictionText(text) {
     if (predictionDiv) {
         predictionDiv.innerText = text;
+    }
+
+    if (localSignOverlayText) {
+        localSignOverlayText.innerText = text || 'Waiting for sign...';
     }
 }
 
@@ -2192,9 +2200,18 @@ async function processBufferedIceCandidates() {
 }
 
 socket.on("sign-message", data => {
+    if (remoteSignOverlayText) {
+        remoteSignOverlayText.innerText = data.text;
+    }
+    if (remoteSignOverlay) {
+        remoteSignOverlay.classList.remove('hidden');
+    }
+
     remotePredictionDiv.innerText = data.text;
-    remoteCaptionOverlay.classList.remove('hidden');
-    setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
+    if (remoteCaptionOverlay && window.innerWidth > 768) {
+        remoteCaptionOverlay.classList.remove('hidden');
+        setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
+    }
 
     const now = Date.now();
     const wordLastSpoken = remoteWordLastSpoken[data.text] || 0;

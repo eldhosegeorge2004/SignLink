@@ -131,6 +131,9 @@
             <!-- Remoter User (Main View) -->
             <div class="remote-view-container">
                 <video id="remoteVideo" autoplay playsinline></video>
+                <div id="remote-sign-overlay" class="video-sign-overlay hidden">
+                    <span id="remoteSignOverlayText">Waiting for remote sign...</span>
+                </div>
                 <div class="userInfo">
                     <div class="volume-meter" id="remoteVolume"></div>
                     <span>Remote User</span>
@@ -149,6 +152,9 @@
             <div class="local-view-container" id="localContainer">
                 <video id="localVideo" autoplay playsinline muted></video>
                 <canvas id="localCanvas"></canvas> <!-- Hand Tracking Overlay -->
+                <div id="local-sign-overlay" class="video-sign-overlay">
+                    <span id="localSignOverlayText">Waiting for sign...</span>
+                </div>
                 <div class="userInfo">
                     <div class="volume-meter" id="localVolume"></div>
                     <span>You</span>
