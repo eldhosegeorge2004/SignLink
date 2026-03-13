@@ -650,6 +650,9 @@ function appendCaptionLog(speaker, text) {
 
     const entry = document.createElement('div');
     entry.className = 'caption-log-entry';
+    if (speaker === 'They') {
+        entry.classList.add('remote-entry');
+    }
 
     const speakerLabel = document.createElement('span');
     speakerLabel.className = 'caption-log-speaker';
@@ -685,9 +688,11 @@ function resetVCCaptions() {
     hideVCSignCards();
 }
 
-function displayVCSignCards(text) {
+function displayVCSignCards(text, source = 'local') {
     const container = predictionSignCardsContainer;
     if (!container) return;
+
+    container.classList.toggle('remote-theme', source === 'remote');
 
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
@@ -2237,7 +2242,7 @@ socket.on("speech-message", data => {
         const remoteText = data.text.trim();
         appendVCCaption(remoteText);
         appendCaptionLog('They', remoteText);
-        displayVCSignCards(remoteText);
+        displayVCSignCards(remoteText, 'remote');
     }
 });
 

@@ -658,6 +658,12 @@ video {
     text-overflow: ellipsis;
 }
 
+#remote-sign-overlay {
+    background: rgba(7, 18, 34, 0.86);
+    border-color: rgba(34, 211, 238, 0.45);
+    color: #ffffff;
+}
+
 .video-sign-overlay.hidden {
     display: none;
 }
@@ -683,24 +689,13 @@ video {
 }
 
 #prediction-overlay {
-    position: relative;
-    grid-column: 2 / 4;
-    grid-row: 2;
-    bottom: auto;
-    left: auto;
-    transform: none;
-    width: 100%;
-    background: rgba(15, 23, 42, 0.85);
-    border-color: var(--primary-color);
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    display: none !important;
 }
 
 .prediction-sign-cards-container {
     position: relative;
     grid-column: 2 / 4;
-    grid-row: 3;
+    grid-row: 2 / 4;
     left: auto;
     transform: none;
     bottom: auto;
@@ -725,6 +720,24 @@ video {
 
 .prediction-sign-cards-container.active {
     display: flex;
+}
+
+.prediction-sign-cards-container.remote-theme {
+    border-color: rgba(34, 211, 238, 0.45);
+    background: rgba(8, 47, 73, 0.62);
+}
+
+.prediction-sign-cards-container.remote-theme .prediction-word-group {
+    border-right-color: rgba(34, 211, 238, 0.3);
+}
+
+.prediction-sign-cards-container.remote-theme .prediction-sign-card {
+    border-color: rgba(34, 211, 238, 0.5);
+    background: rgba(8, 47, 73, 0.82);
+}
+
+.prediction-sign-cards-container.remote-theme .prediction-sign-card-label {
+    color: #cffafe;
 }
 
 .prediction-sign-line {
@@ -863,6 +876,15 @@ video {
     font-weight: 600;
     color: #bfdbfe;
     margin-right: 4px;
+}
+
+.caption-log-entry.remote-entry {
+    border-color: rgba(34, 211, 238, 0.38);
+    background: rgba(8, 47, 73, 0.7);
+}
+
+.caption-log-entry.remote-entry .caption-log-speaker {
+    color: #67e8f9;
 }
 
 #remotePrediction {
@@ -1517,14 +1539,9 @@ video {
         grid-row: 2;
     }
 
-    #prediction-overlay {
-        grid-column: 1 / 3;
-        grid-row: 3;
-    }
-
     .prediction-sign-cards-container {
         grid-column: 1 / 3;
-        grid-row: 4;
+        grid-row: 3;
     }
 }
 
