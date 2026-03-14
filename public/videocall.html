@@ -18,7 +18,13 @@
         rel="stylesheet">
 
     <!-- Dependencies -->
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // Initialize Supabase globally
+        window.SUPABASE_URL = "https://ynvykdraupxkhsxxsonb.supabase.co";
+        window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InludnlrZHJhdXB4a2hzeHhzb25iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTIyMDUsImV4cCI6MjA4ODg4ODIwNX0.DRdCi6jxts3i9g0vTaRevRcIB4xfEadqxxX_d3DYzvA";
+        window.supabaseClient = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
         crossorigin="anonymous"></script>
@@ -73,6 +79,10 @@
                         <span class="material-icons">add_link</span>
                         Start New Meeting
                     </button>
+                    <div class="input-group" style="margin-bottom: 10px;">
+                        <span class="material-icons input-icon">person</span>
+                        <input type="text" id="userNameInput" placeholder="Your Name (Required)">
+                    </div>
                     <div class="input-group">
                         <span class="material-icons input-icon">keyboard</span>
                         <input type="text" id="startRoomInput" placeholder="Enter code or link">
@@ -124,16 +134,18 @@
         </footer>
     </div>
 
-    <!-- Main Meeting Room -->
     <div id="meeting-room" class="screen">
+        <div id="meeting-status-bar" class="meeting-status-bar">
+            <span class="status-dot"></span>
+            <span id="meeting-status-text">Connecting...</span>
+        </div>
         <div class="main-stage">
-
             <!-- Remoter User (Main View) -->
             <div class="remote-view-container">
                 <video id="remoteVideo" autoplay playsinline></video>
                 <div class="userInfo">
                     <div class="volume-meter" id="remoteVolume"></div>
-                    <span>Remote User</span>
+                    <span id="remoteUserName">Remote User</span>
                 </div>
             </div>
 
@@ -151,14 +163,14 @@
                 <canvas id="localCanvas"></canvas> <!-- Hand Tracking Overlay -->
                 <div class="userInfo">
                     <div class="volume-meter" id="localVolume"></div>
-                    <span>You</span>
+                    <span id="localUserName">You</span>
                 </div>
             </div>
 
             <!-- Prediction Overlay (Toast style) -->
             <div id="remote-caption-overlay" class="caption-overlay hidden">
                 <span class="material-icons" style="color: #4db6ac;">record_voice_over</span>
-                <span class="remote-says-label">Remote User Says:</span>
+                <span id="remote-says-label" class="remote-says-label">Remote User Says:</span>
                 <span id="remotePrediction"></span>
             </div>
 

@@ -1,7 +1,8 @@
 import { db } from './firebase-config.js';
 import { collection, addDoc, getDocs, deleteDoc, doc } from "firebase/firestore";
 
-const socket = io();
+// Note: supabaseClient is initialized globally in videocall.html
+let supabaseChannel = null;
 
 // --- Persistence Configuration (Firestore) ---
 // Default to ISL
@@ -127,8 +128,9 @@ const joinScreen = document.getElementById('join-screen');
 const meetingRoom = document.getElementById('meeting-room');
 const newMeetingBtn = document.getElementById('newMeetingBtn');
 const startRoomInput = document.getElementById('startRoomInput');
-const joinBtn = document.getElementById('joinBtn');
 const lobbyStatus = document.getElementById('status');
+const userNameInput = document.getElementById('userNameInput');
+const joinBtn = document.getElementById('joinBtn');
 const clockElement = document.getElementById('clock');
 const modeSelect = document.getElementById('modeSelect');
 
@@ -207,6 +209,8 @@ let lastRemoteSpokenText = "";
 let speakTimeout = null;           // NEW: Track pending speech to avoid race conditions
 let iceCandidatesBuffer = []; // Buffer for ICE candidates
 let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actually running
+let localName = "You";
+let remoteName = "Remote User";
 
 // --- YouTube-style Caption State (Video Call) ---
 let vcCaptionLineA = '';
@@ -443,8 +447,7 @@ document.addEventListener('click', () => {
     }
 }, { once: true });
 
-socket.on('connect', () => console.log("Connected to signaling server with ID:", socket.id));
-socket.on('connect_error', (err) => console.error("Socket Connection Error:", err));
+// Supabase connection handled during join-room
 
 const rtcConfig = {
     iceServers: [
@@ -453,25 +456,22 @@ const rtcConfig = {
         { urls: "stun:stun2.l.google.com:19302" },
         { urls: "stun:stun3.l.google.com:19302" },
         { urls: "stun:stun4.l.google.com:19302" },
-        // Free TURN server for testing (Note: For production, use a paid service like Twilio or Metered.ca)
+        { urls: "stun:stun.services.mozilla.com" },
+        // Expanded TURN servers with more protocols to bypass strict firewalls
         {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        },
-        {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        },
-        {
-            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            urls: [
+                "turn:openrelay.metered.ca:80",
+                "turn:openrelay.metered.ca:443",
+                "turn:openrelay.metered.ca:443?transport=tcp"
+            ],
             username: "openrelayproject",
             credential: "openrelayproject"
         }
     ],
     iceCandidatePoolSize: 10,
-    bundlePolicy: "balanced"
+    bundlePolicy: "max-bundle",
+    rtcpMuxPolicy: "require",
+    iceTransportPolicy: "all"
 };
 
 // Helper to limit bitrate in SDP (prevents "poor connection" lag)
@@ -546,9 +546,15 @@ function initSTT() {
             const trimmed = finalTranscript.trim();
             appendVCCaption(trimmed);
             appendCaptionLog('You', trimmed);
-            displayVCSignCards(trimmed);
             // Send finalized text to remote peer
-            socket.emit('speech-message', { room: roomName, text: trimmed });
+            // Send finalized text to remote peer
+            if (supabaseChannel) {
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'speech-message',
+                    payload: { text: trimmed }
+                });
+            }
         } else {
             // Show interim words in real-time
             updateVCCaptionDisplay(interimTranscript.trim());
@@ -918,7 +924,13 @@ async function initAudioAnalysis(stream) {
 
             if (volume > 0.02) {
                 localVolumeMeter.classList.add('volume-active');
-                socket.emit('volume-level', { room: roomName, level: volume });
+            if (supabaseChannel) {
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'volume-level',
+                    payload: { level: volume }
+                });
+            }
             } else {
                 localVolumeMeter.classList.remove('volume-active');
             }
@@ -973,9 +985,14 @@ function popEmojis(emoji) {
 }
 
 // --- Initialization & UI ---
-startRoomInput.addEventListener('input', (e) => {
-    joinBtn.disabled = e.target.value.trim().length === 0;
-});
+function validateLobby() {
+    const room = startRoomInput.value.trim();
+    const name = userNameInput ? userNameInput.value.trim() : "";
+    joinBtn.disabled = (room.length === 0 || name.length === 0);
+}
+
+startRoomInput.addEventListener('input', validateLobby);
+if (userNameInput) userNameInput.addEventListener('input', validateLobby);
 
 // Mode Selector Logic
 if (modeSelect) {
@@ -1026,12 +1043,24 @@ newMeetingBtn.addEventListener('click', () => {
         room = Math.random().toString(36).substring(7);
         startRoomInput.value = room;
     }
-    joinBtn.disabled = false;
-    joinBtn.click();
+    
+    validateLobby();
+
+    if (joinBtn.disabled) {
+        if (userNameInput) {
+            userNameInput.focus();
+            userNameInput.style.borderColor = "#ef4444";
+            setTimeout(() => userNameInput.style.borderColor = "", 2000);
+        }
+        lobbyStatus.innerText = "Please enter your name first!";
+        lobbyStatus.style.color = "#ef4444";
+    } else {
+        joinBtn.click();
+    }
 });
 
 joinBtn.addEventListener('click', async () => {
-    roomName = startRoomInput.value.trim();
+    roomName = startRoomInput.value.trim().replace(/[^a-zA-Z0-9-]/g, '-');
     if (!roomName) return;
 
     lobbyStatus.innerText = "Joining...";
@@ -1084,7 +1113,209 @@ joinBtn.addEventListener('click', async () => {
     meetingCodeDisplay.innerText = roomName;
     if (mobileMeetingCodeDisplay) mobileMeetingCodeDisplay.innerText = roomName;
 
-    socket.emit("join-room", roomName);
+    // Capture Local Name
+    localName = userNameInput.value.trim() || "You";
+    const localNameSpan = document.getElementById('localUserName');
+    if (localNameSpan) localNameSpan.innerText = localName + " (You)";
+    updatePeopleList();
+
+    // Supabase Channel Setup
+    supabaseChannel = window.supabaseClient.channel(roomName, {
+        config: {
+            broadcast: { self: false },
+            presence: { key: 'user-' + Math.random().toString(36).substring(7) }
+        }
+    });
+
+    const updateStatus = (text, type = 'info') => {
+        const statusEl = document.getElementById('status');
+        const meetingStatusText = document.getElementById('meeting-status-text');
+        const meetingStatusBar = document.getElementById('meeting-status-bar');
+
+        if (statusEl) {
+            statusEl.innerText = text;
+            statusEl.style.color = type === 'error' ? '#ef4444' : (type === 'success' ? '#4db6ac' : '#aaa');
+        }
+
+        if (meetingStatusText) {
+            meetingStatusText.innerText = text;
+        }
+
+        if (meetingStatusBar) {
+            meetingStatusBar.className = `meeting-status-bar ${type}`;
+        }
+        
+        console.log(`[Status] ${text}`);
+    };
+    supabaseChannel
+        .on('broadcast', { event: 'user-joined' }, (payload) => {
+            console.log("New peer joined room:", payload.id, "Name:", payload.name);
+            if (payload.name) {
+                remoteName = payload.name;
+                const remoteNameSpan = document.getElementById('remoteUserName');
+                if (remoteNameSpan) remoteNameSpan.innerText = remoteName;
+                const remoteSaysLabel = document.getElementById('remote-says-label');
+                if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+            }
+            updatePeopleList(payload.id);
+            if (localStream) {
+                handlePeerJoined(payload.id);
+            }
+        })
+        .on('broadcast', { event: 'offer' }, async ({ payload }) => {
+            console.log("Offer received from peer. Name:", payload.name);
+            if (payload.name) {
+                remoteName = payload.name;
+                const remoteNameSpan = document.getElementById('remoteUserName');
+                if (remoteNameSpan) remoteNameSpan.innerText = remoteName;
+                const remoteSaysLabel = document.getElementById('remote-says-label');
+                if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+                updatePeopleList('peer-id'); // Ensure remote name is updated in people list
+            }
+            try {
+                if (!pc) createPeerConnection();
+                if (pc.signalingState !== "stable") {
+                    console.log("Signaling state not stable, ignoring offer (might be a collision)");
+                    return;
+                }
+                await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                processBufferedIceCandidates();
+                const answer = await pc.createAnswer();
+                answer.sdp = setMaxBitrate(answer.sdp, 1000);
+                await pc.setLocalDescription(answer);
+                console.log("Sending answer...");
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'answer',
+                    payload: { sdp: answer }
+                });
+                updateStatus("Connected to peer", "success");
+            } catch (e) {
+                console.error("Error handling offer:", e);
+                updateStatus("Connection failed: " + e.message, "error");
+            }
+        })
+        .on('broadcast', { event: 'answer' }, async ({ payload }) => {
+            console.log("Answer received from peer. Name:", payload.name);
+            if (payload.name) {
+                remoteName = payload.name;
+                const remoteNameSpan = document.getElementById('remoteUserName');
+                if (remoteNameSpan) remoteNameSpan.innerText = remoteName;
+                const remoteSaysLabel = document.getElementById('remote-says-label');
+                if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+                updatePeopleList('peer-id');
+            }
+            try {
+                if (pc) {
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                    processBufferedIceCandidates();
+                    updateStatus("Connected to peer", "success");
+                }
+            } catch (e) {
+                console.error("Error handling answer:", e);
+                updateStatus("Connection error", "error");
+            }
+        })
+        .on('broadcast', { event: 'ice' }, async ({ payload }) => {
+            const candidate = payload.candidate;
+            if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (e) {
+                    console.error("Error adding ICE candidate:", e);
+                }
+            } else {
+                iceCandidatesBuffer.push(candidate);
+            }
+        })
+        .on('broadcast', { event: 'sign-message' }, data => {
+            const payload = data.payload || data; // Handle different payload structures
+            remotePredictionDiv.innerText = payload.text;
+            
+            // Update remote says label if it was "Remote User Says:"
+            const remoteSaysLabel = document.getElementById('remote-says-label');
+            if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+
+            remoteCaptionOverlay.classList.remove('hidden');
+            setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
+
+            const now = Date.now();
+            const wordLastSpoken = remoteWordLastSpoken[payload.text] || 0;
+            const timeSinceAny = now - lastRemoteSpokenTime;
+            const timeSinceSame = now - wordLastSpoken;
+
+            if (isTTSOn && timeSinceSame > 4000 && timeSinceAny > 800) {
+                speak(payload.text);
+                lastRemoteSpokenText = payload.text;
+                lastRemoteSpokenTime = now;
+                remoteWordLastSpoken[payload.text] = now;
+            }
+        })
+        .on('broadcast', { event: 'speech-message' }, data => {
+            const payload = data.payload || data;
+            if (payload.text && payload.text.trim()) {
+                if (vcCaptionBar && !vcCaptionBar.classList.contains('active')) {
+                    vcCaptionBar.classList.add('active');
+                }
+                const remoteText = payload.text.trim();
+                appendVCCaption(remoteText);
+                appendCaptionLog(remoteName, remoteText);
+                displayVCSignCards(remoteText);
+            }
+        })
+        .on('broadcast', { event: 'chat-message' }, (data) => {
+            const payload = data.payload || data;
+            appendMessage({ ...payload, sender: 'Remote User' }, 'remote');
+            if (!chatPanel.classList.contains('open') && chatToggleBtn) {
+                chatToggleBtn.style.color = '#e37400';
+            }
+        })
+        .on('broadcast', { event: 'volume-level' }, data => {
+            const payload = data.payload || data;
+            if (remoteVolumeMeter) {
+                if (payload.level > 0.02) {
+                    remoteVolumeMeter.classList.add('volume-active');
+                } else {
+                    remoteVolumeMeter.classList.remove('volume-active');
+                }
+            }
+        })
+        .on('broadcast', { event: 'emoji-pop' }, data => {
+            const payload = data.payload || data;
+            popEmojis(payload.emoji);
+        })
+        .on('broadcast', { event: 'user-left' }, (payload) => {
+            console.log("Peer left room:", payload.id);
+            updatePeopleList(null);
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            if (remoteVideo) {
+                remoteVideo.srcObject = null;
+            }
+        })
+        .subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                updateStatus("Connected to signaling server", "success");
+                // Notify others that we joined
+                // Use a small delay for the new person to broadcast, ensuring others are ready
+                setTimeout(() => {
+                    supabaseChannel.send({
+                        type: 'broadcast',
+                        event: 'user-joined',
+                        payload: { 
+                            id: 'peer-' + Math.random().toString(36).substring(7),
+                            name: localName
+                        }
+                    });
+                }, 500);
+            } else if (status === 'CHANNEL_ERROR') {
+                updateStatus("Signaling connection error", "error");
+            } else if (status === 'TIMED_OUT') {
+                updateStatus("Signaling timed out", "error");
+            }
+        });
 
     if (window.speechSynthesis) {
         const primingUtterance = new SpeechSynthesisUtterance("");
@@ -1912,11 +2143,23 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 lastSpokenTime = now;
                 localWordLastSpoken[outputLabel] = now;
 
-                socket.emit("sign-message", { room: roomName, text: outputLabel });
+                if (supabaseChannel) {
+                    supabaseChannel.send({
+                        type: 'broadcast',
+                        event: 'sign-message',
+                        payload: { text: outputLabel }
+                    });
+                }
 
                 if (EMOJI_MAP[outputLabel.toUpperCase()]) {
                     popEmojis(EMOJI_MAP[outputLabel.toUpperCase()]);
-                    socket.emit("emoji-pop", { room: roomName, emoji: EMOJI_MAP[outputLabel.toUpperCase()] });
+                    if (supabaseChannel) {
+                        supabaseChannel.send({
+                            type: 'broadcast',
+                            event: 'emoji-pop',
+                            payload: { emoji: EMOJI_MAP[outputLabel.toUpperCase()] }
+                        });
+                    }
                 }
             }
         }
@@ -1995,8 +2238,14 @@ function finishSpelling(forceSpeak = false) {
     // Speak locally if TTS is on
     if (isTTSOn || forceSpeak) speak(wordToSpeak);
 
-    // Send to remote user (send original uppercase or title case? Let's send Title Case for them too)
-    socket.emit("sign-message", { room: roomName, text: wordToSpeak });
+    // Send to remote user
+    if (supabaseChannel) {
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'sign-message',
+            payload: { text: wordToSpeak }
+        });
+    }
 
     // Show in local toast
     setPredictionText(`Spelled: ${wordToSpeak}`);
@@ -2110,175 +2359,54 @@ clearBtn.addEventListener('click', () => {
 });
 
 // --- Signaling & WebRTC ---
-socket.on("user-joined", async (id) => {
-    console.log("New peer joined room:", id);
-    updatePeopleList(id); // Update the People panel
-    if (!localStream) {
-        console.warn("Local stream not ready. Peer connection delayed.");
+// Peer logic refactored into Supabase Channel setup
+async function handlePeerJoined(id) {
+    if (pc && (pc.connectionState === 'connected' || pc.connectionState === 'connecting')) {
+        console.log("Peer already connected/connecting. Skipping offer.");
         return;
     }
+
+    // Add a small jittered delay to avoid simultaneous offer collision
+    await new Promise(r => setTimeout(r, Math.random() * 500 + 200));
+
     createPeerConnection();
     const offer = await pc.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
     });
-    // Set max bitrate to 1000kbps (stable for 480p)
     offer.sdp = setMaxBitrate(offer.sdp, 1000);
     await pc.setLocalDescription(offer);
     console.log("Sending offer to peer...");
-    socket.emit("offer", { room: roomName, sdp: offer });
-});
+    supabaseChannel.send({
+        type: 'broadcast',
+        event: 'offer',
+        payload: { sdp: offer, name: localName }
+    });
+}
 
-socket.on("user-left", (id) => {
-    console.log("Peer left room:", id);
-    updatePeopleList(null); // Remove from People panel
-    // Cleanup peer connection if it matches
+function processBufferedIceCandidates() {
+    if (!pc || !pc.remoteDescription) return;
+    console.log(`Processing ${iceCandidatesBuffer.length} buffered ICE candidates`);
+    iceCandidatesBuffer.forEach(candidate => {
+        pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
+            console.error("Error adding buffered ICE candidate:", e);
+        });
+    });
+    iceCandidatesBuffer = [];
+}
+
+function createPeerConnection() {
+    // Close any stale connection before creating a new one
     if (pc) {
+        console.log("Closing existing peer connection before creating a new one.");
         pc.close();
         pc = null;
     }
-    // Remote video cleanup
-    if (remoteVideo) {
-        remoteVideo.srcObject = null;
-    }
-});
 
-socket.on("offer", async (data) => {
-    console.log("Offer received from peer");
-    if (!pc) createPeerConnection();
-    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-    processBufferedIceCandidates();
-    const answer = await pc.createAnswer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-    });
-    // Set max bitrate to 1000kbps (stable for 480p)
-    answer.sdp = setMaxBitrate(answer.sdp, 1000);
-    await pc.setLocalDescription(answer);
-    console.log("Sending answer...");
-    socket.emit("answer", { room: roomName, sdp: answer });
-});
-
-socket.on("answer", async (data) => {
-    console.log("Answer received from peer");
-    if (pc) {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        processBufferedIceCandidates();
-    }
-});
-
-socket.on("ice", async (data) => {
-    if (pc && pc.remoteDescription && pc.remoteDescription.type) {
-        try {
-            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (e) {
-            console.error("Error adding ICE candidate:", e);
-        }
-    } else {
-        iceCandidatesBuffer.push(data.candidate);
-    }
-});
-
-async function processBufferedIceCandidates() {
-    console.log(`Processing ${iceCandidatesBuffer.length} buffered ICE candidates`);
-    while (iceCandidatesBuffer.length > 0) {
-        const candidate = iceCandidatesBuffer.shift();
-        try {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (e) {
-            console.error("Error adding buffered ICE candidate:", e);
-        }
-    }
-}
-
-socket.on("sign-message", data => {
-    remotePredictionDiv.innerText = data.text;
-    remoteCaptionOverlay.classList.remove('hidden');
-    setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
-
-    const now = Date.now();
-    const wordLastSpoken = remoteWordLastSpoken[data.text] || 0;
-    const timeSinceAny = now - lastRemoteSpokenTime;
-    const timeSinceSame = now - wordLastSpoken;
-
-    // Symmetric logic for remote signs to avoid redundant peer-side chatter
-    // Same rule: 4s for same-word repeat, 800ms for fluent different-word sequence
-    if (isTTSOn && timeSinceSame > 4000 && timeSinceAny > 800) {
-        speak(data.text);
-        lastRemoteSpokenText = data.text;
-        lastRemoteSpokenTime = now;
-        remoteWordLastSpoken[data.text] = now;
-    }
-});
-
-socket.on("speech-message", data => {
-    // Show remote STT text in the caption bar (auto-shows if STT is on)
-    if (data.text && data.text.trim()) {
-        if (vcCaptionBar && !vcCaptionBar.classList.contains('active')) {
-            vcCaptionBar.classList.add('active');
-        }
-        const remoteText = data.text.trim();
-        appendVCCaption(remoteText);
-        appendCaptionLog('They', remoteText);
-        displayVCSignCards(remoteText);
-    }
-});
-
-socket.on("volume-level", data => {
-    if (remoteVolumeMeter) {
-        if (data.level > 0.02) {
-            remoteVolumeMeter.classList.add('volume-active');
-        } else {
-            remoteVolumeMeter.classList.remove('volume-active');
-        }
-    }
-});
-
-socket.on("emoji-pop", data => {
-    popEmojis(data.emoji);
-});
-
-function createPeerConnection() {
     pc = new RTCPeerConnection(rtcConfig);
+    console.log("RTCPeerConnection created.");
 
-    pc.onicecandidate = (event) => {
-        if (event.candidate) {
-            socket.emit("ice", { room: roomName, candidate: event.candidate });
-        }
-    };
-
-    pc.ontrack = (event) => {
-        console.log("Remote track received:", event.track.kind);
-
-        // Prefer using the stream provided by the event, this handles audio+video sync better
-        if (event.streams && event.streams[0]) {
-            if (remoteVideo.srcObject !== event.streams[0]) {
-                remoteVideo.srcObject = event.streams[0];
-                console.log("Attached remote stream from event");
-            }
-        } else {
-            // Fallback: manually manage the stream if event.streams is missing
-            if (!remoteVideo.srcObject || !(remoteVideo.srcObject instanceof MediaStream)) {
-                remoteVideo.srcObject = new MediaStream();
-            }
-            remoteVideo.srcObject.addTrack(event.track);
-        }
-
-        // Ensure the remote video is unmuted and plays
-        remoteVideo.muted = false;
-        remoteVideo.volume = 1.0;
-
-        // Final attempt to play, catching block errors
-        const playPromise = remoteVideo.play();
-        if (playPromise !== undefined) {
-            playPromise.then(_ => {
-                console.log("Autoplay success!");
-            }).catch(error => {
-                console.warn("Autoplay was prevented. User must interact with page first.");
-            });
-        }
-    };
-
+    // Add all local media tracks so the remote peer receives them
     if (localStream) {
         console.log(`Adding ${localStream.getTracks().length} local tracks to PeerConnection`);
         localStream.getTracks().forEach(track => {
@@ -2288,12 +2416,73 @@ function createPeerConnection() {
         console.error("localStream is null when createPeerConnection is called!");
     }
 
+    // When remote tracks arrive, display the remote video
+    pc.ontrack = (event) => {
+        console.log("Remote track received:", event.track.kind);
+
+        if (event.streams && event.streams[0]) {
+            if (remoteVideo.srcObject !== event.streams[0]) {
+                remoteVideo.srcObject = event.streams[0];
+                console.log("Attached remote stream from event.");
+            }
+        } else {
+            // Fallback: manually build a MediaStream from individual tracks
+            if (!remoteVideo.srcObject || !(remoteVideo.srcObject instanceof MediaStream)) {
+                remoteVideo.srcObject = new MediaStream();
+            }
+            remoteVideo.srcObject.addTrack(event.track);
+        }
+
+        // Ensure remote audio plays (browsers may block autoplay)
+        remoteVideo.muted = false;
+        remoteVideo.volume = 1.0;
+        const playPromise = remoteVideo.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(err => {
+                console.warn("Autoplay blocked — user interaction required:", err);
+            });
+        }
+    };
+
+    // Send our ICE candidates to the remote peer via Supabase
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            console.log(`Generated ICE candidate (${event.candidate.type}):`, event.candidate.candidate.substring(0, 50) + "...");
+            if (supabaseChannel) {
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'ice',
+                    payload: { candidate: event.candidate }
+                });
+            }
+        }
+    };
+
+    // Update the meeting status bar
     pc.onconnectionstatechange = () => {
-        console.log("WebRTC Connection State:", pc.connectionState);
+        const state = pc ? pc.connectionState : 'closed';
+        console.log("WebRTC Connection State:", state);
+        const statusText = document.getElementById('meeting-status-text');
+        const statusBar = document.getElementById('meeting-status-bar');
+        if (statusText) {
+            if (state === 'connected') {
+                statusText.innerText = 'Connected';
+                if (statusBar) statusBar.className = 'meeting-status-bar success';
+            } else if (state === 'disconnected' || state === 'failed') {
+                statusText.innerText = 'Peer disconnected';
+                if (statusBar) statusBar.className = 'meeting-status-bar error';
+            } else if (state === 'connecting') {
+                statusText.innerText = 'Connecting...';
+                if (statusBar) statusBar.className = 'meeting-status-bar info';
+            }
+        }
     };
 
     pc.oniceconnectionstatechange = () => {
-        console.log("WebRTC ICE Connection State:", pc.iceConnectionState);
+        console.log("WebRTC ICE Connection State:", pc ? pc.iceConnectionState : 'n/a');
+        if (pc && pc.iceConnectionState === 'disconnected') {
+            console.warn("Peer disconnected. Waiting for reconnection...");
+        }
     };
 }
 
@@ -2458,7 +2647,13 @@ function sendMessage() {
 
     // Emit to server
     const msgData = { room: roomName, text: text, sender: 'You', timestamp: Date.now() };
-    socket.emit('chat-message', msgData);
+    if (supabaseChannel) {
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'chat-message',
+            payload: msgData
+        });
+    }
 
     // Display locally
     appendMessage(msgData, 'self');
@@ -2468,22 +2663,19 @@ function sendMessage() {
     sendChatBtn.disabled = true;
 }
 
-socket.on('chat-message', (data) => {
-    appendMessage({ ...data, sender: 'Remote User' }, 'remote');
-    if (!chatPanel.classList.contains('open') && chatToggleBtn) {
-        // Optional: Show notification dot on chat button
-        chatToggleBtn.style.color = '#e37400'; // Orange alert
-    }
-});
+// Chat events refactored into Supabase Channel setup
 
 function updatePeopleList(remoteId = null) {
     if (!peopleList) return;
 
+    let localInit = (localName || "Y").charAt(0).toUpperCase();
+    let remoteInit = (remoteName || "R").charAt(0).toUpperCase();
+
     let html = `
         <div class="person-item">
-            <div class="person-avatar">Y</div>
+            <div class="person-avatar">${localInit}</div>
             <div class="person-info">
-                <div class="person-name">You (Local)</div>
+                <div class="person-name">${localName} (You)</div>
                 <div class="person-status">Connected</div>
             </div>
         </div>
@@ -2492,9 +2684,9 @@ function updatePeopleList(remoteId = null) {
     if (remoteId) {
         html += `
             <div class="person-item">
-                <div class="person-avatar" style="background: #e37400;">R</div>
+                <div class="person-avatar" style="background: #e37400;">${remoteInit}</div>
                 <div class="person-info">
-                    <div class="person-name">Remote User</div>
+                    <div class="person-name">${remoteName}</div>
                     <div class="person-status" style="color: #4db6ac;">Connected</div>
                 </div>
             </div>
