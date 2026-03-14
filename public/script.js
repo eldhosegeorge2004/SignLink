@@ -3,6 +3,7 @@ import { collection, addDoc, getDocs, deleteDoc, doc } from "firebase/firestore"
 
 // Note: supabaseClient is initialized globally in videocall.html
 let supabaseChannel = null;
+let isPolite = true; // Will be set on join. Polite peer waits; impolite peer offers.
 
 // --- Persistence Configuration (Firestore) ---
 // Default to ISL
@@ -1051,35 +1052,52 @@ joinBtn.addEventListener('click', async () => {
 
     supabaseChannel
         .on('broadcast', { event: 'user-joined' }, (payload) => {
-            console.log("New peer joined room:", payload.id);
-            updatePeopleList(payload.id);
+            const remoteId = payload.payload?.id || payload.id;
+            console.log('[Signaling] New peer joined the room:', remoteId);
+            updatePeopleList(remoteId);
+            // When we receive 'user-joined', WE were already in the room.
+            // This makes us the "impolite" peer — we initiate the offer.
+            isPolite = false;
+            console.log('[Signaling] I am the IMPOLITE peer. Sending offer...');
             if (localStream) {
-                handlePeerJoined(payload.id);
+                handlePeerJoined(remoteId);
             }
         })
         .on('broadcast', { event: 'offer' }, async (payload) => {
-            console.log("Offer received from peer");
+            console.log('[Signaling] Offer received from peer.');
+            // Mark self as the polite peer -- we received, not sent the offer
+            isPolite = true;
             if (!pc) createPeerConnection();
-            await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-            processBufferedIceCandidates();
-            const answer = await pc.createAnswer({
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: true
-            });
-            answer.sdp = setMaxBitrate(answer.sdp, 1000);
-            await pc.setLocalDescription(answer);
-            console.log("Sending answer...");
-            supabaseChannel.send({
-                type: 'broadcast',
-                event: 'answer',
-                payload: { sdp: answer }
-            });
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                await processBufferedIceCandidates();
+                const answer = await pc.createAnswer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: true
+                });
+                answer.sdp = setMaxBitrate(answer.sdp, 1000);
+                await pc.setLocalDescription(answer);
+                console.log('[Signaling] Sending answer to peer...');
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'answer',
+                    payload: { sdp: answer }
+                });
+            } catch (e) {
+                console.error('[Signaling] Error handling offer:', e);
+            }
         })
         .on('broadcast', { event: 'answer' }, async (payload) => {
-            console.log("Answer received from peer");
+            console.log('[Signaling] Answer received from peer.');
             if (pc) {
-                await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-                processBufferedIceCandidates();
+                try {
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                    await processBufferedIceCandidates();
+                } catch (e) {
+                    console.error('[Signaling] Error handling answer:', e);
+                }
+            } else {
+                console.warn('[Signaling] Answer received but no RTCPeerConnection exists.');
             }
         })
         .on('broadcast', { event: 'ice' }, async (payload) => {
@@ -1158,12 +1176,20 @@ joinBtn.addEventListener('click', async () => {
         .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
                 console.log("Subscribed to Supabase Channel:", roomName);
-                // Notify others that we joined
+                const myId = 'peer-' + Math.random().toString(36).substring(7);
+                // The first peer in the room becomes 'impolite' (sends offer)
+                // Subsequent peers are 'polite' (receive offer, send answer)
+                // We determine this by checking presence count after subscribe
+                isPolite = true; // default to polite (waiter);
                 supabaseChannel.send({
                     type: 'broadcast',
                     event: 'user-joined',
-                    payload: { id: 'peer-' + Math.random().toString(36).substring(7) }
+                    payload: { id: myId }
                 });
+                console.log(`[Signaling] I am the POLITE peer (waiting for offer). My ID: ${myId}`);
+            } else if (status === 'CHANNEL_ERROR') {
+                console.error('Supabase Channel error - check your Supabase configuration.');
+                lobbyStatus.innerText = 'Signaling connection failed. Please try again.';
             }
         });
 
@@ -2209,46 +2235,81 @@ clearBtn.addEventListener('click', () => {
 });
 
 // --- Signaling & WebRTC ---
+
+/**
+ * Processes any ICE candidates that arrived before the remote description was set.
+ * Must be called after pc.setRemoteDescription().
+ */
+async function processBufferedIceCandidates() {
+    if (!pc || !iceCandidatesBuffer.length) return;
+    console.log(`[ICE] Processing ${iceCandidatesBuffer.length} buffered ICE candidates...`);
+    const candidates = [...iceCandidatesBuffer];
+    iceCandidatesBuffer = [];
+    for (const candidate of candidates) {
+        try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            console.log('[ICE] Successfully added buffered candidate.');
+        } catch (e) {
+            console.warn('[ICE] Error adding buffered ICE candidate:', e);
+        }
+    }
+}
+
 // Peer logic refactored into Supabase Channel setup
 async function handlePeerJoined(id) {
+    console.log('[Signaling] handlePeerJoined: creating offer for peer', id);
     createPeerConnection();
-    const offer = await pc.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-    });
-    offer.sdp = setMaxBitrate(offer.sdp, 1000);
-    await pc.setLocalDescription(offer);
-    console.log("Sending offer to peer...");
-    supabaseChannel.send({
-        type: 'broadcast',
-        event: 'offer',
-        payload: { sdp: offer }
-    });
+    try {
+        const offer = await pc.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true
+        });
+        offer.sdp = setMaxBitrate(offer.sdp, 1000);
+        await pc.setLocalDescription(offer);
+        console.log('[Signaling] Sending offer to peer...');
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'offer',
+            payload: { sdp: offer }
+        });
+    } catch (e) {
+        console.error('[Signaling] Error creating or sending offer:', e);
+    }
 }
 
 function createPeerConnection() {
+    if (pc) {
+        console.warn('[WebRTC] Closing existing PeerConnection before creating a new one.');
+        pc.close();
+        pc = null;
+    }
+
     pc = new RTCPeerConnection(rtcConfig);
+    console.log('[WebRTC] RTCPeerConnection created.');
 
     pc.onicecandidate = (event) => {
-        if (event.candidate) {
         if (event.candidate && supabaseChannel) {
+            console.log('[ICE] Sending ICE candidate to peer.');
             supabaseChannel.send({
                 type: 'broadcast',
                 event: 'ice',
                 payload: { candidate: event.candidate }
             });
         }
-        }
+    };
+
+    pc.onicegatheringstatechange = () => {
+        console.log('[ICE] Gathering State:', pc.iceGatheringState);
     };
 
     pc.ontrack = (event) => {
-        console.log("Remote track received:", event.track.kind);
+        console.log('[WebRTC] Remote track received:', event.track.kind);
 
         // Prefer using the stream provided by the event, this handles audio+video sync better
         if (event.streams && event.streams[0]) {
             if (remoteVideo.srcObject !== event.streams[0]) {
                 remoteVideo.srcObject = event.streams[0];
-                console.log("Attached remote stream from event");
+                console.log('[WebRTC] Attached remote stream from event.');
             }
         } else {
             // Fallback: manually manage the stream if event.streams is missing
@@ -2256,6 +2317,7 @@ function createPeerConnection() {
                 remoteVideo.srcObject = new MediaStream();
             }
             remoteVideo.srcObject.addTrack(event.track);
+            console.log('[WebRTC] Fallback: Added track to new MediaStream.');
         }
 
         // Ensure the remote video is unmuted and plays
@@ -2265,29 +2327,37 @@ function createPeerConnection() {
         // Final attempt to play, catching block errors
         const playPromise = remoteVideo.play();
         if (playPromise !== undefined) {
-            playPromise.then(_ => {
-                console.log("Autoplay success!");
+            playPromise.then(() => {
+                console.log('[WebRTC] Autoplay success!');
             }).catch(error => {
-                console.warn("Autoplay was prevented. User must interact with page first.");
+                console.warn('[WebRTC] Autoplay was prevented. User must interact with page first.', error);
             });
         }
     };
 
     if (localStream) {
-        console.log(`Adding ${localStream.getTracks().length} local tracks to PeerConnection`);
-        localStream.getTracks().forEach(track => {
+        const tracks = localStream.getTracks();
+        console.log(`[WebRTC] Adding ${tracks.length} local track(s) to PeerConnection.`);
+        tracks.forEach(track => {
             pc.addTrack(track, localStream);
         });
     } else {
-        console.error("localStream is null when createPeerConnection is called!");
+        console.error('[WebRTC] localStream is null when createPeerConnection is called!');
     }
 
     pc.onconnectionstatechange = () => {
-        console.log("WebRTC Connection State:", pc.connectionState);
+        console.log('[WebRTC] Connection State:', pc.connectionState);
+        if (pc.connectionState === 'failed') {
+            console.warn('[WebRTC] Connection failed. You may want to reload or retry.');
+        }
     };
 
     pc.oniceconnectionstatechange = () => {
-        console.log("WebRTC ICE Connection State:", pc.iceConnectionState);
+        console.log('[WebRTC] ICE Connection State:', pc.iceConnectionState);
+        if (pc.iceConnectionState === 'failed') {
+            console.warn('[WebRTC] ICE failed. Attempting ICE restart...');
+            pc.restartIce();
+        }
     };
 }
 
