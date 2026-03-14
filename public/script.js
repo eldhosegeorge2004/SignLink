@@ -452,25 +452,22 @@ const rtcConfig = {
         { urls: "stun:stun2.l.google.com:19302" },
         { urls: "stun:stun3.l.google.com:19302" },
         { urls: "stun:stun4.l.google.com:19302" },
-        // Free TURN server for testing (Note: For production, use a paid service like Twilio or Metered.ca)
+        { urls: "stun:stun.services.mozilla.com" },
+        // Expanded TURN servers with more protocols to bypass strict firewalls
         {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        },
-        {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        },
-        {
-            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            urls: [
+                "turn:openrelay.metered.ca:80",
+                "turn:openrelay.metered.ca:443",
+                "turn:openrelay.metered.ca:443?transport=tcp"
+            ],
             username: "openrelayproject",
             credential: "openrelayproject"
         }
     ],
     iceCandidatePoolSize: 10,
-    bundlePolicy: "balanced"
+    bundlePolicy: "max-bundle",
+    rtcpMuxPolicy: "require",
+    iceTransportPolicy: "all"
 };
 
 // Helper to limit bitrate in SDP (prevents "poor connection" lag)
@@ -2393,12 +2390,15 @@ function createPeerConnection() {
 
     // Send our ICE candidates to the remote peer via Supabase
     pc.onicecandidate = (event) => {
-        if (event.candidate && supabaseChannel) {
-            supabaseChannel.send({
-                type: 'broadcast',
-                event: 'ice',
-                payload: { candidate: event.candidate }
-            });
+        if (event.candidate) {
+            console.log(`Generated ICE candidate (${event.candidate.type}):`, event.candidate.candidate.substring(0, 50) + "...");
+            if (supabaseChannel) {
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'ice',
+                    payload: { candidate: event.candidate }
+                });
+            }
         }
     };
 
