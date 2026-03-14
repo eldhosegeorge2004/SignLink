@@ -1,481 +1,964 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SignLink - Choose Your Mode</title>
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;700;800&display=swap"
-        rel="stylesheet">
+    <title>SignLink - Connect Beyond Words</title>
+    <!-- 1. Ultra-Clean Typography: Space Grotesk -->
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #2f81f7;
-            --primary-glow: rgba(47, 129, 247, 0.4);
-            --bg-dark: #05070a;
-            --text-main: #f0f6fc;
-            --text-muted: #8b949e;
-            --glass-bg: rgba(22, 27, 34, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --font-heading: 'Outfit', sans-serif;
-            --font-body: 'Inter', sans-serif;
+            --text-color: #111;
+            --accent-color: #0047ff; /* Electric Blue */
+            --bg-color: #ededed;
         }
 
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-        }
-
-        html, body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: var(--bg-dark);
+            user-select: none;
         }
 
         body {
-            font-family: var(--font-body);
-            color: var(--text-main);
-            height: 100dvh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 32px 24px;
+            background: radial-gradient(circle at center, #ffffff 0%, var(--bg-color) 40%, #e0e0e0 100%);
+            color: var(--text-color);
+            font-family: 'Space Grotesk', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
             position: relative;
         }
 
-        /* --- Animated Background --- */
-        .bg-blobs {
-            position: fixed;
-            inset: 0;
-            z-index: -1;
-            overflow: hidden;
-            filter: blur(80px);
-        }
-
-        .blob {
-            position: absolute;
-            border-radius: 50%;
-            opacity: 0.15;
-            animation: move-blob 20s infinite alternate cubic-bezier(0.45, 0, 0.55, 1);
-        }
-
-        .blob-1 {
-            width: 500px;
-            height: 500px;
-            background: var(--primary);
-            top: -100px;
-            left: -100px;
-            animation-duration: 25s;
-        }
-
-        .blob-2 {
-            width: 400px;
-            height: 400px;
-            background: #8b5cf6;
-            bottom: -50px;
-            right: -50px;
-            animation-delay: -5s;
-        }
-
-        .blob-3 {
-            width: 300px;
-            height: 300px;
-            background: #06b6d4;
-            top: 40%;
-            left: 50%;
-            animation-delay: -10s;
-        }
-
-        @keyframes move-blob {
-            0% { transform: translate(0, 0) scale(1); }
-            100% { transform: translate(100px, 50px) scale(1.1); }
-        }
-
-        /* --- Header --- */
-        header {
-            text-align: center;
-            margin-bottom: 50px;
-            z-index: 2;
-            flex-shrink: 0;
-            animation: fadeInDown 0.8s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-
-        .logo-area {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .logo-icon {
-            font-size: 36px;
-            color: var(--primary);
-            background: rgba(47, 129, 247, 0.1);
-            padding: 10px;
-            border-radius: 16px;
-            box-shadow: 0 8px 24px var(--primary-glow);
-        }
-
-        h1 {
-            font-family: var(--font-heading);
-            font-size: clamp(2rem, 6vw, 3.5rem);
-            font-weight: 800;
-            letter-spacing: -1px;
-            margin-bottom: 8px;
-            background: linear-gradient(135deg, #fff 30%, #a5d6ff 100%);
-            background-clip: text;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        p.subtitle {
-            font-size: clamp(0.9rem, 2.5vw, 1.2rem);
-            color: var(--text-muted);
-            font-weight: 400;
-        }
-
-        /* --- Cards --- */
-        .cards-container {
-            display: flex;
-            gap: 24px;
-            z-index: 2;
-            width: 100%;
-            max-width: 1200px;
-            justify-content: center;
-            flex-wrap: wrap;
-            flex: 1;
-            align-items: center;
-        }
-
-        .card {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border-radius: 32px;
-            padding: 32px;
-            flex: 1 1 300px;
-            max-width: 360px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-            position: relative;
-            overflow: hidden;
-            text-decoration: none;
-            color: var(--text-main);
-            animation: fadeInUp 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
-        }
-
-        .card:nth-child(1) { animation-delay: 0.1s; }
-        .card:nth-child(2) { animation-delay: 0.2s; }
-        .card:nth-child(3) { animation-delay: 0.3s; }
-
-        .card::before {
+        /* 6. Subtle Noise Texture Overlay */
+        body::after {
             content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            /* Using a high-quality grain SVG data URI */
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            opacity: 0.04;
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        /* 8. Spotlight Glow Layer */
+        .cursor-light {
+            position: fixed;
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(0,0,0,0.04), transparent 70%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 1;
+            transition: left 0.1s ease-out, top 0.1s ease-out;
+        }
+
+        /* Cinematic Page Title */
+        .hero-text {
             position: absolute;
-            inset: 0;
-            background: radial-gradient(circle at top right, rgba(255,255,255,0.05), transparent);
+            top: 45%;
+            left: 50%;
+            width: 100%;
+            text-align: center;
+            transform: translate(-50%, -50%);
+            font-size: clamp(80px, 12vw, 180px);
+            font-weight: 700;
+            line-height: 0.9;
+            letter-spacing: -4px;
+            color: #000;
+            opacity: 0.03;
+            z-index: 0;
             pointer-events: none;
         }
 
-        .card:hover {
-            transform: translateY(-12px) scale(1.02);
-            background: rgba(47, 129, 247, 0.08);
-            border-color: var(--primary);
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 20px var(--primary-glow);
+        /* Glass UI Navigation Bar */
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 30px 60px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 100;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            background: rgba(255, 255, 255, 0.4);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            animation: fadeDown 1s ease forwards;
         }
 
-        .card-image-wrapper {
+        .logo {
+            font-size: 2.2rem;
+            font-weight: 700;
+            letter-spacing: -1.5px;
+            cursor: pointer;
+        }
+        
+        .logo span {
+            font-weight: 300;
+            opacity: 0.5;
+        }
+
+        .tagline {
+            font-size: 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            opacity: 0.55;
+            margin-top: 6px;
+            font-style: italic;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 120px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-column {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        /* 8b. Smooth Underline Hover Interaction */
+        .nav-column a {
+            color: var(--text-color);
+            text-decoration: none;
+            text-transform: uppercase;
+            position: relative;
+            display: inline-block;
+            width: fit-content;
+        }
+
+        .nav-column a::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            bottom: -4px;
+            width: 0%;
+            height: 2px;
+            background: var(--text-color);
+            transition: width 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+        }
+
+        .nav-column a:hover::after {
             width: 100%;
-            height: 180px;
-            margin-bottom: 24px;
-            border-radius: 20px;
-            overflow: hidden;
-            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .nav-column span {
+            color: var(--text-color);
+            text-transform: uppercase;
+            opacity: 0.6;
+            font-size: 0.75rem;
+        }
+
+        /* Gallery */
+        .gallery-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            perspective: 1400px;
+            margin-top: 50px;
+            z-index: 10;
+        }
+
+        .gallery {
             position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            opacity: 0;
+            transform: translateY(60px);
+            animation: fadeUp 1.2s cubic-bezier(0.19, 1, 0.22, 1) forwards 0.3s;
+            /* 10b. Smooth Motion Blur Easing during Rotation */
+            transition: transform 1s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .card-image-wrapper img {
+        .gallery-float {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            animation: float 12s ease-in-out infinite;
+        }
+
+        .gallery-item {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* 5. Cursor Change */
+            cursor: pointer;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* 5b. Grab cursor on hover */
+        .gallery-item:hover {
+            cursor: grab;
+        }
+        .gallery-item:active {
+            cursor: grabbing;
+        }
+
+        .video-wrapper {
+            position: relative;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            overflow: hidden;
+            background: #000;
+            /* 2. Smooth Video Zoom Animation */
+            transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1), filter 0.8s ease;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.12), 0 10px 20px rgba(0,0,0,0.05);
+        }
+
+        /* Dark overlay for inactive items */
+        .video-wrapper::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            transition: background 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        /* 3. Cinematic Video Gradient Overlay (Bottom Up) */
+        .video-wrapper::before {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60%;
+            background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.3) 50%, transparent 100%);
+            z-index: 3;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .gallery-item.center .video-wrapper::before {
+            opacity: 1;
+        }
+
+        /* 2b. Cinematic Hover Lighting */
+        .gallery-item:hover .video-wrapper {
+            transform: scale(1.04);
+            filter: brightness(1.1) contrast(1.05);
+            box-shadow: 0 40px 80px rgba(0,0,0,0.2), 0 15px 30px rgba(0,0,0,0.1);
+        }
+        
+        .gallery-item:hover .video-wrapper::after {
+            background: rgba(0,0,0,0.05);
+        }
+
+        /* 3D Distortions and Positioning */
+        .gallery-item.center {
+            transform: translate3d(0, -2%, 200px) rotateY(0deg);
+            z-index: 3;
+        }
+        
+        .gallery-item.center .video-wrapper {
+            width: 45vw;
+            height: 65vh;
+            max-width: 600px;
+            max-height: 850px;
+        }
+        
+        .gallery-item.center .video-wrapper::after {
+            background: rgba(0,0,0,0);
+        }
+        
+        .gallery-item.center:hover .video-wrapper {
+            transform: scale(1.06);
+        }
+
+        .gallery-item.left {
+            transform: translate3d(-35vw, -2%, -80px) rotateY(18deg);
+            z-index: 2;
+        }
+
+        .gallery-item.left .video-wrapper {
+            width: 30vw;
+            height: 50vh;
+            max-width: 400px;
+            max-height: 650px;
+        }
+
+        .gallery-item.right {
+            transform: translate3d(35vw, -2%, -80px) rotateY(-18deg);
+            z-index: 2;
+        }
+
+        .gallery-item.right .video-wrapper {
+            width: 30vw;
+            height: 50vh;
+            max-width: 400px;
+            max-height: 650px;
+        }
+
+        video {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+            z-index: 1;
         }
 
-        .card:hover .card-image-wrapper img {
-            transform: scale(1.1);
+        /* 4. Floating Labels on Videos */
+        .video-title-overlay {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            z-index: 5;
+            color: white;
+            opacity: 0;
+            transform: translateY(15px);
+            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .card h2 {
-            font-family: var(--font-heading);
-            font-size: 1.6rem;
+        .center .video-title-overlay {
+            opacity: 1;
+            transform: translateY(0);
+            transition-delay: 0.1s;
+        }
+        
+        .gallery-item.center:hover .video-title-overlay {
+            transform: translateY(-5px);
+        }
+
+        .video-title {
+            font-size: 1.4rem;
             font-weight: 700;
-            margin-bottom: 12px;
-            color: #fff;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        .video-subtitle {
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-bottom: 6px;
+            opacity: 0.8;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
         }
 
-        .card p {
-            font-size: 1rem;
-            color: var(--text-muted);
+        /* 7. Active Video Indicator (Dots) */
+        .controls-container {
+            position: fixed;
+            bottom: 36px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            z-index: 20;
+            opacity: 0;
+            animation: fadeUp 1s ease forwards 0.8s;
+        }
+
+        .control-dot {
+            width: 40px;
+            height: 2px;
+            background: rgba(0,0,0,0.2);
+            transition: all 0.4s ease;
+        }
+
+        .control-dot.active {
+            background: var(--accent-color);
+            transform: scaleY(2);
+            box-shadow: 0 0 15px rgba(0, 71, 255, 0.4);
+        }
+
+        /* 10. Hero Section Wrapper */
+        .hero-section {
+            height: 100vh;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            z-index: 10;
+        }
+
+        /* 11. Features Section */
+        .features-section {
+            padding: 160px 10%;
+            background: #fff;
+            position: relative;
+            z-index: 20;
+            border-top: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .section-tag {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--accent-color);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 24px;
+            display: block;
+        }
+
+        .section-title {
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 700;
+            line-height: 1.1;
+            letter-spacing: -2px;
+            margin-bottom: 60px;
+            max-width: 900px;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 80px;
+        }
+
+        .feature-card h3 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            letter-spacing: -1px;
+        }
+
+        .feature-card p {
+            font-size: 1.1rem;
             line-height: 1.6;
+            opacity: 0.6;
+            font-weight: 400;
+        }
+
+        /* 12. Main Footer */
+        footer {
+            background: #000;
+            color: #fff;
+            padding: 100px 10% 40px;
+            position: relative;
+            z-index: 30;
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 100px;
+            margin-bottom: 80px;
+        }
+
+        .footer-logo {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -2px;
             margin-bottom: 20px;
         }
 
-        .card-icon {
-            background: rgba(47, 129, 247, 0.1);
-            color: var(--primary);
-            padding: 12px;
-            border-radius: 50%;
-            transition: all 0.3s;
-            font-size: 28px;
-            margin-top: auto;
+        .footer-tagline {
+            opacity: 0.5;
+            font-size: 1.1rem;
+            max-width: 300px;
+            line-height: 1.4;
         }
 
-        .card:hover .card-icon {
-            background: var(--primary);
-            color: white;
-            transform: scale(1.1) rotate(5deg);
+        .footer-head {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 30px;
+            opacity: 0.4;
         }
 
-        /* --- Cursor Effects --- */
-        .cursor-glow {
-            position: fixed;
-            width: 600px;
-            height: 600px;
-            background: radial-gradient(circle, rgba(47, 129, 247, 0.08) 0%, transparent 70%);
-            border-radius: 50%;
-            pointer-events: none;
-            z-index: 1;
-            transform: translate(-50%, -50%);
-            transition: transform 0.1s ease-out;
-            will-change: transform;
+        .footer-links {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
         }
 
-        /* --- Spline Canvas --- */
-        #spline-canvas {
+        .footer-links a {
+            color: #fff;
+            text-decoration: none;
+            font-size: 1.1rem;
+            opacity: 0.7;
+            transition: opacity 0.3s ease;
+        }
+
+        .footer-links a:hover {
+            opacity: 1;
+        }
+
+        .footer-bottom {
+            padding-top: 40px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            opacity: 0.4;
+        }
+
+        @media (max-width: 768px) {
+            .footer-grid { grid-template-columns: 1fr; gap: 60px; }
+            .features-section { padding: 100px 8%; }
+            .section-title { font-size: 2.8rem; }
+        }
+
+        /* Animations */
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(40px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes fadeDown {
+            from { opacity: 0; transform: translateY(-40px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotateX(0deg); }
+            50% { transform: translateY(-12px) rotateX(1deg); }
+        }
+
+        @keyframes floatScroll {
+            0% { transform: translate(-50%, 0); }
+            50% { transform: translate(-50%, 8px); }
+            100% { transform: translate(-50%, 0); }
+        }
+
+        /* ===== HAMBURGER BUTTON ===== */
+        .hamburger {
+            display: none;
+            flex-direction: column;
+            justify-content: space-between;
+            width: 28px;
+            height: 18px;
+            cursor: pointer;
+            z-index: 1001;
+            background: none;
+            border: none;
+            padding: 0;
+        }
+
+        .hamburger span {
+            display: block;
+            height: 2px;
+            width: 100%;
+            background: #111;
+            border-radius: 2px;
+            transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+            transform-origin: center;
+        }
+
+        /* Hamburger → X animation */
+        .hamburger.open span:nth-child(1) { transform: translateY(8px) rotate(45deg); }
+        .hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+        .hamburger.open span:nth-child(3) { transform: translateY(-8px) rotate(-45deg); }
+
+        /* ===== MOBILE MENU DRAWER ===== */
+        .mobile-menu {
             position: fixed;
             inset: 0;
-            z-index: 0;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            background: rgba(237, 237, 237, 0.95);
+            opacity: 0;
             pointer-events: none;
-            opacity: 0.7; /* Increased visibility */
+            transform: translateY(-20px);
+            transition: opacity 0.5s cubic-bezier(0.19, 1, 0.22, 1),
+                        transform 0.5s cubic-bezier(0.19, 1, 0.22, 1);
         }
 
-        /* --- Animations --- */
-        @keyframes fadeInDown {
-            from { opacity: 0; transform: translateY(-20px); }
-            to { opacity: 1; transform: translateY(0); }
+        .mobile-menu.open {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
         }
 
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
+        .mobile-menu a {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(2rem, 8vw, 3.5rem);
+            font-weight: 700;
+            letter-spacing: -1px;
+            color: #111;
+            text-decoration: none;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.19, 1, 0.22, 1),
+                        color 0.3s ease;
         }
 
-        /* --- Mobile Improvements --- */
-        @media (max-width: 600px) {
-            body {
-                padding: 24px 20px;
-                justify-content: center;
-                overflow-y: auto;
-            }
-
-            header {
-                margin-bottom: 30px;
-            }
-
-            h1 { font-size: 2.2rem; }
-
-            .cards-container {
-                flex-direction: column;
-                gap: 16px;
-            }
-
-            .card {
-                max-width: 100%;
-                padding: 24px;
-                border-radius: 24px;
-            }
-
-            .card-image-wrapper { height: 140px; }
+        .mobile-menu.open a {
+            opacity: 1;
+            transform: translateY(0);
         }
+
+        .mobile-menu.open a:nth-child(1) { transition-delay: 0.1s; }
+        .mobile-menu.open a:nth-child(2) { transition-delay: 0.18s; }
+        .mobile-menu.open a:nth-child(3) { transition-delay: 0.26s; }
+        .mobile-menu.open a:nth-child(4) { transition-delay: 0.34s; }
+
+        .mobile-menu a:hover { color: #555; }
+
+        .mobile-menu-footer {
+            position: absolute;
+            bottom: 40px;
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+            opacity: 0.5;
+            text-transform: uppercase;
+        }
+
+        @media (max-width: 1024px) { .hamburger { display: flex; } }
+
+        /* ===== RESPONSIVE ===== */
+
+        /* Large Tablet (landscape iPad, small laptop) */
+        @media (max-width: 1024px) {
+            nav { padding: 24px 40px; }
+            .logo { font-size: 1.8rem; }
+            .nav-links { gap: 60px; font-size: 0.72rem; }
+            .hero-text { font-size: clamp(50px, 9vw, 100px); }
+
+            .gallery-item.left  { transform: translate3d(-38vw, -2%, -150px) rotateY(20deg); }
+            .gallery-item.right { transform: translate3d(38vw,  -2%, -150px) rotateY(-20deg); }
+            .gallery-item.center .video-wrapper { width: 60vw; height: 55vh; }
+            .left .video-wrapper, .right .video-wrapper { width: 40vw; height: 44vh; }
+        }
+
+        /* Tablet portrait (768px) */
+        @media (max-width: 768px) {
+            nav {
+                padding: 20px 24px;
+                align-items: center;
+            }
+            .logo { font-size: 1.5rem; }
+            .tagline { font-size: 0.7rem; }
+            .nav-links { display: none; }
+            .hero-text { display: none; }
+
+            .gallery-container { perspective: 900px; margin-top: 70px; padding-bottom: 80px; }
+            .gallery-float { animation: none; }
+
+            .gallery-item.left  { transform: translate3d(-34vw, 0%, -120px) rotateY(22deg); }
+            .gallery-item.right { transform: translate3d(34vw,  0%, -120px) rotateY(-22deg); }
+
+            .gallery-item.center .video-wrapper { width: 62vw; height: 52vh; border-radius: 12px; }
+            .left .video-wrapper, .right .video-wrapper { width: 34vw; height: 40vh; border-radius: 10px; }
+
+            .controls-container { bottom: 24px; left: 50%; transform: translateX(-50%); gap: 10px; }
+            .control-dot { width: 30px; }
+        }
+
+        /* Mobile (480px and below) */
+        @media (max-width: 480px) {
+            nav { padding: 16px 20px; }
+            .logo { font-size: 1.3rem; }
+            .tagline { font-size: 0.65rem; letter-spacing: 0.5px; }
+            .hero-text { display: none; }
+
+            .gallery-container {
+                perspective: 700px;
+                margin-top: 72px;
+                padding-bottom: 100px;
+            }
+
+            /* On mobile: shift center card slightly upward for more breathing room */
+            .gallery-item.center {
+                transform: translate3d(0, -10%, 200px) rotateY(0deg);
+            }
+
+            /* On mobile: stack side cards much further back */
+            .gallery-item.left  { transform: translate3d(-28vw, 2%, -200px) rotateY(28deg); }
+            .gallery-item.right { transform: translate3d(28vw,  2%, -200px) rotateY(-28deg); }
+
+            .gallery-item.center .video-wrapper {
+                width: 78vw;
+                height: 50vh;
+                border-radius: 12px;
+            }
+
+            .left .video-wrapper, .right .video-wrapper {
+                width: 28vw;
+                height: 36vh;
+                border-radius: 8px;
+            }
+
+            .video-title { font-size: 1rem; letter-spacing: 1px; }
+            .video-subtitle { font-size: 0.65rem; }
+            .video-title-overlay { bottom: 18px; left: 18px; }
+
+            .controls-container { bottom: 20px; left: 50%; transform: translateX(-50%); gap: 8px; }
+            .control-dot { width: 24px; height: 2px; }
+        }
+
     </style>
 </head>
-
 <body>
 
-    <div class="cursor-glow" id="cursor-glow"></div>
-    <canvas id="spline-canvas"></canvas>
-
-    <div class="bg-blobs" id="bg-blobs">
-        <div class="blob blob-1"></div>
-        <div class="blob blob-2"></div>
-        <div class="blob blob-3"></div>
-    </div>
-
-    <header>
-        <div class="logo-area">
-            <span class="material-icons logo-icon">sign_language</span>
+    <section class="hero-section">
+        <!-- Radial Glow Background & Text -->
+        <div class="cursor-light"></div>
+        <div class="hero-text">
+            SIGN LANGUAGE<br>AI INTERPRETER
         </div>
-        <h1>Welcome to SignLink</h1>
-        <p class="subtitle">Choose how you want to connect today.</p>
-    </header>
 
-    <div class="cards-container">
-        <!-- Card 1: Video Call -->
-        <a href="videocall.html" class="card">
-            <div class="card-image-wrapper">
-                <img src="videocall_card.png" alt="Video Call Illustration">
-            </div>
-            <div class="card-content">
-                <h2>Video Call</h2>
-                <p>Connect with others in real-time with integrated sign language detection.</p>
-            </div>
-            <span class="material-icons card-icon">video_camera_front</span>
-        </a>
-
-        <!-- Card 2: Live Translation -->
-        <a href="translation.html" class="card">
-            <div class="card-image-wrapper">
-                <img src="translation_card.png" alt="Live Translation Illustration">
-            </div>
-            <div class="card-content">
-                <h2>Live Translation</h2>
-                <p>Convert sign language to text and speech instantly without a call.</p>
-            </div>
-            <span class="material-icons card-icon">translate</span>
-        </a>
-
-        <!-- Card 3: AI Training -->
-        <a href="training.html" class="card">
-            <div class="card-image-wrapper">
-                <img src="training_card.png" alt="AI Training Illustration">
-            </div>
-            <div class="card-content">
-                <h2>AI Training</h2>
-                <p>Contribute to the dataset and help train the sign language model.</p>
-            </div>
-            <span class="material-icons card-icon">model_training</span>
-        </a>
+    <!-- Mobile Menu Drawer -->
+    <div class="mobile-menu" id="mobileMenu">
+        <a href="index.html">HOME</a>
+        <a href="videocall.html">VIDEO CALL</a>
+        <a href="translation.html">INTERPRETER</a>
+        <a href="training.html">AI STUDIO</a>
+        <div class="mobile-menu-footer">SIGNLINK · BREAKING THE SILENCE WITH AI.</div>
     </div>
+
+    <!-- Glass Navbar -->
+    <nav>
+        <div>
+            <div class="logo">SIGNLINK</div>
+            <div class="tagline">Breaking the Silence with AI.</div>
+        </div>
+        <div class="nav-links">
+            <div class="nav-column">
+                <a href="videocall.html">VIDEO CALL</a>
+                <a href="translation.html">INTERPRETER</a>
+                <a href="training.html">AI STUDIO</a>
+            </div>
+            <div class="nav-column">
+                <span>INFO@SIGNLINK.AI</span>
+                <span>+1 800 555 0199</span>
+            </div>
+        </div>
+        <!-- Hamburger button → only visible on ≤1024px via CSS -->
+        <button class="hamburger" id="hamburger" aria-label="Open menu">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </nav>
+
+            <!-- 3D Gallery Container -->
+            <div class="gallery-container">
+                <div class="gallery" id="gallery">
+                    <!-- Floating wrapper for ambient motion -->
+                    <div class="gallery-float">
+                        <!-- Left Item (Video Call) -->
+                        <a href="videocall.html" class="gallery-item left" data-index="0">
+                            <div class="video-wrapper">
+                                <video autoplay loop muted playsinline>
+                                    <source src="card-video-3.mp4" type="video/mp4">
+                                </video>
+                                <div class="video-title-overlay">
+                                    <div class="video-subtitle">CONNECT / DETECT</div>
+                                    <div class="video-title">VIDEO CALL</div>
+                                </div>
+                            </div>
+                        </a>
+
+                        <!-- Center Item (Main UI / Interpreter) -->
+                        <a href="translation.html" class="gallery-item center" data-index="1">
+                            <div class="video-wrapper">
+                                <video autoplay loop muted playsinline>
+                                    <source src="card-video-1.mp4" type="video/mp4">
+                                </video>
+                                <div class="video-title-overlay">
+                                    <div class="video-subtitle">TRANSLATION ENGINE</div>
+                                    <div class="video-title">AI INTERPRETER</div>
+                                </div>
+                            </div>
+                        </a>
+
+                        <!-- Right Item (AI Training) -->
+                        <a href="training.html" class="gallery-item right" data-index="2">
+                            <div class="video-wrapper">
+                                <video autoplay loop muted playsinline>
+                                    <source src="card-video-2.mp4" type="video/mp4">
+                                </video>
+                                <div class="video-title-overlay">
+                                    <div class="video-subtitle">CUSTOMIZE / LEARN</div>
+                                    <div class="video-title">AI STUDIO</div>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Indicator Bar -->
+            <div class="controls-container" id="controls">
+                <div class="control-dot"></div>
+                <div class="control-dot active"></div>
+                <div class="control-dot"></div>
+            </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features-section">
+        <span class="section-tag">Empowering Communication</span>
+        <h2 class="section-title">The most advanced AI engine for Sign Language.</h2>
+        
+        <div class="features-grid">
+            <div class="feature-card">
+                <h3>Real-time Translation</h3>
+                <p>Proprietary neural networks convert sign language to text and speech instantly, breaking barriers in every conversation.</p>
+            </div>
+            <div class="feature-card">
+                <h3>Infinite Dataset</h3>
+                <p>Our AI Studio allows users to contribute new signs, continuously expanding the linguistic reach of the platform.</p>
+            </div>
+            <div class="feature-card">
+                <h3>Cross-Platform</h3>
+                <p>WebRTC-powered calls and mobile-first design ensure SignLink is available whenever and wherever you need it.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-grid">
+            <div>
+                <div class="footer-logo">SIGNLINK</div>
+                <p class="footer-tagline">Giving every hand a voice. Breaking the silence with artificial intelligence.</p>
+            </div>
+            <div>
+                <div class="footer-head">Navigation</div>
+                <ul class="footer-links">
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="translation.html">Interpreter</a></li>
+                    <li><a href="videocall.html">Video Call</a></li>
+                    <li><a href="training.html">AI Studio</a></li>
+                </ul>
+            </div>
+            <div>
+                <div class="footer-head">Contact & Social</div>
+                <ul class="footer-links">
+                    <li><a href="mailto:support@signlink.ai">Email Support</a></li>
+                    <li><a href="#">GitHub Repository</a></li>
+                    <li><a href="#">LinkedIn</a></li>
+                    <li><a href="#">X / Twitter</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <span>© 2026 SIGNLINK PROJECT. ALL RIGHTS RESERVED.</span>
+            <span>BUILT WITH MEDIAPIPE • TENSORFLOW • WEBRTC</span>
+        </div>
+    </footer>
+
+
 
     <script>
-        const glow = document.getElementById('cursor-glow');
-        const blobs = document.querySelectorAll('.blob');
-        const cards = document.querySelectorAll('.card');
-        const header = document.querySelector('header');
-        const canvas = document.getElementById('spline-canvas');
-        const ctx = canvas.getContext('2d');
+        const items     = Array.from(document.querySelectorAll('.gallery-item'));
+        const dots      = Array.from(document.querySelectorAll('.control-dot'));
+        const gallery   = document.getElementById('gallery');
+        const cursorLight = document.querySelector('.cursor-light');
 
-        let width, height;
-        let mouse = { x: -1000, y: -1000 };
+        let currentIndex = 1;
 
-        function resize() {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resize);
-        resize();
-
-        // Spline Data
-        const splines = [];
-        for (let i = 0; i < 5; i++) {
-            splines.push({
-                y: height * 0.2 + (i * height * 0.15),
-                amplitude: 30 + (i * 10),
-                speed: 0.003 + (i * 0.002), // Much slower, subtle speed
-                offset: i * Math.PI,
-                color: i % 2 === 0 ? 'rgba(47, 129, 247, 0.7)' : 'rgba(139, 92, 246, 0.6)' // Increased alpha
+        /* -------- Core: switch which card is "centre" -------- */
+        function setActive(newIndex) {
+            currentIndex = newIndex;
+            items.forEach((item, i) => {
+                item.classList.remove('left', 'center', 'right');
+                if      (i === currentIndex) item.classList.add('center');
+                else if (i <  currentIndex) item.classList.add('left');
+                else                        item.classList.add('right');
             });
+            dots.forEach((dot, i) => dot.classList.toggle('active', i === currentIndex));
         }
 
-        function drawSplines(time) {
-            ctx.clearRect(0, 0, width, height);
-            
-            splines.forEach(s => {
-                ctx.beginPath();
-                ctx.strokeStyle = s.color;
-                ctx.lineWidth = 2; // Thicker lines
-
-                for (let x = 0; x <= width; x += 10) {
-                    // Base wave
-                    let waveY = s.y + Math.sin(x * 0.002 + s.offset + time * s.speed) * s.amplitude;
-                    
-                    // Mouse distortion
-                    const dx = x - mouse.x;
-                    const dy = waveY - mouse.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist < 250) {
-                        const force = (250 - dist) / 250;
-                        waveY += dy * force * 0.6;
-                    }
-
-                    if (x === 0) ctx.moveTo(x, waveY);
-                    else ctx.lineTo(x, waveY);
+        /* -------- Card clicks -------- */
+        items.forEach((item, i) => {
+            item.addEventListener('click', (e) => {
+                if (!item.classList.contains('center')) {
+                    // Side card: rotate gallery, don't follow the href
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setActive(i);
                 }
-                ctx.stroke();
+                // Centre card: let <a> href navigate normally
             });
-
-            requestAnimationFrame(drawSplines);
-        }
-        drawSplines(0);
-
-        document.addEventListener('mousemove', (e) => {
-            const { clientX, clientY } = e;
-            mouse.x = clientX;
-            mouse.y = clientY;
-            
-            // Move glow
-            glow.style.left = `${clientX}px`;
-            glow.style.top = `${clientY}px`;
-
-            // Parallax Blobs
-            const moveX = (clientX - window.innerWidth / 2) / 25;
-            const moveY = (clientY - window.innerHeight / 2) / 25;
-
-            blobs.forEach((blob, index) => {
-                const speed = (index + 1) * 0.5;
-                blob.style.transform = `translate(${moveX * speed}px, ${moveY * speed}px)`;
-            });
-
-            // Subtle Card Tilt
-            cards.forEach(card => {
-                const rect = card.getBoundingClientRect();
-                const cardX = clientX - (rect.left + rect.width / 2);
-                const cardY = clientY - (rect.top + rect.height / 2);
-                
-                const distance = Math.sqrt(cardX**2 + cardY**2);
-                if (distance < 400) {
-                    const tiltX = cardY / 20;
-                    const tiltY = -cardX / 20;
-                    card.style.transform = `perspective(1000px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateY(-5px)`;
-                } else {
-                    card.style.transform = '';
-                }
-            });
-
-            const headerX = (clientX - window.innerWidth / 2) / 50;
-            const headerY = (clientY - window.innerHeight / 2) / 50;
-            header.style.transform = `translate(${headerX}px, ${headerY}px)`;
         });
 
-        document.addEventListener('mouseleave', () => {
-            mouse.x = -1000;
-            mouse.y = -1000;
-            cards.forEach(card => card.style.transform = '');
-            header.style.transform = '';
+        /* -------- Dot clicks -------- */
+        dots.forEach((dot, i) => {
+            dot.style.cursor = 'pointer';
+            dot.addEventListener('click', () => setActive(i));
+        });
+
+        /* -------- Mouse spotlight only (no gallery tilt) -------- */
+        document.addEventListener('mousemove', (e) => {
+            cursorLight.style.left = e.clientX + 'px';
+            cursorLight.style.top  = e.clientY + 'px';
+        });
+
+        /* -------- Touch: block swipe navigation, allow tap -------- */
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+
+        document.addEventListener('touchend', (e) => {
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            const dy = e.changedTouches[0].clientY - touchStartY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // If the finger moved more than 10px it's a swipe, not a tap
+            if (dist > 10) {
+                e.preventDefault(); // block any click/navigation from the swipe
+
+                // Horizontal swipe: cycle the gallery
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    if (dx < -30 && currentIndex < items.length - 1) {
+                        setActive(currentIndex + 1); // swipe left → next
+                    } else if (dx > 30 && currentIndex > 0) {
+                        setActive(currentIndex - 1); // swipe right → prev
+                    }
+                }
+            }
+        }, { passive: false });
+
+
+        /* -------- Hamburger toggle -------- */
+        const hamburger   = document.getElementById('hamburger');
+        const mobileMenu  = document.getElementById('mobileMenu');
+
+        hamburger.addEventListener('click', () => {
+            const isOpen = mobileMenu.classList.toggle('open');
+            hamburger.classList.toggle('open', isOpen);
+            hamburger.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
+        });
+
+        // Close menu when a link is tapped
+        mobileMenu.querySelectorAll('a').forEach(link => {
+            link.addEventListener('click', () => {
+                mobileMenu.classList.remove('open');
+                hamburger.classList.remove('open');
+            });
         });
     </script>
 </body>
-
 </html>
