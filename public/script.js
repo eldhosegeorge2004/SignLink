@@ -1063,7 +1063,8 @@ joinBtn.addEventListener('click', async () => {
                 handlePeerJoined(remoteId);
             }
         })
-        .on('broadcast', { event: 'offer' }, async (payload) => {
+        .on('broadcast', { event: 'offer' }, async (data) => {
+            const payload = data.payload || data;
             console.log('[Signaling] Offer received from peer.');
             // Mark self as the polite peer -- we received, not sent the offer
             isPolite = true;
@@ -1087,7 +1088,8 @@ joinBtn.addEventListener('click', async () => {
                 console.error('[Signaling] Error handling offer:', e);
             }
         })
-        .on('broadcast', { event: 'answer' }, async (payload) => {
+        .on('broadcast', { event: 'answer' }, async (data) => {
+            const payload = data.payload || data;
             console.log('[Signaling] Answer received from peer.');
             if (pc) {
                 try {
@@ -1100,7 +1102,8 @@ joinBtn.addEventListener('click', async () => {
                 console.warn('[Signaling] Answer received but no RTCPeerConnection exists.');
             }
         })
-        .on('broadcast', { event: 'ice' }, async (payload) => {
+        .on('broadcast', { event: 'ice' }, async (data) => {
+            const payload = data.payload || data;
             if (pc && pc.remoteDescription && pc.remoteDescription.type) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
