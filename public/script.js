@@ -125,6 +125,7 @@ let batchQueue = []; // New data waiting to be uploaded
 
 // --- DOM Elements ---
 const joinScreen = document.getElementById('join-screen');
+const joiningLoader = document.getElementById('joining-loader');
 const meetingRoom = document.getElementById('meeting-room');
 const newMeetingBtn = document.getElementById('newMeetingBtn');
 const startRoomInput = document.getElementById('startRoomInput');
@@ -209,8 +210,23 @@ let lastRemoteSpokenText = "";
 let speakTimeout = null;           // NEW: Track pending speech to avoid race conditions
 let iceCandidatesBuffer = []; // Buffer for ICE candidates
 let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actually running
+let isCreatingMeeting = false;    // NEW: Track if user is the meeting creator
 let localName = "You";
 let remoteName = "Remote User";
+
+// Helper to stop all camera/mic tracks
+function stopCamera() {
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
+            track.stop();
+            console.log("Stopped track:", track.kind);
+        });
+        localStream = null;
+    }
+    if (localVideo) localVideo.srcObject = null;
+    if (remoteVideo) remoteVideo.srcObject = null;
+    console.log("Camera and tracks stopped.");
+}
 
 // --- YouTube-style Caption State (Video Call) ---
 let vcCaptionLineA = '';
@@ -986,9 +1002,22 @@ function popEmojis(emoji) {
 
 // --- Initialization & UI ---
 function validateLobby() {
-    const room = startRoomInput.value.trim();
+    const room = startRoomInput.value.trim().toLowerCase();
     const name = userNameInput ? userNameInput.value.trim() : "";
-    joinBtn.disabled = (room.length === 0 || name.length === 0);
+    
+    // Enforce app-generated code format (5-letter word)
+    const codeFormat = /^[a-z]{5}$/;
+    const isValidCode = codeFormat.test(room);
+
+    if (room.length > 0 && !isValidCode) {
+        lobbyStatus.innerText = "Invalid code. Please use a 5-letter code (e.g., apple, shark).";
+        lobbyStatus.style.color = "#ef4444";
+        joinBtn.disabled = true;
+    } else {
+        lobbyStatus.innerText = "Ready to connect";
+        lobbyStatus.style.color = "#4db6ac";
+        joinBtn.disabled = (room.length === 0 || name.length === 0);
+    }
 }
 
 startRoomInput.addEventListener('input', validateLobby);
@@ -1038,11 +1067,13 @@ function loadSavedLabels() {
 }
 
 newMeetingBtn.addEventListener('click', () => {
-    let room = startRoomInput.value.trim();
-    if (!room) {
-        room = Math.random().toString(36).substring(7);
-        startRoomInput.value = room;
-    }
+    // Generate a fresh 5-letter code
+    const letters = "abcdefghijklmnopqrstuvwxyz";
+    let room = "";
+    for(let i=0; i<5; i++) room += letters.charAt(Math.floor(Math.random() * letters.length));
+    
+    startRoomInput.value = room;
+    isCreatingMeeting = true; // Mark as creator
     
     validateLobby();
 
@@ -1059,7 +1090,12 @@ newMeetingBtn.addEventListener('click', () => {
     }
 });
 
-joinBtn.addEventListener('click', async () => {
+joinBtn.addEventListener('click', async (e) => {
+    // If this click was manual (not from New Meeting button), reset creator flag
+    if (e.isTrusted && !newMeetingBtn.contains(document.activeElement)) {
+        isCreatingMeeting = false;
+    }
+
     roomName = startRoomInput.value.trim().replace(/[^a-zA-Z0-9-]/g, '-');
     if (!roomName) return;
 
@@ -1109,7 +1145,14 @@ joinBtn.addEventListener('click', async () => {
     await startCamera();
 
     joinScreen.classList.remove('active');
-    meetingRoom.classList.add('active');
+    
+    // If creating meeting, go straight in. If joining, show loader.
+    if (isCreatingMeeting) {
+        meetingRoom.classList.add('active');
+    } else {
+        joiningLoader.classList.add('active');
+    }
+
     meetingCodeDisplay.innerText = roomName;
     if (mobileMeetingCodeDisplay) mobileMeetingCodeDisplay.innerText = roomName;
 
@@ -1298,8 +1341,36 @@ joinBtn.addEventListener('click', async () => {
         .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
                 updateStatus("Connected to signaling server", "success");
+
+                // Check for existing users if we are NOT the creator
+                if (!isCreatingMeeting) {
+                    // Register presence first to be noticed
+                    supabaseChannel.track({ user_id: 'joiner', online_at: new Date().toISOString() });
+                    
+                    // Small delay to let presence sync
+                    setTimeout(() => {
+                        const presenceState = supabaseChannel.presenceState();
+                        const participantCount = Object.keys(presenceState).length;
+                        
+                        // If no one else is in the room, it means the meeting doesn't exist
+                        if (participantCount <= 1) {
+                            alert("Meeting not found. Please check your code or wait for the host to start.");
+                            stopCamera(); // Safety: Turn off camera since we are leaving
+                            joiningLoader.classList.remove('active');
+                            joinScreen.classList.add('active');
+                            lobbyStatus.innerText = "Meeting not found.";
+                            lobbyStatus.style.color = "#ef4444";
+                            isCreatingMeeting = false; // Reset state
+                            return;
+                        } else {
+                            // Host found, show meeting room
+                            joiningLoader.classList.remove('active');
+                            meetingRoom.classList.add('active');
+                        }
+                    }, 2500); // Increased slightly for better visual feedback
+                }
+
                 // Notify others that we joined
-                // Use a small delay for the new person to broadcast, ensuring others are ready
                 setTimeout(() => {
                     supabaseChannel.send({
                         type: 'broadcast',
