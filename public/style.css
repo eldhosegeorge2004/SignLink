@@ -559,6 +559,10 @@ footer {
 }
 
 .meeting-status-bar {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     align-items: center;
     gap: 10px;
@@ -567,7 +571,7 @@ footer {
     padding: 6px 16px;
     border-radius: 30px;
     width: fit-content;
-    margin: 0 auto 10px auto;
+    margin: 0;
     border: 1px solid var(--glass-border);
     font-size: 0.85rem;
     font-weight: 500;
@@ -621,20 +625,45 @@ footer {
 
 .remote-view-container {
     width: 100%;
-    height: auto;
+    height: 100%;
+    max-height: calc(100vh - 120px);
+    margin: 0 auto;
     min-width: 0;
     position: relative;
-    grid-column: 2;
-    grid-row: 1;
+    grid-column: 2 / 4;
+    grid-row: 1 / 4;
     background: rgba(0, 0, 0, 0.3);
     border-radius: 16px;
     overflow: hidden;
-    display: flex;
+    display: none; /* Hidden when not connected */
     align-items: center;
     justify-content: center;
     border: 1px solid var(--glass-border);
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 9 / 16;
+}
+
+.main-stage.is-connected .remote-view-container {
+    display: flex;
+}
+
+.remote-view-container::before {
+    content: 'videocam_off';
+    font-family: 'Material Icons';
+    font-size: 64px;
+    color: rgba(255, 255, 255, 0.2);
+    position: absolute;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 1;
+}
+
+.remote-view-container.video-muted::before {
+    opacity: 1;
+}
+
+.remote-view-container.video-muted video {
+    opacity: 0;
 }
 
 video {
@@ -650,16 +679,18 @@ video {
 
 .remote-view-container>video,
 .local-view-container>video {
-    object-fit: contain !important;
+    object-fit: cover !important;
     object-position: center center;
 }
 
 .local-view-container {
     position: relative;
-    grid-column: 3;
-    grid-row: 1;
+    grid-column: 2 / 4;
+    grid-row: 1 / 4;
     width: 100%;
-    height: auto;
+    height: 100%;
+    max-height: calc(100vh - 120px);
+    margin: 0 auto;
     min-width: 0;
     background: #1e293b;
     border-radius: 16px;
@@ -671,7 +702,21 @@ video {
     display: flex;
     align-items: center;
     justify-content: center;
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 9 / 16;
+}
+
+.main-stage.is-connected .local-view-container {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 25%;
+    max-width: 160px;
+    height: auto;
+    aspect-ratio: 9 / 16;
+    z-index: 100;
+    grid-column: unset;
+    grid-row: unset;
+    margin: 0;
 }
 
 .local-view-container::before {
@@ -715,22 +760,28 @@ video {
     width: 100%;
     height: 100%;
     pointer-events: none;
-    object-fit: contain;
+    object-fit: cover;
 }
 
 .userInfo {
     position: absolute;
-    bottom: 16px;
-    left: 16px;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(8px);
+    bottom: 12px;
+    left: 12px;
+    background: rgba(15, 23, 42, 0.85); /* Darker for better contrast */
+    backdrop-filter: blur(12px);
     color: white;
-    padding: 6px 12px;
-    border-radius: 8px;
+    padding: 6px 14px;
+    border-radius: 20px; /* Pillow style */
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: 600;
     pointer-events: none;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 100; /* Ensure it stays above video */
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    transition: all 0.3s ease;
 }
 
 .caption-overlay {
@@ -823,19 +874,20 @@ video {
 }
 
 .prediction-sign-card {
-    width: auto;
-    max-width: 76px;
-    min-width: 60px;
-    height: 84px;
-    background: rgba(15, 23, 42, 0.92);
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    border-radius: 10px;
+    flex: 0 0 auto;
+    width: 90px;
+    height: 110px;
+    background: #111827; /* Darker than the panel */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 6px;
+    padding: 8px;
     flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .prediction-sign-card.no-image {
@@ -844,10 +896,10 @@ video {
 
 .prediction-sign-card img {
     width: 100%;
-    height: 50px;
+    height: 65px;
     object-fit: contain;
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    background: transparent;
 }
 
 .prediction-sign-card.no-image img {
@@ -857,12 +909,15 @@ video {
 .prediction-sign-card-label {
     margin-top: 4px;
     color: #ffffff;
-    font-size: 0.62rem;
+    font-size: 0.85rem;
+    font-weight: 700;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     width: 100%;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 #remote-caption-overlay {
@@ -884,56 +939,92 @@ video {
     grid-row: 1 / 4;
     width: auto;
     min-height: 0;
-    background: rgba(15, 23, 42, 0.92);
-    border: 1px solid rgba(59, 130, 246, 0.35);
-    border-radius: 16px;
+    max-height: 100%;
+    background: rgba(15, 23, 42, 0.96);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 28px;
     z-index: 65;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    backdrop-filter: blur(15px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+    min-width: clamp(280px, 35vw, 400px);
+    opacity: 0;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    visibility: hidden;
+}
+
+.caption-log-panel.visible {
+    display: flex;
+    opacity: 1;
+    visibility: visible;
+}
+
+.caption-panel-content {
+    flex: 1;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    backdrop-filter: blur(8px);
-    min-width: clamp(200px, 25vw, 280px);
-}
-
-.caption-log-header {
-    padding: 10px 12px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: #ffffff;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+    min-height: 0;
+    padding-top: 15px; /* Added since header is removed */
 }
 
 .caption-log-list {
     flex: 1;
     overflow-y: auto;
-    padding: 10px 12px;
+    padding: 15px 24px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 16px;
 }
 
 .caption-log-empty {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.78rem;
+    margin-bottom: 0;
+    padding-left: 12px;
+    border-left: 2px solid rgba(59, 130, 246, 0.8);
+    color: #e2e8f0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    animation: fadeIn 0.3s ease-out;
+    opacity: 0.7;
 }
 
 .caption-log-entry {
-    background: rgba(30, 41, 59, 0.85);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: 10px;
-    padding: clamp(6px, 1.5vw, 8px) clamp(8px, 2vw, 10px);
-    color: #ffffff;
-    font-size: clamp(0.7rem, 1.5vw, 0.8rem);
-    line-height: 1.35;
-    word-break: break-word;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
+    margin-bottom: 0; /* Handled by gap: 16px */
+    padding-left: 12px;
+    border-left: 2px solid #3b82f6;
+    color: #f8fafc;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    animation: fadeIn 0.3s ease-out;
 }
 
 .caption-log-speaker {
-    font-weight: 600;
-    color: #bfdbfe;
-    margin-right: 4px;
+    font-weight: 700;
+    color: #3b82f6;
+    margin-right: 6px;
+    font-size: 0.95rem;
+    /* Removed text-transform: uppercase to match "You:" in Image 2 */
+}
+
+.prediction-sign-cards-container {
+    height: auto;
+    max-height: 200px;
+    width: 100%;
+    margin: 0;
+    padding: 20px 24px;
+    background: rgba(0, 0, 0, 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: none;
+    flex-direction: row; /* Usually cards area a row now */
+    gap: 20px;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.prediction-sign-cards-container.active {
+    display: flex;
 }
 
 #remotePrediction {
@@ -972,8 +1063,10 @@ video {
 }
 
 .control-right {
+    position: relative; /* Added for menu positioning */
     justify-content: flex-end;
     min-width: auto;
+    flex-wrap: nowrap; /* Keep aligned */
 }
 
 .control-center {
@@ -984,23 +1077,39 @@ video {
     justify-content: center;
 }
 
-/* Secondary Controls (Dropdown for Everyone) */
+/* Secondary Controls (Vertical Pill Menu) */
 .secondary-controls {
     display: none !important;
     position: absolute;
-    bottom: 80px;
-    right: 24px;
-    /* Align to the right side of screen */
-    background: rgba(15, 23, 42, 0.95);
+    bottom: 74px; /* Space above the control bar */
+    right: 56px; /* Aligned over the moreBtn center roughly */
+    background: rgba(15, 23, 42, 0.98);
     backdrop-filter: blur(24px);
     flex-direction: column;
-    padding: 12px;
-    border-radius: 20px;
-    border: 1px solid var(--glass-border);
+    padding: 10px;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
     gap: 12px;
     z-index: 150;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 15px 45px rgba(0, 0, 0, 0.7);
+    width: 68px;
+    align-items: center;
 }
+
+.secondary-controls::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid rgba(15, 23, 42, 0.98);
+}
+
+.secondary-controls #ttsBtn .material-icons { color: #ffffff; }
+.secondary-controls #sttToggleBtn .material-icons { color: #ef4444; }
+.secondary-controls #overlayBtn .material-icons { color: #4db6ac; }
 
 .secondary-controls.active {
     display: flex !important;
@@ -1087,28 +1196,28 @@ video {
     opacity: 0.6;
 }
 
-/* Side Panel (Training/Chat) */
+/* Side Panel (Chat) */
 .side-panel {
     position: fixed;
     top: 20px;
-    right: -400px;
+    right: 20px;
     bottom: 20px;
-    width: clamp(300px, 90vw, 380px);
-    height: auto;
+    width: clamp(280px, 90vw, 380px);
     background: rgba(20, 20, 30, 0.85);
     backdrop-filter: blur(24px);
     border: 1px solid var(--glass-border);
     border-radius: 24px;
-    z-index: 200;
+    z-index: 2000; /* Increased to stay above everything */
     transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
     display: flex;
     flex-direction: column;
     box-shadow: -10px 0 40px rgba(0, 0, 0, 0.4);
     overflow: hidden;
+    transform: translateX(calc(100% + 40px)); /* Hidden by default */
 }
 
 .side-panel.open {
-    transform: translateX(calc(-100% - 40px));
+    transform: translateX(0);
 }
 
 .panel-header {
@@ -1499,28 +1608,100 @@ video {
 }
 
 .volume-meter {
-    width: 6px;
-    height: 18px;
-    background: var(--primary-color);
-    border-radius: 4px;
+    font-size: clamp(16px, 3.5vw, 20px);
+    color: #e2e8f0;
     opacity: 0.3;
-    transition: transform 0.1s;
-    transform-origin: bottom;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .volume-active {
     opacity: 1;
-    background: #00ff00;
-    box-shadow: 0 0 10px #00ff00;
+    color: #10b981; /* Success green */
+    text-shadow: 
+        0 0 10px rgba(16, 185, 129, 0.4),
+        0 0 20px rgba(16, 185, 129, 0.2);
+    transform: scale(1.1);
 }
 
-.stt-overlay {
-    bottom: 160px;
-    max-width: 80%;
+
+
+
+
+
+
+/* Sign Language Card Prediction Overlay */
+.prediction-sign-cards-container {
+    position: absolute;
+    bottom: 250px; /* Above the caption bar */
+    left: 45%;
+    transform: translateX(-50%);
+    width: auto;
+    max-width: 95%;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    z-index: 60;
+    pointer-events: none;
+    transition: all 0.3s ease;
+}
+
+.prediction-sign-cards-container.active {
+    display: flex;
+}
+
+.prediction-sign-line {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 20px;
+}
+
+.prediction-word-group {
+    display: flex;
+    gap: 8px;
+}
+
+.prediction-sign-card {
+    width: 70px;
+    height: 90px;
+    background: rgba(30, 41, 59, 0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.prediction-sign-card img {
+    width: 100%;
+    height: 55px;
+    object-fit: contain;
+    border-radius: 4px;
+    margin-bottom: 4px;
+}
+
+.prediction-sign-card-label {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-weight: 600;
+    text-transform: uppercase;
     text-align: center;
-    font-style: italic;
-    background: rgba(15, 23, 42, 0.85);
-    border-color: rgba(59, 130, 246, 0.4);
+}
+
+@keyframes slideUpFade {
+    from { transform: translate(-50%, 20px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+@keyframes popIn {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
 }
 
 #stttext {
@@ -1676,7 +1857,7 @@ video {
 
     .main-stage {
         grid-template-columns: 1fr;
-        grid-template-rows: 10fr 30fr 30fr 20fr;
+        grid-template-rows: 40fr 40fr 20fr;
         height: calc(100dvh - var(--vc-mobile-control-height) - env(safe-area-inset-bottom) - 8px);
         min-height: 0;
         gap: 6px;
@@ -1685,114 +1866,218 @@ video {
     }
 
     .caption-log-panel {
-        grid-column: 1;
-        grid-row: 1;
-        max-height: none;
-        min-height: 0;
-        height: 100%;
-        position: relative;
-        top: auto;
-        left: auto;
-        right: auto;
-        width: 100%;
+        position: fixed;
+        bottom: calc(92px + env(safe-area-inset-bottom));
+        left: 12px;
+        right: 12px;
+        width: auto;
+        height: auto;
+        max-height: 45vh;
         margin: 0;
+        z-index: 450;
+        border-radius: 28px;
+        background: rgba(13, 20, 36, 0.96);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7);
+        display: none; /* Only show when STT is active and has content */
+        opacity: 0;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+        visibility: hidden;
+    }
+
+    body.stt-active .caption-log-panel.visible {
+        display: flex;
+        opacity: 1;
+        visibility: visible;
+    }
+
+    .caption-log-list {
+        max-height: 120px;
+        padding: 12px 16px;
+        scrollbar-width: none;
+    }
+
+    .caption-log-list::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* Consolidated Sign Cards Container for Mobile */
+    .prediction-sign-cards-container {
+        display: none !important; /* Hidden until .active */
+        position: relative !important;
+        bottom: auto !important;
+        left: auto !important;
+        transform: none !important;
+        height: auto !important;
+        min-height: 110px !important;
+        max-height: 180px !important;
+        width: 100% !important;
+        margin: 10px 0 0 0 !important;
+        padding: 12px 16px !important;
+        background: rgba(0, 0, 0, 0.4) !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.15) !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        gap: 15px !important;
+        align-items: center !important;
+        scrollbar-width: none !important;
+        -webkit-overflow-scrolling: touch !important;
+        z-index: 10 !important;
+        pointer-events: auto !important;
+    }
+
+    .prediction-sign-cards-container.active {
+        display: flex !important;
+    }
+
+    .prediction-sign-cards-container::-webkit-scrollbar {
+        display: none;
+    }
+
+    .prediction-sign-line {
+        display: flex;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 20px;
+    }
+
+    .prediction-word-group {
+        display: flex;
+        gap: 12px;
+        flex-wrap: nowrap;
+    }
+
+    .prediction-sign-card {
+        flex: 0 0 auto;
+        width: 80px;
+        height: 105px;
         border-radius: 12px;
     }
 
     .remote-view-container {
         grid-column: 1;
-        grid-row: 2;
+        grid-row: 1 / 4;
         min-height: 0;
         height: 100%;
-        margin-top: 0;
-        aspect-ratio: auto;
+        margin: 0;
+        max-height: none;
+        aspect-ratio: auto !important;
     }
 
     .local-view-container {
         grid-column: 1;
-        grid-row: 3;
+        grid-row: 1 / 4;
         min-height: 0;
         height: 100%;
-        aspect-ratio: auto;
+        margin: 0;
+        max-height: none;
+        aspect-ratio: auto !important;
+    }
+
+    .main-stage.is-connected .local-view-container {
+        position: absolute;
+        bottom: 120px; /* Above control bar */
+        right: 15px;
+        width: 100px;
+        height: 140px;
+        /* Still enforce portrait for mobile pip */
+        aspect-ratio: 3 / 4 !important;
+        z-index: 100;
+        grid-column: unset;
+        grid-row: unset;
+        margin: 0;
+        border-radius: 12px;
     }
 
     #prediction-overlay {
         display: none;
     }
 
-    .prediction-sign-cards-container {
-        position: relative;
-        left: auto;
-        right: auto;
-        bottom: auto;
-        grid-column: 1;
-        grid-row: 4;
-        max-height: none;
-        min-height: 0;
-        height: 100%;
-        overflow-x: auto;
-        overflow-y: auto;
-        flex-direction: row;
-        padding: 8px;
-        z-index: 60;
-        border-radius: 12px;
-    }
-
-    .prediction-sign-line {
-        flex-wrap: nowrap;
-    }
-
     .control-bar {
         position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        width: 100vw;
-        min-height: var(--vc-mobile-control-height);
-        height: calc(var(--vc-mobile-control-height) + env(safe-area-inset-bottom));
-        margin-left: 0;
-        gap: 6px;
-        padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
-        justify-content: space-around;
-        flex-wrap: wrap;
-        z-index: 500;
-        border-radius: 0;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-    }
-
-    .control-left,
-    .control-center,
-    .control-right {
-        gap: 6px;
-        min-width: auto;
-    }
-
-    .secondary-controls {
+        left: 12px;
         right: 12px;
-        bottom: 120px;
-        padding: 8px;
-    }
-
-    #meetingCodeContainer {
-        display: none !important;
+        bottom: calc(12px + env(safe-area-inset-bottom));
+        width: auto;
+        min-height: 64px;
+        height: auto;
+        margin-left: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 8px 15px;
+        z-index: 500;
+        border-radius: 30px;
+        background: rgba(10, 10, 20, 0.9);
+        backdrop-filter: blur(20px);
+        border: 1px solid var(--glass-border);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
     }
 
     .control-left {
-        display: none !important;
+        display: flex !important;
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 10;
+    }
+
+    .control-center {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .control-right {
+        position: absolute;
+        right: 15px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .secondary-controls {
+        right: 48px; /* Correctly centered over moreBtn on mobile */
+        bottom: calc(12px + env(safe-area-inset-bottom) + 72px);
+        padding: 8px;
+        width: 60px;
+    }
+
+    #meetingCodeContainer {
+        display: flex !important;
     }
 
     .mobile-meeting-code {
-        display: block;
-        width: 100%;
-        margin-bottom: 10px;
+        display: none !important;
     }
 
     .meeting-code-bubble {
-        padding: 6px 10px;
-        font-size: clamp(0.65rem, 2vw, 0.75rem);
-        background: rgba(15, 23, 42, 0.85);
+        position: relative;
+        padding: 6px 14px;
+        font-size: 0.75rem;
+        background: rgba(255, 255, 255, 0.05);
         border: 1px solid var(--glass-border);
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        border-radius: 8px;
+        color: var(--text-muted);
+        letter-spacing: 0.5px;
+    }
+
+    .meeting-code-bubble .small-icon {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        font-size: 12px;
+        background: var(--primary-color);
+        color: white;
+        padding: 3px;
+        border-radius: 4px;
+        opacity: 1;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
     }
 
     .control-btn {
@@ -1814,7 +2099,8 @@ video {
         width: 100%;
         right: -100%;
         border-radius: 24px 24px 0 0;
-        top: 10%;
+        top: 10dvh;
+        height: 90dvh;
     }
 
     .side-panel.open {
@@ -1833,7 +2119,7 @@ video {
     }
 
     .stt-overlay {
-        bottom: 110px !important;
+        display: none !important;
     }
 
     #prediction-overlay {
@@ -1842,27 +2128,21 @@ video {
         font-size: clamp(0.8rem, 2vw, 0.9rem);
     }
 
-    .prediction-sign-cards-container {
-        width: auto;
-        min-width: 0;
-        max-width: none;
-        order: initial;
-        overflow-x: auto;
-        overflow-y: auto;
-    }
+    /* Overridden by consolidated rule above */
 
     .prediction-sign-card {
-        width: clamp(46px, 10vw, 62px);
-        height: clamp(58px, 12vw, 74px);
-        min-width: clamp(46px, 10vw, 62px);
+        width: clamp(60px, 12vw, 80px);
+        height: clamp(85px, 15vw, 105px);
+        min-width: clamp(60px, 12vw, 80px);
     }
 
     .prediction-sign-card img {
-        height: clamp(33px, 7vw, 46px);
+        height: clamp(45px, 10vw, 60px);
     }
 
     .prediction-sign-card-label {
-        font-size: clamp(0.5rem, 1.3vw, 0.58rem);
+        font-size: clamp(0.7rem, 2vw, 0.85rem);
+        margin-top: 4px;
     }
 
     #remote-caption-overlay {
@@ -1883,9 +2163,16 @@ video {
         padding: 6px 8px;
     }
 
-    /* Hide Remote User label in bottom left for mobile */
-    .remote-view-container .userInfo {
-        display: none !important;
+    /* Responsive participant names */
+    .remote-view-container .userInfo,
+    .local-view-container .userInfo {
+        display: flex !important;
+        bottom: 8px;
+        left: 8px;
+        padding: 4px 12px;
+        font-size: 0.75rem;
+        z-index: 100;
+        background: rgba(5, 5, 16, 0.9);
     }
 
     /* Better responsive header */
@@ -1906,6 +2193,10 @@ video {
     .clock {
         font-size: clamp(0.7rem, 2vw, 0.9rem);
         padding: 4px 10px;
+    }
+
+    .chat-input-area {
+        padding-bottom: calc(20px + env(safe-area-inset-bottom));
     }
 }
 
@@ -1935,9 +2226,11 @@ video {
     .control-bar {
         gap: 4px;
         padding: 6px 8px;
-        left: 0;
-        right: 0;
-        bottom: 0;
+        left: 8px;
+        right: 8px;
+        bottom: calc(8px + env(safe-area-inset-bottom));
+        border-radius: 20px;
+        width: auto;
     }
 
     .meeting-code-bubble {
@@ -1962,17 +2255,11 @@ video {
         min-height: 0;
     }
 
-    .prediction-sign-cards-container {
-        left: auto;
-        right: auto;
-        bottom: auto;
-        max-height: none;
-        padding: 6px 8px;
-    }
+    /* Overridden by consolidated rule above */
 
     .prediction-sign-card {
-        width: clamp(42px, 9vw, 54px);
-        height: clamp(52px, 11vw, 64px);
+        width: clamp(55px, 11vw, 65px);
+        height: clamp(75px, 14vw, 90px);
     }
 
     .caption-overlay {

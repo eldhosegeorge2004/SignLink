@@ -12,16 +12,43 @@ const statusMsg = document.getElementById('statusMsg');
 const dataList = document.getElementById('dataList');
 const totalSamplesBadge = document.getElementById('totalSamples');
 const recIndicator = document.getElementById('recIndicator');
-const uploadBtn = document.getElementById('uploadBtn');
-const uploadInput = document.getElementById('uploadInput');
-const revertBtn = document.getElementById('revertBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const testBtn = document.getElementById('testBtn');
 const testResult = document.getElementById('testResult');
 const dataPanel = document.querySelector('.data-panel');
 const openDataPanelBtn = document.getElementById('openDataPanelBtn');
+const openDataPanelBtnMobile = document.getElementById('openDataPanelBtnMobile');
 const closeDataPanelBtn = document.getElementById('closeDataPanelBtn');
+const backToMainBtn = document.getElementById('backToMainBtn');
 const drawerBackdrop = document.getElementById('drawerBackdrop');
+const alertBackdrop = document.getElementById('alertBackdrop');
+const customAlert = document.getElementById('customAlert');
+const alertMessage = document.getElementById('alertMessage');
+const alertOkBtn = document.getElementById('alertOkBtn');
+const cloudSyncBtn = document.getElementById('cloudSyncBtn');
+
+// Mobile Sidebar Elements
+// Mobile Sidebar Elements
+const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+const sidebarPanel = document.getElementById('sidebarPanel');
+const mobileLabelDisplay = document.getElementById('mobileLabelDisplay');
+const mobileModeDisplay = document.getElementById('mobileModeDisplay');
+
+// Mobile Multi-step Setup Elements
+const mobileAddSignBtn = document.getElementById('mobileAddSignBtn');
+const mobileClearSignBtn = document.getElementById('mobileClearSignBtn');
+const mobileUploadBtn = document.getElementById('mobileUploadBtn');
+const mobileRevertBtn = document.getElementById('mobileRevertBtn');
+const signSetupModal = document.getElementById('signSetupModal');
+const modalLabelInput = document.getElementById('modalLabelInput');
+const modalSignCardBtn = document.getElementById('modalSignCardBtn');
+const startRecordingBtn = document.getElementById('startRecordingBtn');
+const nextStepBtns = document.querySelectorAll('.next-step');
+const prevStepBtns = document.querySelectorAll('.prev-step');
+const modalSteps = document.querySelectorAll('.modal-step');
+const langOptions = document.querySelectorAll('.lang-option');
+const modeOptions = document.querySelectorAll('.mode-option');
+const captureBtnPortal = document.getElementById('captureBtnPortal');
 
 // Sign Card Elements
 const signCardBtn = document.getElementById('signCardBtn');
@@ -71,6 +98,13 @@ let testDynamicFrameBuffer = [];
 let testDynamicBufferStartTime = 0;
 const TEST_DYNAMIC_ANALYZE_MS = 1200;
 
+// Pending data for mobile "Finish Setup" workflow
+let pendingSignCard = null; // { base64Data, extension }
+let lastSessionSampleCountAtStart = 0;
+let isInSetupMode = false;
+let lastRecordedBatchCount = 0;
+let sessionHistory = [];
+
 function normalizeLabel(label) {
     const trimmed = (label || '').trim();
     if (!trimmed) return '';
@@ -95,14 +129,6 @@ function getUntrainedSampleCount() {
     return collectedData.filter(sample => sample.isTrained === false).length;
 }
 
-function updateRevertButtonState() {
-    if (!revertBtn) return;
-
-    const untrainedCount = getUntrainedSampleCount();
-    revertBtn.disabled = untrainedCount === 0;
-    revertBtn.innerHTML = `<span class="material-icons">undo</span>Revert New Data${untrainedCount ? ` (${untrainedCount})` : ''}`;
-}
-
 // Storage Keys
 const STORAGE_KEYS = {
     'ISL': { model: 'my-isl-model', labels: 'isl_labels', data: 'isl_data' },
@@ -112,50 +138,674 @@ const STORAGE_KEYS = {
 // --- Initialization ---
 async function init() {
     startCamera();
-    await loadDataFromServer();
-    checkForSavedModels(); // Check if models already exist in localStorage
-    renderDataList();
-    updateRevertButtonState();
     setupModeToggle();
     setupMobileDataDrawer();
+    setupMobileSignSetup(); // New mobile workflow
+    setupCustomAlert();
+    setupCloudSync();
+    await loadDataFromServer();
+}
+
+let confirmResolver = null;
+
+function setupCustomAlert() {
+    const alertCancelBtn = document.getElementById('alertCancelBtn');
+
+    if (alertOkBtn) {
+        alertOkBtn.addEventListener('click', () => {
+            customAlert.classList.remove('active');
+            alertBackdrop.classList.remove('active');
+            if (confirmResolver) {
+                confirmResolver(true);
+                confirmResolver = null;
+            }
+        });
+    }
+
+    if (alertCancelBtn) {
+        alertCancelBtn.addEventListener('click', () => {
+            customAlert.classList.remove('active');
+            alertBackdrop.classList.remove('active');
+            if (confirmResolver) {
+                confirmResolver(false);
+                confirmResolver = null;
+            }
+        });
+    }
+
+    if (alertBackdrop) {
+        alertBackdrop.addEventListener('click', () => {
+            customAlert.classList.remove('active');
+            alertBackdrop.classList.remove('active');
+            if (confirmResolver) {
+                confirmResolver(false);
+                confirmResolver = null;
+            }
+        });
+    }
+}
+
+function showCustomAlert(message) {
+    if (!customAlert || !alertMessage) {
+        alert(message);
+        return;
+    }
+    alertMessage.textContent = message;
+    const alertCancelBtn = document.getElementById('alertCancelBtn');
+    if (alertCancelBtn) alertCancelBtn.style.display = 'none';
+    if (confirmResolver) { confirmResolver(false); confirmResolver = null; }
+    customAlert.classList.add('active');
+    alertBackdrop.classList.add('active');
+}
+
+function showCustomConfirm(message) {
+    return new Promise((resolve) => {
+        if (!customAlert || !alertMessage) {
+            resolve(confirm(message));
+            return;
+        }
+        alertMessage.textContent = message;
+        const alertCancelBtn = document.getElementById('alertCancelBtn');
+        if (alertCancelBtn) alertCancelBtn.style.display = 'block';
+        confirmResolver = resolve;
+        customAlert.classList.add('active');
+        alertBackdrop.classList.add('active');
+    });
+}
+
+function showToast(message, icon = 'info') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `
+        <span class="material-icons" style="font-size: 18px;">${icon}</span>
+        <span>${message}</span>
+    `;
+    container.appendChild(toast);
+
+    // Auto-remove after 3s
+    setTimeout(() => {
+        toast.classList.add('out');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Processing Modal Handlers
+function showProcessingModal(title, status) {
+    const modal = document.getElementById('processingModal');
+    const titleEl = document.getElementById('processingText');
+    const statusEl = document.getElementById('processingStatus');
+    
+    if (modal && titleEl && statusEl) {
+        titleEl.textContent = title;
+        statusEl.textContent = status;
+        modal.classList.add('active');
+    }
+}
+
+function updateProcessingModal(title, status) {
+    const titleEl = document.getElementById('processingText');
+    const statusEl = document.getElementById('processingStatus');
+    if (titleEl) titleEl.textContent = title;
+    if (statusEl) statusEl.textContent = status;
+}
+
+function hideProcessingModal() {
+    const modal = document.getElementById('processingModal');
+    if (modal) modal.classList.remove('active');
 }
 
 function setupMobileDataDrawer() {
-    if (!dataPanel) return;
+    if (!dataPanel || !sidebarPanel) return;
 
-    const openDrawer = () => {
+    const openData = () => {
         dataPanel.classList.add('open');
+        sidebarPanel.classList.remove('open');
         if (drawerBackdrop) drawerBackdrop.classList.add('active');
     };
 
-    const closeDrawer = () => {
+
+    const closeAll = () => {
         dataPanel.classList.remove('open');
+        sidebarPanel.classList.remove('open');
         if (drawerBackdrop) drawerBackdrop.classList.remove('active');
     };
 
-    if (openDataPanelBtn) {
-        openDataPanelBtn.addEventListener('click', openDrawer);
-    }
-    if (closeDataPanelBtn) {
-        closeDataPanelBtn.addEventListener('click', closeDrawer);
-    }
+    if (openDataPanelBtn) openDataPanelBtn.addEventListener('click', openData);
+    if (openDataPanelBtnMobile) openDataPanelBtnMobile.addEventListener('click', openData);
+    if (closeDataPanelBtn) closeDataPanelBtn.addEventListener('click', closeAll);
+    if (backToMainBtn) backToMainBtn.addEventListener('click', closeAll);
+    
+    if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', closeAll);
+
     if (drawerBackdrop) {
-        drawerBackdrop.addEventListener('click', closeDrawer);
+        drawerBackdrop.addEventListener('click', closeAll);
     }
 
     window.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') closeDrawer();
+        if (event.key === 'Escape') closeAll();
     });
 
     window.addEventListener('resize', () => {
         if (window.innerWidth > 980) {
-            closeDrawer();
+            closeAll();
+        }
+    });
+
+    // Initial sync for mobile status tags
+    updateMobileStatusTags();
+
+    // Move capture button to portal on small screens
+    if (window.innerWidth <= 980 && captureBtnPortal && captureBtn) {
+        captureBtnPortal.appendChild(captureBtn);
+    }
+}
+
+/**
+ * Mobile Sign Setup Workflow (Multi-step Dialog)
+ */
+function setupMobileSignSetup() {
+    if (!mobileAddSignBtn) return;
+
+    let currentStep = 1;
+
+    const updateModalSteps = () => {
+        modalSteps.forEach(step => {
+            step.classList.remove('active');
+            if (parseInt(step.dataset.step) === currentStep) {
+                step.classList.add('active');
+            }
+        });
+    };
+
+    mobileAddSignBtn.addEventListener('click', () => {
+        if (mobileAddSignBtn.dataset.setup === 'true') return; // Don't open modal if we are in "Finish" mode
+        currentStep = 1;
+        updateModalSteps();
+        signSetupModal.classList.add('active');
+        if (drawerBackdrop) drawerBackdrop.classList.add('active');
+    });
+
+    nextStepBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (currentStep < 3) {
+                currentStep++;
+                updateModalSteps();
+            }
+        });
+    });
+
+    prevStepBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (currentStep > 1) {
+                currentStep--;
+                updateModalSteps();
+            }
+        });
+    });
+
+    // Cancel Setup
+    document.querySelectorAll('.cancel-setup').forEach(btn => {
+        btn.addEventListener('click', () => {
+            signSetupModal.classList.remove('active');
+            if (drawerBackdrop) drawerBackdrop.classList.remove('active');
+            // Don't reset everything, just close the modal. 
+            // The main bar still says "Add New Sign"
+        });
+    });
+
+    // Language Selection
+    langOptions.forEach(opt => {
+        opt.addEventListener('click', () => {
+            langOptions.forEach(o => {
+                o.classList.remove('active');
+                o.style.borderColor = '#30363d';
+            });
+            opt.classList.add('active');
+            opt.style.borderColor = '#58a6ff';
+            
+            // Sync with main select
+            const val = opt.dataset.value;
+            langSelect.value = val;
+            currentLang = val;
+            loadDataFromServer();
+        });
+    });
+
+    // Mode Selection
+    modeOptions.forEach(opt => {
+        opt.addEventListener('click', () => {
+            modeOptions.forEach(o => {
+                o.classList.remove('active');
+                o.style.borderColor = '#30363d';
+            });
+            opt.classList.add('active');
+            opt.style.borderColor = '#58a6ff';
+            
+            const mode = opt.dataset.value;
+            switchMode(mode);
+            
+            const desc = document.getElementById('modalModeDesc');
+            if (desc) {
+                desc.textContent = mode === 'static' ? 
+                    'Static: Single pose signs (A, B, etc.)' : 
+                    'Dynamic: Movement signs (Thank You, etc.)';
+            }
+        });
+    });
+
+    // Start Recording (Step 3 Button)
+    if (startRecordingBtn) {
+        startRecordingBtn.addEventListener('click', () => {
+            const label = modalLabelInput.value.trim();
+            if (!label) {
+                showCustomAlert("Sign Name is compulsory! Please enter a name.");
+                modalLabelInput.focus();
+                return;
+            }
+
+            // 1. Prepare for recording
+            labelInput.value = label;
+            isInSetupMode = true;
+            updateMobileStatusTags();
+
+            // 2. Close Modal
+            signSetupModal.classList.remove('active');
+            if (drawerBackdrop) drawerBackdrop.classList.remove('active');
+
+            // 3. Transitions
+            if (captureBtn) captureBtn.style.display = 'flex';
+            mobileAddSignBtn.style.width = '44px';
+            mobileAddSignBtn.style.padding = '0';
+            mobileAddSignBtn.title = 'Finish';
+            mobileAddSignBtn.innerHTML = '<span class="material-icons" style="font-size: 28px;">check_circle</span>';
+            mobileAddSignBtn.dataset.setup = 'true';
+            mobileAddSignBtn.disabled = true; // Enabled after 1st recording
+            mobileClearSignBtn.style.display = 'flex';
+        });
+    }
+
+    // Mobile Finish Button click handling
+    mobileAddSignBtn.addEventListener('click', async () => {
+        if (mobileAddSignBtn.dataset.setup !== 'true') return;
+
+        const label = labelInput.value.trim();
+        mobileAddSignBtn.disabled = true;
+        mobileAddSignBtn.innerHTML = '<span class="material-icons" style="font-size: 28px;">save</span>';
+
+        try {
+            // 1. Save to Local Storage instead of server
+            saveToLocalStorage();
+            
+            showToast(`✅ Sign "${label}" saved locally!`, 'storage');
+            resetMobileSignSetup(false); // DO NOT discard data on finish
+            renderDataList();
+        } catch (err) {
+            console.error('Local save error:', err);
+            showCustomAlert('Failed to save to local storage. Storage might be full.');
+            mobileAddSignBtn.disabled = false;
+            mobileAddSignBtn.innerHTML = '<span class="material-icons" style="font-size: 28px;">check_circle</span>';
+        }
+    });
+
+    function saveToLocalStorage() {
+        try {
+            const keys = STORAGE_KEYS[currentLang];
+            const label = labelInput.value.trim();
+            
+            // Save training data
+            localStorage.setItem(keys.data, JSON.stringify(collectedData));
+            
+            // Save sign card if pending
+            if (pendingSignCard) {
+                const cardKey = `sign_card_${currentLang}_${label}`;
+                localStorage.setItem(cardKey, JSON.stringify({
+                    imageBase64: pendingSignCard.base64Data,
+                    extension: pendingSignCard.extension
+                }));
+            }
+            console.log(`Data for ${label} saved to localStorage.`);
+        } catch (err) {
+            console.error('Error in saveToLocalStorage:', err);
+            throw err;
+        }
+    }
+
+    // Clear Sign Button (X)
+    mobileClearSignBtn.addEventListener('click', () => {
+        resetMobileSignSetup(true); // DISCARD data on clear
+    });
+
+    // Sign Card Image from Modal
+    if (modalSignCardBtn) {
+        modalSignCardBtn.addEventListener('click', () => {
+            const label = modalLabelInput.value.trim();
+            if (!label) {
+                showCustomAlert("Please enter the details of the sign!");
+                return;
+            }
+            // Trigger the hidden file input (re-using the main one)
+            signCardInput.click();
+        });
+    }
+
+    // Connect Mobile Action Buttons
+    if (mobileUploadBtn) {
+        mobileUploadBtn.addEventListener('click', async () => {
+            if (collectedData.length === 0) {
+                showToast("No data to upload!", "warning");
+                return;
+            }
+
+            mobileUploadBtn.disabled = true;
+            
+            try {
+                // 1. DATA PREP & LOCAL TRAINING (ON DEVICE)
+                showProcessingModal("Training Locally...", "Your device is learning the signs from your recordings. Please keep the app open.");
+                
+                const trainingResult = await runInternalTraining();
+                
+                // 2. IMAGE SYNC
+                updateProcessingModal("Uploading Details...", "Uploading sign cards and reference images...");
+                await uploadAllPendingSignCards();
+
+                // 3. LANDMARK SYNC
+                updateProcessingModal("Syncing Data...", "Saving hand landmarks to the cloud database...");
+                await saveToServer();
+                
+                // 4. CLOUD MODEL BACKUP
+                updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
+                await uploadTrainedModelsToCloud();
+
+                hideProcessingModal();
+                showToast('✅ On-device training & cloud sync complete!', 'auto_awesome');
+                
+            } catch (err) {
+                console.error('Mobile process failed:', err);
+                hideProcessingModal();
+                showCustomAlert(`Encountered an issue: ${err.message || 'Check connection'}`);
+            } finally {
+                mobileUploadBtn.disabled = false;
+            }
+        });
+    }
+
+    async function uploadTrainedModelsToCloud() {
+        if (!model) return;
+
+        const uploadComponent = async (type, fileName, fileDataB64, contentType) => {
+            const res = await fetch('/api/upload-model-component', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    lang: currentLang,
+                    type: type,
+                    fileName: fileName,
+                    fileDataB64: fileDataB64,
+                    contentType: contentType
+                })
+            });
+            if (!res.ok) throw new Error(`Cloud save failed for ${fileName}`);
+        };
+
+        // Static Model Backup
+        if (model.static && model.staticLabels) {
+            updateProcessingModal("Cloud Backup...", "Uploading Static Model components...");
+            
+            // 1. Export Labels
+            const labelsJson = JSON.stringify(model.staticLabels);
+            await uploadComponent('static', 'labels.json', btoa(labelsJson), 'application/json');
+
+            // 2. Export Model (JSON and Binary)
+            const saveResult = await model.static.save(tf.io.withSaveHandler(async (artifacts) => {
+                // Upload model.json
+                const modelJson = JSON.stringify({
+                    modelTopology: artifacts.modelTopology,
+                    weightsManifest: artifacts.weightsManifest,
+                    format: artifacts.format,
+                    generatedBy: artifacts.generatedBy,
+                    convertedBy: artifacts.convertedBy
+                });
+                await uploadComponent('static', 'model.json', btoa(modelJson), 'application/json');
+
+                // Upload weights.bin
+                const weightsBlob = new Blob([artifacts.weightData], {type: 'application/octet-stream'});
+                const reader = new FileReader();
+                const weightsB64 = await new Promise(resolve => {
+                    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                    reader.readAsDataURL(weightsBlob);
+                });
+                await uploadComponent('static', 'model.weights.bin', weightsB64, 'application/octet-stream');
+                
+                return {modelArtifactsInfo: {dateSaved: new Date(), modelTopologyType: 'JSON'}};
+            }));
+        }
+
+        // Dynamic Model Backup
+        if (model.dynamic && model.dynamicLabels) {
+            updateProcessingModal("Cloud Backup...", "Uploading Dynamic Model components...");
+            
+            // 1. Labels
+            await uploadComponent('dynamic', 'labels.json', btoa(JSON.stringify(model.dynamicLabels)), 'application/json');
+            
+            // 2. Hand Reqs
+            const handReqs = model.dynamicHandRequirements || {};
+            await uploadComponent('dynamic', 'hand_reqs.json', btoa(JSON.stringify(handReqs)), 'application/json');
+
+            // 3. Model Files
+            await model.dynamic.save(tf.io.withSaveHandler(async (artifacts) => {
+                await uploadComponent('dynamic', 'model.json', btoa(JSON.stringify({
+                    modelTopology: artifacts.modelTopology,
+                    weightsManifest: artifacts.weightsManifest
+                })), 'application/json');
+
+                const weightsB64 = await new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                    reader.readAsDataURL(new Blob([artifacts.weightData]));
+                });
+                await uploadComponent('dynamic', 'model.weights.bin', weightsB64, 'application/octet-stream');
+                return {modelArtifactsInfo: {dateSaved: new Date()}};
+            }));
+        }
+    }
+
+
+    // Mobile Revert button
+    if (mobileRevertBtn) {
+        mobileRevertBtn.addEventListener('click', () => {
+            if (sessionHistory.length > 0) {
+                const count = sessionHistory.pop();
+                if (collectedData.length >= count) {
+                    // Ensure we only revert samples of the current label to be safe
+                    const label = labelInput.value.trim();
+                    const lastSamples = collectedData.slice(-count);
+                    const allMatch = lastSamples.every(s => s.label === label);
+                    
+                    if (allMatch) {
+                        collectedData.splice(-count);
+                        showToast(`${count} samples reverted`, 'undo');
+                        updateUIStats();
+                        renderDataList();
+                        updateMobileRevertState();
+                        
+                        // If no samples left for this setup, disable Finish
+                        const currentSamples = collectedData.filter(d => d.label === label);
+                        if (currentSamples.length === 0 && mobileAddSignBtn) {
+                            mobileAddSignBtn.disabled = true;
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+function resetMobileSignSetup(discard = false) {
+    if (!mobileAddSignBtn) return;
+    
+    // Clear inputs
+    labelInput.value = '';
+    modalLabelInput.value = '';
+    signCardInput.value = '';
+    
+    isInSetupMode = false;
+    pendingSignCard = null;
+    lastRecordedBatchCount = 0;
+    sessionHistory = [];
+
+    // Reset UI
+    mobileAddSignBtn.style.width = '44px';
+    mobileAddSignBtn.style.padding = '0';
+    mobileAddSignBtn.title = 'Add New Sign';
+    mobileAddSignBtn.innerHTML = '<span class="material-icons" style="font-size: 28px;">add_circle</span>';
+    mobileAddSignBtn.dataset.setup = 'false';
+    mobileAddSignBtn.disabled = false;
+    mobileClearSignBtn.style.display = 'none';
+    if (captureBtn) captureBtn.style.display = 'none';
+
+    // Reset status
+    updateMobileStatusTags();
+
+    if (discard) {
+        // Discard any untrained samples recorded during this setup session
+        collectedData = collectedData.filter(d => d.isTrained !== false);
+    }
+    renderDataList();
+    
+    // Reset Modal internal state
+    const firstStep = document.querySelector('.modal-step[data-step="1"]');
+    if (firstStep) {
+        modalSteps.forEach(s => s.classList.remove('active'));
+        firstStep.classList.add('active');
+    }
+    const modalStatus = document.getElementById('modalSignCardStatus');
+    if (modalStatus) modalStatus.textContent = '';
+
+    if (signCardFileName) {
+        signCardFileName.textContent = '';
+        signCardFileName.style.display = 'none';
+    }
+}
+
+/**
+ * Updates the small tags shown in the mobile bottom bar
+ */
+function updateMobileStatusTags() {
+    if (mobileLabelDisplay) {
+        mobileLabelDisplay.textContent = labelInput.value || 'New Sign';
+    }
+    if (mobileModeDisplay) {
+        mobileModeDisplay.textContent = recordingMode === 'static' ? 'Static Mode' : 'Dynamic Mode';
+    }
+    updateMobileRevertState();
+}
+
+function updateMobileRevertState() {
+    if (!mobileRevertBtn) return;
+    mobileRevertBtn.style.display = 'flex';
+    mobileRevertBtn.disabled = sessionHistory.length === 0;
+    mobileRevertBtn.innerHTML = `<span class="material-icons" style="font-size: 14px;">undo</span>`;
+}
+
+function setupCloudSync() {
+    if (!cloudSyncBtn) return;
+    
+    cloudSyncBtn.addEventListener('click', async () => {
+        try {
+            statusMsg.innerText = "☁️ Syncing models to cloud...";
+            cloudSyncBtn.disabled = true;
+            
+            let syncedCount = 0;
+            
+            // 1. Sync Static Model
+            if (model?.static && model?.staticLabels) {
+                await uploadModelToCloud('static', model.static, model.staticLabels);
+                syncedCount++;
+            }
+            
+            // 2. Sync Dynamic Model
+            if (model?.dynamic && model?.dynamicLabels) {
+                await uploadModelToCloud('dynamic', model.dynamic, model.dynamicLabels, model.dynamicHandRequirements);
+                syncedCount++;
+            }
+            
+            if (syncedCount > 0) {
+                statusMsg.innerText = `✅ Cloud Sync Complete! (${syncedCount} models synced)`;
+                showCustomAlert("Cloud Sync Successful! Your models are now available on all your devices.");
+            } else {
+                statusMsg.innerText = "❌ Nothing to sync. Save to application first.";
+                showCustomAlert("Please 'Save to Application' before syncing to cloud.");
+            }
+        } catch (err) {
+            console.error("Cloud sync failed:", err);
+            statusMsg.innerText = `❌ Cloud Sync Failed: ${err.message}`;
+            showCustomAlert(`Cloud Sync failed: ${err.message}`);
+        } finally {
+            cloudSyncBtn.disabled = false;
         }
     });
 }
 
+async function uploadModelToCloud(type, modelInstance, labels, handReqs = null) {
+    // 1. Save model to get artifacts
+    const saveResults = await modelInstance.save(tf.io.withSaveHandler(async (artifacts) => {
+        return artifacts;
+    }));
+
+    // 2. Upload Model Topology (JSON)
+    const modelJson = {
+        modelTopology: saveResults.modelTopology,
+        weightsManifest: [{
+            paths: ['./weights.bin'],
+            weights: saveResults.weightSpecs
+        }]
+    };
+    
+    await uploadComponent(type, 'model.json', btoa(JSON.stringify(modelJson)), 'application/json');
+
+    // 3. Upload Weights (Binary)
+    const weightsB64 = arrayBufferToBase64(saveResults.weightData);
+    await uploadComponent(type, 'weights.bin', weightsB64, 'application/octet-stream');
+
+    // 4. Upload Labels
+    await uploadComponent(type, 'labels.json', btoa(JSON.stringify(labels)), 'application/json');
+
+    // 5. Upload Hand Reqs if dynamic
+    if (handReqs) {
+        await uploadComponent(type, 'hand_reqs.json', btoa(JSON.stringify(handReqs)), 'application/json');
+    }
+}
+
+async function uploadComponent(type, fileName, b64Data, contentType) {
+    const res = await fetch('/api/upload-model-component', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            lang: currentLang,
+            type,
+            fileName,
+            fileDataB64: b64Data,
+            contentType
+        })
+    });
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+}
+
+function arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+
 // Check if models are already saved in localStorage
-function checkForSavedModels() {
+async function checkForSavedModels() {
     const staticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
     const dynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
 
@@ -165,6 +815,10 @@ function checkForSavedModels() {
         if (dynamicLabels) modelInfo += "Dynamic 🔄";
         statusMsg.innerText = `✅ ${modelInfo}. You can use these in Live Translation!`;
         saveBtn.disabled = true; // Models already saved
+        if (cloudSyncBtn) {
+            cloudSyncBtn.disabled = false;
+            cloudSyncBtn.title = "Upload these models to Supabase Cloud";
+        }
     }
 }
 
@@ -198,7 +852,12 @@ function switchMode(mode) {
         dynamicControls.style.display = 'block';
         modeDescription.textContent = 'Dynamic: Movement signs (Thank You, Please, Sorry, etc.)';
     }
+
+    updateMobileStatusTags();
 }
+
+// Update mobile tags when label changes
+labelInput.addEventListener('input', updateMobileStatusTags);
 
 function setTestResult(text) {
     if (testResult) testResult.textContent = text;
@@ -320,7 +979,7 @@ async function toggleTestMode() {
 
     if (!testStaticModel && !testDynamicModel) {
         setTestResult('No trained/saved model found. Train first, then test.');
-        alert('No trained/saved model found for testing. Train and save first.');
+        showCustomAlert('No trained/saved model found for testing. Train and save first.');
         return;
     }
 
@@ -339,7 +998,7 @@ async function toggleTestMode() {
 function startDynamicRecording() {
     const label = normalizeLabel(labelInput.value);
     if (!label) {
-        alert("Please enter a sign name first!");
+        showCustomAlert("Please enter the details of the sign!");
         labelInput.focus();
         return;
     }
@@ -544,6 +1203,7 @@ function captureStaticSample(label, flatLandmarks) {
 
     saveDataPoint(label, flatLandmarks, 'static');
     staticSessionSampleCount += 1;
+    lastRecordedBatchCount += 1;
     statusMsg.textContent = `Recording static sign: ${staticSessionSampleCount}/${MAX_STATIC_SAMPLES_PER_SESSION}`;
 
     if (staticSessionSampleCount >= MAX_STATIC_SAMPLES_PER_SESSION) {
@@ -557,7 +1217,7 @@ function captureStaticSample(label, flatLandmarks) {
 function startStaticCollection() {
     const label = normalizeLabel(labelInput.value);
     if (!label) {
-        alert("Please enter a sign name first!");
+        showCustomAlert("Please enter the details of the sign!");
         labelInput.focus();
         return;
     }
@@ -565,6 +1225,7 @@ function startStaticCollection() {
 
     isCollecting = true;
     staticSessionSampleCount = 0;
+    lastRecordedBatchCount = 0; // Start new batch tracking
     isStaticPausedNoHands = false;
 
     recIndicator.style.display = 'flex';
@@ -587,11 +1248,25 @@ function stopStaticCollection(reason = 'Recording stopped.') {
     const suffix = recordedCount > 0 ? ` Saved ${recordedCount} samples.` : ' No new samples captured.';
     statusMsg.textContent = `${reason}${suffix}`;
 
-    saveToServer().then(() => {
+    // Auto-save ONLY if not in a mobile setup session
+    if (!isInSetupMode) {
+        saveToServer().then(() => {
+            renderDataList();
+        }).catch((err) => {
+            console.error('Failed to auto-save static session:', err);
+        });
+    } else {
+        // Just refresh the list and enable Finish button if we have ANY data now
         renderDataList();
-    }).catch((err) => {
-        console.error('Failed to save static recording session:', err);
-    });
+        if (recordedCount > 0) {
+            sessionHistory.push(recordedCount);
+            lastRecordedBatchCount = 0;
+        }
+        if (recordedCount > 0 && mobileAddSignBtn && mobileAddSignBtn.dataset.setup === 'true') {
+            mobileAddSignBtn.disabled = false;
+        }
+        updateMobileRevertState();
+    }
 }
 
 async function saveDynamicSign(label, frames) {
@@ -607,44 +1282,110 @@ async function saveDynamicSign(label, frames) {
         recordedAt: Date.now(),
         isTrained: false
     });
+    sessionHistory.push(1); // Dynamic is 1 sample per session
     updateUIStats();
-    await saveToServer();
-    renderDataList();
+    
+    // Auto-save ONLY if not in a mobile setup session
+    if (!isInSetupMode) {
+        await saveToServer();
+        renderDataList();
+        // Reset mobile setup button after recording
+        if (window.innerWidth <= 980) {
+            resetMobileSignSetup();
+        }
+    } else {
+        renderDataList();
+        if (mobileAddSignBtn && mobileAddSignBtn.dataset.setup === 'true') {
+            mobileAddSignBtn.disabled = false;
+        }
+        updateMobileRevertState();
+    }
 }
 
 // --- Data Management ---
 async function loadDataFromServer() {
     try {
-        const res = await fetch('/api/training-data');
-        if (!res.ok) throw new Error(`Server responded ${res.status}`);
-        const allData = await res.json();
+        const { data, error } = await window.supabaseClient
+            .from('training_data')
+            .select('*')
+            .order('id', { ascending: true });
+
+        if (error) throw error;
+
+        // Group by lang
+        const allData = { ISL: [], ASL: [] };
+        for (const row of data) {
+            const sample = {
+                label: row.label,
+                type: row.type,
+                isTrained: row.is_trained,
+                recordedAt: row.recorded_at,
+                trainedAt: row.trained_at,
+            };
+            if (row.type === 'dynamic') {
+                sample.frames = row.frames;
+                sample.handCount = row.hand_count;
+                sample.frameCount = row.frames ? row.frames.length : 0;
+            } else {
+                sample.landmarks = row.landmarks;
+            }
+            if (!allData[row.lang]) allData[row.lang] = [];
+            allData[row.lang].push(sample);
+        }
+
         const loadedData = allData[currentLang] || [];
         const normalizedData = normalizeDatasetLabels(loadedData);
         collectedData = normalizedData.normalized;
 
         if (normalizedData.changed) {
-            // Persist one-time normalization so all future training runs are consistent.
             await saveToServer();
         }
     } catch (err) {
-        console.error('Failed to load training data from server:', err);
+        console.error('Failed to load training data from Supabase:', err);
         collectedData = [];
+    } finally {
+        renderDataList();
     }
 }
 
 async function saveToServer() {
     try {
-        // Fetch the full dataset first so we don't overwrite the other language
-        const res = await fetch('/api/training-data');
-        const allData = res.ok ? await res.json() : { ISL: [], ASL: [] };
-        allData[currentLang] = collectedData;
-        await fetch('/api/training-data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(allData)
-        });
+        const lang = currentLang;
+        const samples = collectedData || [];
+
+        // Delete existing rows for this language
+        const { error: deleteErr } = await window.supabaseClient
+            .from('training_data')
+            .delete()
+            .eq('lang', lang);
+
+        if (deleteErr) throw deleteErr;
+
+        if (samples.length === 0) return;
+
+        // Insert in batches of 500
+        const BATCH = 500;
+        for (let i = 0; i < samples.length; i += BATCH) {
+            const batch = samples.slice(i, i + BATCH).map(s => ({
+                lang,
+                label: s.label,
+                type: s.type || 'static',
+                landmarks: s.landmarks || null,
+                frames: s.frames || null,
+                hand_count: s.handCount || null,
+                is_trained: s.isTrained !== undefined ? s.isTrained : false,
+                recorded_at: s.recordedAt || null,
+                trained_at: s.trainedAt || null
+            }));
+
+            const { error: insertErr } = await window.supabaseClient
+                .from('training_data')
+                .insert(batch);
+
+            if (insertErr) throw insertErr;
+        }
     } catch (err) {
-        console.error('Failed to save training data to server:', err);
+        console.error('Failed to save training data to Supabase:', err);
     }
 }
 
@@ -662,6 +1403,14 @@ function renderDataList() {
         counts[d.label] = (counts[d.label] || 0) + 1;
         types[d.label] = d.type || 'static';
     });
+
+    // Always update total counts even if list is empty
+    totalSamplesBadge.innerText = collectedData.length;
+    
+    // Sync mobile upload button state (disabled if there is no data)
+    if (typeof mobileUploadBtn !== 'undefined' && mobileUploadBtn) {
+        mobileUploadBtn.disabled = collectedData.length === 0;
+    }
 
     if (Object.keys(counts).length === 0) {
         dataList.innerHTML = `<div style="text-align: center; color: #484f58; margin-top: 50px;">No data collected.</div>`;
@@ -683,56 +1432,43 @@ function renderDataList() {
             </button>
         </div>
     `}).join('');
-
-    totalSamplesBadge.innerText = collectedData.length;
-    updateRevertButtonState();
-}
-
-if (revertBtn) {
-    revertBtn.addEventListener('click', async () => {
-        const untrainedCount = getUntrainedSampleCount();
-        if (untrainedCount === 0) {
-            statusMsg.textContent = 'No new untrained data to revert.';
-            return;
-        }
-
-        const confirmed = confirm(`Delete ${untrainedCount} newly added sample(s) that are not yet trained?`);
-        if (!confirmed) return;
-
-        collectedData = collectedData.filter(sample => sample.isTrained !== false);
-        await saveToServer();
-        renderDataList();
-        statusMsg.textContent = `Reverted ${untrainedCount} new sample(s).`;
-    });
 }
 
 window.deleteLabel = async (label) => {
-    if (confirm(`Delete all samples for "${label}"?`)) {
-        // Attempt to delete any associated sign card image from the server
-        try {
-            await fetch('/api/delete-sign-card', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    lang: currentLang,
-                    label: label
-                })
-            });
-        } catch (err) {
-            console.warn(`Could not delete sign card image for ${label}:`, err);
-        }
+    const confirmed = await showCustomConfirm(`Delete all samples for "${label}"?`);
+    if (confirmed) {
+        // 1. Delete sign card from local storage
+        const cardKey = `sign_card_${currentLang}_${label}`;
+        localStorage.removeItem(cardKey);
 
+        // 2. Filter data and update local training set
         collectedData = collectedData.filter(d => d.label !== label);
-        await saveToServer();
+        
+        const keys = STORAGE_KEYS[currentLang];
+        localStorage.setItem(keys.data, JSON.stringify(collectedData));
+        
         renderDataList();
+        showToast(`Deleted "${label}" from local storage`, 'delete');
     }
 };
 
 clearAllBtn.addEventListener('click', async () => {
-    if (confirm("Delete ALL collected data? This cannot be undone.")) {
+    const confirmed = await showCustomConfirm("Delete ALL collected data locally? This cannot be undone.");
+    if (confirmed) {
+        const keys = STORAGE_KEYS[currentLang];
+        
+        // 1. Clear training data from localStorage
+        localStorage.removeItem(keys.data);
+        
+        // 2. Clear known sign cards (Best effort based on current list)
+        const currentLabels = [...new Set(collectedData.map(d => d.label))];
+        currentLabels.forEach(label => {
+            localStorage.removeItem(`sign_card_${currentLang}_${label}`);
+        });
+
         collectedData = [];
-        await saveToServer();
         renderDataList();
+        showToast(`All ${currentLang} data cleared locally`, 'delete_forever');
     }
 });
 
@@ -830,20 +1566,54 @@ async function ensureTrainingModelsLoaded() {
     if (!model) model = {};
 
     if (!model.static) {
-        const savedStaticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
+        let savedStaticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
+        let localModelKey = `localstorage://${STORAGE_KEYS[currentLang].model}-static`;
+
+        if (!savedStaticLabels) {
+            console.log("Local static labels missing. Checking cloud for incremental base...");
+            const cloudData = await fetchCloudModel('static', currentLang);
+            if (cloudData) {
+                model.static = cloudData.model;
+                model.staticLabels = cloudData.labels;
+                ensureModelCompiled(model.static, 'static model');
+                console.log("Loaded static base from cloud.");
+                return;
+            }
+        }
+
         if (savedStaticLabels) {
             try {
-                model.static = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-static`);
+                model.static = await tf.loadLayersModel(localModelKey);
                 model.staticLabels = JSON.parse(savedStaticLabels);
                 ensureModelCompiled(model.static, 'static model');
             } catch (err) {
-                console.warn('Unable to load saved static model for incremental training:', err);
+                console.warn('Unable to load saved static model from LocalStorage. Checking cloud...');
+                const cloudData = await fetchCloudModel('static', currentLang);
+                if (cloudData) {
+                    model.static = cloudData.model;
+                    model.staticLabels = cloudData.labels;
+                    ensureModelCompiled(model.static, 'static model');
+                }
             }
         }
     }
 
     if (!model.dynamic) {
-        const savedDynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
+        let savedDynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
+        
+        if (!savedDynamicLabels) {
+            console.log("Local dynamic labels missing. Checking cloud for incremental base...");
+            const cloudData = await fetchCloudModel('dynamic', currentLang);
+            if (cloudData) {
+                model.dynamic = cloudData.model;
+                model.dynamicLabels = cloudData.labels;
+                model.dynamicHandRequirements = cloudData.handReqs || {};
+                ensureModelCompiled(model.dynamic, 'dynamic model');
+                console.log("Loaded dynamic base from cloud.");
+                return;
+            }
+        }
+
         if (savedDynamicLabels) {
             try {
                 model.dynamic = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
@@ -852,9 +1622,40 @@ async function ensureTrainingModelsLoaded() {
                 model.dynamicHandRequirements = handReqRaw ? JSON.parse(handReqRaw) : {};
                 ensureModelCompiled(model.dynamic, 'dynamic model');
             } catch (err) {
-                console.warn('Unable to load saved dynamic model for incremental training:', err);
+                console.warn('Unable to load saved dynamic model from LocalStorage. Checking cloud...');
+                const cloudData = await fetchCloudModel('dynamic', currentLang);
+                if (cloudData) {
+                    model.dynamic = cloudData.model;
+                    model.dynamicLabels = cloudData.labels;
+                    model.dynamicHandRequirements = cloudData.handReqs || {};
+                    ensureModelCompiled(model.dynamic, 'dynamic model');
+                }
             }
         }
+    }
+}
+
+async function fetchCloudModel(type, lang) {
+    try {
+        const baseUrl = `https://ynvykdraupxkhsxxsonb.supabase.co/storage/v1/object/public/sign-cards/models/${lang.toLowerCase()}/${type}`;
+        
+        const labelsRes = await fetch(`${baseUrl}/labels.json`);
+        if (!labelsRes.ok) return null;
+        const labels = await labelsRes.json();
+        
+        // Load model.json which automatically pulls weights.bin
+        const cloudModel = await tf.loadLayersModel(`${baseUrl}/model.json`);
+        
+        let handReqs = null;
+        if (type === 'dynamic') {
+            const reqRes = await fetch(`${baseUrl}/hand_reqs.json`);
+            if (reqRes.ok) handReqs = await reqRes.json();
+        }
+        
+        return { model: cloudModel, labels, handReqs };
+    } catch (err) {
+        console.warn(`Cloud model fetch failed for ${type}:`, err);
+        return null;
     }
 }
 
@@ -929,11 +1730,7 @@ function getMetricAccuracy(logs) {
     return (logs?.acc ?? logs?.accuracy ?? 0).toFixed(3);
 }
 
-trainBtn.addEventListener('click', async () => {
-    statusMsg.innerText = "Preparing data...";
-    trainBtn.disabled = true;
-    saveBtn.disabled = true;
-
+async function runInternalTraining() {
     try {
         await ensureTrainingModelsLoaded();
 
@@ -946,18 +1743,12 @@ trainBtn.addEventListener('click', async () => {
         const newDynamicData = dynamicData.filter(d => d.isTrained === false);
 
         if (!model.static && !model.dynamic && (staticData.length + dynamicData.length) < 10) {
-            alert("Collect more data (min 10 samples)!");
-            trainBtn.disabled = false;
-            saveBtn.disabled = false;
-            return;
+            throw new Error("Collect more data (min 10 samples) before training.");
         }
 
         if (newStaticData.length === 0 && newDynamicData.length === 0 && (model.static || model.dynamic)) {
-            statusMsg.innerText = "No new samples found. Add new recordings, then train.";
-            trainBtn.disabled = false;
-            saveBtn.disabled = false;
             if (legacyFlagsChanged) await saveToServer();
-            return;
+            return { alreadyTrained: true };
         }
 
         let trainedAnything = false;
@@ -965,6 +1756,7 @@ trainBtn.addEventListener('click', async () => {
 
         if (newStaticData.length > 0 || (!model.static && staticData.length >= 5)) {
             await new Promise(resolve => setTimeout(resolve, 100));
+            updateProcessingModal("Training Static AI...", "Your device is learning hand shapes...");
             const staticResult = await trainStaticModel(staticData, newStaticData);
             if (staticResult.trained) {
                 newStaticData.forEach((sample) => {
@@ -978,6 +1770,7 @@ trainBtn.addEventListener('click', async () => {
 
         if (newDynamicData.length > 0 || (!model.dynamic && dynamicData.length >= 5)) {
             await new Promise(resolve => setTimeout(resolve, 100));
+            updateProcessingModal("Training Dynamic AI...", "Your device is learning motion patterns...");
             const dynamicResult = await trainDynamicModel(dynamicData, newDynamicData);
             if (dynamicResult.trained) {
                 newDynamicData.forEach((sample) => {
@@ -990,7 +1783,7 @@ trainBtn.addEventListener('click', async () => {
         }
 
         if (!trainedAnything) {
-            throw new Error("Not enough new static/dynamic samples to train. Need at least 5 samples for a model type.");
+            throw new Error("Not enough new samples to train. Need at least 5 new samples.");
         }
 
         if (flagsChanged) await saveToServer();
@@ -999,7 +1792,28 @@ trainBtn.addEventListener('click', async () => {
         if (model.static) modelTypes.push("Static ✋");
         if (model.dynamic) modelTypes.push("Dynamic 🔄");
 
-        statusMsg.innerText = `✅ Incremental training complete! (${modelTypes.join(', ')}) - Click 'Save to Application' to use your updated models.`;
+        return { 
+            trained: true, 
+            types: modelTypes,
+            flagsChanged: flagsChanged
+        };
+    } catch (error) {
+        throw error;
+    }
+}
+
+trainBtn.addEventListener('click', async () => {
+    statusMsg.innerText = "Preparing data...";
+    trainBtn.disabled = true;
+    saveBtn.disabled = true;
+
+    try {
+        const result = await runInternalTraining();
+        if (result.alreadyTrained) {
+            statusMsg.innerText = "No new samples found. Add new recordings, then train.";
+        } else if (result.trained) {
+            statusMsg.innerText = `✅ Incremental training complete! (${result.types.join(', ')}) - Click 'Save to Application' to use your updated models.`;
+        }
         trainBtn.disabled = false;
         saveBtn.disabled = false;
     } catch (error) {
@@ -1007,7 +1821,7 @@ trainBtn.addEventListener('click', async () => {
         statusMsg.innerText = `❌ Training failed: ${error.message}`;
         trainBtn.disabled = false;
         saveBtn.disabled = true;
-        alert(`Training failed: ${error.message}\n\nCheck browser console for more details.`);
+        alert(`Training failed: ${error.message}`);
     }
 });
 
@@ -1356,7 +2170,11 @@ saveBtn.addEventListener('click', async () => {
 
         if (saved) {
             statusMsg.innerText = `✅ Model(s) saved! Ready for use in Live Translation.`;
-            alert(`✅ Model(s) saved to ${currentLang} slot!\n\nYou can now use them in Live Translation and Video Call.`);
+            showCustomAlert(`✅ Model(s) saved to ${currentLang} slot!\n\nYou can now use them in Live Translation and Video Call.`);
+            if (cloudSyncBtn) {
+                cloudSyncBtn.disabled = false;
+                cloudSyncBtn.title = "Backup these models to Cloud";
+            }
         } else {
             statusMsg.innerText = "❌ Nothing to save. Train a model first.";
             alert("❌ No trained model components found. Please train first.");
@@ -1370,51 +2188,6 @@ saveBtn.addEventListener('click', async () => {
     }
 });
 
-// --- External Import ---
-uploadBtn.addEventListener('click', () => uploadInput.click());
-
-uploadInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-        try {
-            const imported = JSON.parse(evt.target.result);
-            if (Array.isArray(imported)) {
-                // Validate both static and dynamic formats
-                const valid = imported.every(d => {
-                    if (!normalizeLabel(d.label)) return false;
-                    if (d.type === 'dynamic') {
-                        return d.frames && Array.isArray(d.frames) && d.frames.length > 0;
-                    } else {
-                        return d.landmarks && d.landmarks.length === 63;
-                    }
-                });
-
-                if (valid) {
-                    const normalizedImported = imported.map((sample) => ({
-                        ...sample,
-                        label: normalizeLabel(sample.label),
-                        type: sample.type || 'static',
-                        isTrained: false,
-                        recordedAt: sample.recordedAt || Date.now()
-                    }));
-                    collectedData = collectedData.concat(normalizedImported);
-                    await saveToServer();
-                    renderDataList();
-                    alert(`Imported ${normalizedImported.length} samples successfully.`);
-                } else {
-                    alert("Invalid data format. Expected array with 'label' and either 'landmarks' (static) or 'frames' (dynamic).");
-                }
-            }
-        } catch (err) {
-            console.error(err);
-            alert("Failed to parse file. Make sure it is valid JSON.");
-        }
-    };
-    reader.readAsText(file);
-});
 
 // --- Sign Card Upload ---
 if (signCardBtn && signCardInput) {
@@ -1435,14 +2208,18 @@ if (signCardBtn && signCardInput) {
             if (label) {
                 // Attempt to delete any associated sign card image from the server
                 try {
-                    await fetch('/api/delete-sign-card', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            lang: currentLang,
-                            label: label
-                        })
-                    });
+                    const { data: cardData } = await window.supabaseClient
+                        .from('sign_cards')
+                        .select('extension')
+                        .eq('lang', currentLang.toLowerCase())
+                        .eq('label', label)
+                        .single();
+
+                    if (cardData) {
+                        const filePath = `${currentLang.toLowerCase()}/${label}.${cardData.extension}`;
+                        await window.supabaseClient.storage.from('sign-cards').remove([filePath]);
+                    }
+                    await window.supabaseClient.from('sign_cards').delete().eq('lang', currentLang.toLowerCase()).eq('label', label);
                 } catch (err) {
                     console.warn(`Could not delete sign card image on clear for ${label}:`, err);
                 }
@@ -1498,19 +2275,42 @@ if (signCardBtn && signCardInput) {
             const base64Data = evt.target.result;
 
             try {
-                const res = await fetch('/api/upload-sign-card', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        lang: currentLang,
-                        label: label,
-                        imageBase64: base64Data,
-                        extension: extension
-                    })
-                });
+                // BUFFER instead of upload if modal Is open
+                const isModalOpen = signSetupModal && signSetupModal.classList.contains('active');
+                if (isModalOpen) {
+                    pendingSignCard = { base64Data, extension };
+                    signCardStatus.textContent = `✅ Card selected (Finish Setup to upload)`;
+                    signCardStatus.style.color = '#58a6ff';
+                    const modalStatus = document.getElementById('modalSignCardStatus');
+                    if (modalStatus) {
+                        modalStatus.textContent = `✅ Image attached`;
+                        modalStatus.style.color = '#58a6ff';
+                    }
+                    return;
+                }
 
-                const data = await res.json();
-                if (res.ok && data.success) {
+                // Convert base64 to Blob
+                const base64Response = await fetch(base64Data);
+                const blob = await base64Response.blob();
+                
+                const filePath = `${currentLang.toLowerCase()}/${label}.${extension}`;
+                const { error: uploadErr } = await window.supabaseClient.storage
+                    .from('sign-cards')
+                    .upload(filePath, blob, { contentType: blob.type, upsert: true });
+                
+                if (uploadErr) throw uploadErr;
+
+                const { data: urlData } = window.supabaseClient.storage
+                    .from('sign-cards')
+                    .getPublicUrl(filePath);
+
+                const { error: upsertErr } = await window.supabaseClient
+                    .from('sign_cards')
+                    .upsert({ lang: currentLang.toLowerCase(), label: label, url: urlData.publicUrl, extension, updated_at: new Date().toISOString() }, { onConflict: 'lang,label' });
+
+                if (upsertErr) throw upsertErr;
+
+                if (true) {
                     signCardStatus.textContent = `✅ Uploaded successfully!`;
                     signCardStatus.style.color = '#2ea043'; // Green success state
                     setTimeout(() => {

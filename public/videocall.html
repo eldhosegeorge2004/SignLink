@@ -49,90 +49,328 @@
 <body>
 
     <!-- Join Screen / Lobby -->
-    <!-- Join Screen / Home Page -->
     <div id="join-screen" class="screen active">
-        <header>
-            <div class="logo">
-                <span class="material-icons" style="color: #2f81f7; font-size: 32px;">video_camera_front</span>
-                <span>SignLink</span>
-            </div>
-            <div class="header-right">
-                <span id="clock" class="clock">--:--</span>
-            </div>
-        </header>
 
-        <div class="lobby-content">
-            <div class="lobby-left">
-                <h1>Break down barriers <br> with <span style="color: #2f81f7">SignLink</span>.</h1>
-                <p>Experience the future of communication. Real-time video calls powered by advanced AI sign language
-                    recognition. Connect, gesture, and be understood.</p>
+        <style>
+            /* ═══ Animated Background ═══ */
+            #join-screen.screen.active {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 100dvh;
+                background: radial-gradient(ellipse at 30% 20%, #0d1b2e 0%, #05070a 60%);
+                padding: 24px 16px;
+                overflow: hidden;
+                position: relative;
+            }
 
-                <div class="join-box">
-                    <div class="input-group" style="margin-bottom: 10px;">
-                        <span class="material-icons input-icon">translate</span>
-                        <select id="modeSelect" class="mode-select">
-                            <option value="ISL">Indian Sign Language (ISL)</option>
-                            <option value="ASL">American Sign Language (ASL)</option>
-                        </select>
-                    </div>
-                    <button class="btn-primary" id="newMeetingBtn">
-                        <span class="material-icons">add_link</span>
-                        Start New Meeting
-                    </button>
-                    <div class="input-group" style="margin-bottom: 10px;">
-                        <span class="material-icons input-icon">person</span>
-                        <input type="text" id="userNameInput" placeholder="Your Name (Required)">
-                    </div>
-                    <div class="input-group">
-                        <span class="material-icons input-icon">keyboard</span>
-                        <input type="text" id="startRoomInput" placeholder="Enter code or link">
-                    </div>
-                    <button id="joinBtn" class="btn-text" disabled>Join</button>
-                </div>
-                <div id="status" class="status-text">Ready to connect</div>
-            </div>
+            .join-bg-blobs {
+                position: fixed;
+                inset: 0;
+                z-index: 0;
+                pointer-events: none;
+                overflow: hidden;
+                filter: blur(90px);
+            }
 
-            <div class="lobby-right">
-                <div class="hero-visual">
-                    <div class="floating-card c1">
-                        <span class="material-icons">front_hand</span>
-                        <span>AI Detection</span>
-                    </div>
-                    <div class="floating-card c2">
-                        <span class="material-icons">translate</span>
-                        <span>Real-time Text</span>
-                    </div>
-                    <div class="floating-card c3">
-                        <span class="material-icons">video_chat</span>
-                        <span>HD Video</span>
-                    </div>
-                    <div class="glow-effect"></div>
-                </div>
-            </div>
+            .join-blob {
+                position: absolute;
+                border-radius: 50%;
+                opacity: 0.18;
+                animation: join-blob-move 22s infinite alternate cubic-bezier(0.45, 0, 0.55, 1);
+            }
+
+            .join-blob-1 {
+                width: 520px; height: 520px;
+                background: #2f81f7;
+                top: -160px; left: -160px;
+                animation-duration: 28s;
+            }
+
+            .join-blob-2 {
+                width: 420px; height: 420px;
+                background: #7c3aed;
+                bottom: -120px; right: -120px;
+                animation-delay: -6s;
+                animation-duration: 22s;
+            }
+
+            .join-blob-3 {
+                width: 280px; height: 280px;
+                background: #06b6d4;
+                top: 50%; left: 55%;
+                animation-delay: -12s;
+            }
+
+            @keyframes join-blob-move {
+                0%   { transform: translate(0, 0) scale(1); }
+                100% { transform: translate(80px, 50px) scale(1.12); }
+            }
+
+            /* ═══ Card ═══ */
+            .join-card {
+                position: relative;
+                z-index: 1;
+                width: 100%;
+                max-width: 440px;
+                background: rgba(15, 20, 30, 0.75);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 32px;
+                padding: 44px 40px 36px;
+                backdrop-filter: blur(28px);
+                -webkit-backdrop-filter: blur(28px);
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+                box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset;
+                animation: fadeInUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+            }
+
+            .join-logo {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 4px;
+            }
+
+            .join-logo .material-icons {
+                font-size: 32px;
+                color: #2f81f7;
+                background: rgba(47, 129, 247, 0.14);
+                padding: 10px;
+                border-radius: 14px;
+                box-shadow: 0 4px 16px rgba(47, 129, 247, 0.25);
+            }
+
+            .join-logo-text {
+                font-family: 'Outfit', sans-serif;
+                font-size: 1.5rem;
+                font-weight: 700;
+                color: #f0f6fc;
+                letter-spacing: -0.3px;
+            }
+
+            .join-divider {
+                height: 1px;
+                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+                margin: 4px 0 2px;
+            }
+
+            /* ═══ Input Groups ═══ */
+            .join-input-group {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.09);
+                border-radius: 16px;
+                padding: 15px 18px;
+                transition: border-color 0.2s, background 0.2s;
+            }
+
+            .join-input-group:focus-within {
+                border-color: rgba(47, 129, 247, 0.55);
+                background: rgba(47, 129, 247, 0.05);
+            }
+
+            .join-input-group .material-icons {
+                color: #6e7681;
+                font-size: 22px;
+                flex-shrink: 0;
+            }
+
+            .join-input-group input,
+            .join-input-group select {
+                background: transparent;
+                border: none;
+                outline: none;
+                color: #f0f6fc;
+                font-family: 'Inter', sans-serif;
+                font-size: 1rem;
+                width: 100%;
+            }
+
+            .join-input-group select option {
+                background: #0d111a;
+                color: #f0f6fc;
+            }
+
+            .join-input-group input::placeholder {
+                color: #3d444d;
+            }
+
+            /* ═══ Buttons ═══ */
+            .join-btn-primary {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 9px;
+                background: linear-gradient(135deg, #2f81f7 0%, #7c3aed 100%);
+                color: white;
+                border: none;
+                border-radius: 16px;
+                padding: 16px;
+                font-family: 'Outfit', sans-serif;
+                font-size: 1.05rem;
+                font-weight: 600;
+                cursor: pointer;
+                transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+                box-shadow: 0 4px 20px rgba(47, 129, 247, 0.35);
+                margin-top: 4px;
+            }
+
+            .join-btn-primary:hover {
+                opacity: 0.92;
+                transform: scale(1.015);
+                box-shadow: 0 6px 28px rgba(47, 129, 247, 0.5);
+            }
+
+            .join-btn-secondary {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 9px;
+                background: rgba(47, 129, 247, 0.07);
+                color: #58a6ff;
+                border: 1px solid rgba(47, 129, 247, 0.28);
+                border-radius: 16px;
+                padding: 15px;
+                font-family: 'Outfit', sans-serif;
+                font-size: 1.05rem;
+                font-weight: 600;
+                cursor: pointer;
+                transition: background 0.2s, border-color 0.2s, transform 0.15s;
+            }
+
+            .join-btn-secondary:hover {
+                background: rgba(47, 129, 247, 0.13);
+                border-color: rgba(47, 129, 247, 0.5);
+                transform: scale(1.01);
+            }
+
+            .join-btn-secondary:disabled {
+                opacity: 0.28;
+                cursor: not-allowed;
+                transform: none;
+            }
+
+            .join-status {
+                text-align: center;
+                font-size: 0.82rem;
+                color: #3d444d;
+                margin-top: 2px;
+            }
+
+            /* ═══ Back Button ═══ */
+            .join-back {
+                position: fixed;
+                top: 18px;
+                left: 18px;
+                z-index: 10;
+                background: rgba(15, 20, 30, 0.65);
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255,255,255,0.1);
+                border-radius: 50%;
+                width: 42px;
+                height: 42px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                text-decoration: none;
+                color: #6e7681;
+                transition: color 0.2s, background 0.2s;
+            }
+
+            .join-back:hover {
+                color: #f0f6fc;
+                background: rgba(47, 129, 247, 0.15);
+            }
+
+            /* ═══ "or" Divider ═══ */
+            .join-or {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                color: #3d444d;
+                font-size: 0.82rem;
+                letter-spacing: 0.02em;
+            }
+
+            .join-or::before, .join-or::after {
+                content: '';
+                flex: 1;
+                height: 1px;
+                background: rgba(255,255,255,0.07);
+            }
+
+            @keyframes fadeInUp {
+                from { opacity: 0; transform: translateY(24px); }
+                to   { opacity: 1; transform: translateY(0); }
+            }
+        </style>
+
+        <!-- Animated blobs -->
+        <div class="join-bg-blobs">
+            <div class="join-blob join-blob-1"></div>
+            <div class="join-blob join-blob-2"></div>
+            <div class="join-blob join-blob-3"></div>
         </div>
 
-        <div class="features-grid">
-            <div class="feature-item">
-                <span class="material-icons f-icon">back_hand</span>
-                <h3>Gesture Recognition</h3>
-                <p>Our AI translates sign language into text instantly during your video calls.</p>
-            </div>
-            <div class="feature-item">
-                <span class="material-icons f-icon">security</span>
-                <h3>Secure & Private</h3>
-                <p>Peer-to-peer encryption ensures your conversations stay private.</p>
-            </div>
-            <div class="feature-item">
-                <span class="material-icons f-icon">speed</span>
-                <h3>Low Latency</h3>
-                <p>Optimized for speed, ensuring smooth communication even on slow networks.</p>
-            </div>
-        </div>
+        <a href="index.html" class="join-back" title="Back">
+            <span class="material-icons" style="font-size: 22px; margin-right: 1px;">chevron_left</span>
+        </a>
 
-        <footer>
-            <p>&copy; 2025 SignLink. Bridging the gap.</p>
-        </footer>
+        <div class="join-card">
+            <!-- Logo -->
+            <div class="join-logo">
+                <span class="material-icons">video_camera_front</span>
+                <span class="join-logo-text">SignLink</span>
+            </div>
+
+            <div class="join-divider"></div>
+
+            <!-- Language -->
+            <div class="join-input-group">
+                <span class="material-icons">translate</span>
+                <select id="modeSelect">
+                    <option value="ISL">Indian Sign Language (ISL)</option>
+                    <option value="ASL">American Sign Language (ASL)</option>
+                </select>
+            </div>
+
+            <!-- Name -->
+            <div class="join-input-group">
+                <span class="material-icons">person</span>
+                <input type="text" id="userNameInput" placeholder="Your name">
+            </div>
+
+            <!-- New Meeting -->
+            <button class="join-btn-primary" id="newMeetingBtn">
+                <span class="material-icons" style="font-size: 21px;">add_link</span>
+                New Meeting
+            </button>
+
+            <div class="join-or">or join with a code</div>
+
+            <!-- Room Code -->
+            <div class="join-input-group">
+                <span class="material-icons">keyboard</span>
+                <input type="text" id="startRoomInput" placeholder="Enter code or link">
+            </div>
+
+            <!-- Join -->
+            <button id="joinBtn" class="join-btn-secondary" disabled>
+                <span class="material-icons" style="font-size: 21px;">login</span>
+                Join
+            </button>
+
+            <div id="status" class="join-status">Ready to connect</div>
+        </div>
     </div>
+
+
+
 
     <!-- Joining Loader Screen -->
     <div id="joining-loader" class="screen">
@@ -150,19 +388,21 @@
         </div>
         <div class="main-stage">
             <!-- Remoter User (Main View) -->
-            <div class="remote-view-container">
+            <div class="remote-view-container video-muted" id="remoteContainer">
                 <video id="remoteVideo" autoplay playsinline></video>
                 <div class="userInfo">
-                    <div class="volume-meter" id="remoteVolume"></div>
+                    <span class="material-icons volume-meter" id="remoteVolume">mic</span>
                     <span id="remoteUserName">Remote User</span>
                 </div>
             </div>
 
             <!-- Left Caption Log -->
             <div id="caption-log-panel" class="caption-log-panel">
-                <div class="caption-log-header">Live Captions</div>
-                <div id="caption-log-list" class="caption-log-list">
-                    <div class="caption-log-empty">Captions will appear here when speech is detected.</div>
+                <div class="caption-panel-content">
+                    <div id="caption-log-list" class="caption-log-list">
+                        <div class="caption-log-empty">Speech captions will appear here.</div>
+                    </div>
+                    <div id="prediction-sign-cards-container" class="prediction-sign-cards-container"></div>
                 </div>
             </div>
 
@@ -171,7 +411,7 @@
                 <video id="localVideo" autoplay playsinline muted></video>
                 <canvas id="localCanvas"></canvas> <!-- Hand Tracking Overlay -->
                 <div class="userInfo">
-                    <div class="volume-meter" id="localVolume"></div>
+                    <span class="material-icons volume-meter" id="localVolume">mic</span>
                     <span id="localUserName">You</span>
                 </div>
             </div>
@@ -183,26 +423,15 @@
                 <span id="remotePrediction"></span>
             </div>
 
-            <!-- Voice Subtitles (Dark Overlay at Bottom) -->
-            <div id="voice-subtitles" class="voice-subtitles"></div>
+
 
             <div id="prediction-overlay" class="caption-overlay">
                 <span id="prediction">Waiting for sign...</span>
             </div>
 
-            <div id="prediction-sign-cards-container" class="prediction-sign-cards-container"></div>
 
-            <!-- Speech to Text Overlay -->
-            <div id="stt-overlay" class="caption-overlay stt-overlay hidden">
-                <span class="material-icons" style="color: #3b82f6;">graphic_eq</span>
-                <span id="stttext">Listening...</span>
 
-                <!-- Sign cards area (mirrors translation page) -->
-                <div class="sign-cards-area" style="margin-top:10px;">
-                    <!-- JS will inject cards here when speech is detected -->
-                    <p>Sign Language Cards Display</p>
-                </div>
-            </div>
+
 
             <!-- Particle Container for Emoji Animations -->
             <div id="particles-container"></div>
@@ -246,12 +475,6 @@
                 <button class="control-btn" id="camBtn" title="Turn off camera">
                     <span class="material-icons">videocam</span>
                 </button>
-                <button class="control-btn" id="ttsBtn" title="Toggle Text-to-Speech">
-                    <span class="material-icons">volume_up</span>
-                </button>
-                <button class="control-btn" id="sttToggleBtn" title="Toggle Speech-to-Text">
-                    <span class="material-icons">interpreter_mode</span>
-                </button>
                 <button class="control-btn red-btn" id="hangupBtn" title="Leave call">
                     <span class="material-icons">call_end</span>
                 </button>
@@ -260,18 +483,14 @@
             <div class="control-right">
                 <!-- moved secondary-controls group -->
                 <div id="secondary-controls" class="secondary-controls">
-                    <button class="control-btn" id="trainToggleBtn" title="Training Mode">
-                        <span class="material-icons">model_training</span>
+                    <button class="control-btn" id="ttsBtn" title="Toggle Text-to-Speech">
+                        <span class="material-icons">volume_up</span>
+                    </button>
+                    <button class="control-btn" id="sttToggleBtn" title="Toggle Speech-to-Text">
+                        <span class="material-icons">interpreter_mode</span>
                     </button>
                     <button class="control-btn" id="overlayBtn" title="Toggle Hand Overlay">
                         <span class="material-icons" style="color: #4db6ac;">layers</span>
-                    </button>
-                    <!-- Newly added to dropdown -->
-                    <button class="control-btn" title="Info">
-                        <span class="material-icons">info</span>
-                    </button>
-                    <button class="control-btn" title="People">
-                        <span class="material-icons">group</span>
                     </button>
                 </div>
 
@@ -285,86 +504,50 @@
             </div>
         </div>
 
-        <!-- Side Panel for Training (Hidden by default) -->
-        <div id="side-panel" class="side-panel">
-            <div class="panel-header">
-                <h3>Training Data</h3>
-                <button class="close-btn" id="closePanelBtn"><span class="material-icons">close</span></button>
-            </div>
-            <div class="panel-content">
-                <div class="training-controls">
-                    <p>Teach the model new signs.</p>
-                    <input type="text" id="labelInput" placeholder="Label name (e.g. Thanks)">
-
-                    <button id="collectBtn" class="action-btn">
-                        <span class="material-icons">fingerprint</span>
-                        Hold to Collect
-                    </button>
-
-                    <div id="dataCount" class="data-stat">Samples: 0</div>
-
-                    <div id="signList" class="sign-list">
-                        <!-- Signs will appear here -->
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <button id="trainBtn" class="action-btn primary">
-                        <span class="material-icons">school</span>
-                        Train Model
-                    </button>
-
-                    <div id="trainStatus" class="status-msg">Idle</div>
-
-                    <div class="divider"></div>
-
-                    <button id="saveBtn" class="action-btn secondary" disabled>
-                        <span class="material-icons">save</span>
-                        Save Model
-                    </button>
-                    <button id="clearBtn" class="action-btn danger">
-                        <span class="material-icons">delete</span>
-                        Clear Data
-                    </button>
-
-                    <div class="divider"></div>
-
-                    <input type="file" id="uploadInput" accept=".json" style="display: none;">
-                    <button id="uploadBtn" class="action-btn">
-                        <span class="material-icons">upload_file</span>
-                        Upload Dataset
-                    </button>
-                </div>
-            </div>
-        </div>
-
         <!-- Chat Panel (Right Side) -->
-        <div id="chat-panel" class="side-panel chat-panel">
+        <div id="chat-panel" class="side-panel">
             <div class="panel-header">
-                <h3>In-call messages</h3>
+                <h3>Meeting Chat</h3>
                 <button class="close-btn" id="closeChatBtn"><span class="material-icons">close</span></button>
             </div>
-            <div class="chat-messages" id="chatMessages">
-                <!-- Messages go here -->
-                <div class="chat-intro">
-                    <div id="mobileMeetingCodeCard" class="mobile-meeting-code">
-                        <div class="mobile-meeting-code-label">Meeting code</div>
-                        <button id="mobileCopyCodeBtn" class="mobile-meeting-code-btn" type="button" title="Copy meeting code">
-                            <span id="mobileMeetingCodeDisplay">abc-def-ghi</span>
-                            <span class="material-icons">content_copy</span>
-                        </button>
+            <div class="panel-content">
+                <div id="chatMessages" class="chat-messages">
+                    <div class="chat-intro">
+                        <div id="mobileMeetingCodeCard" class="mobile-meeting-code">
+                            <div class="mobile-meeting-code-label">Meeting code</div>
+                            <button id="mobileCopyCodeBtn" class="mobile-meeting-code-btn" type="button" title="Copy meeting code">
+                                <span id="mobileMeetingCodeDisplay">abc-def-ghi</span>
+                                <span class="material-icons">content_copy</span>
+                            </button>
+                        </div>
+                        <p>Messages can only be seen by people in the call and are deleted when the call ends.</p>
                     </div>
-                    <p>Messages can only be seen by people in the call and are deleted when the call ends.</p>
                 </div>
             </div>
-            <div class="chat-input-area">
-                <input type="text" id="chatInput" placeholder="Send a message..." autocomplete="off">
-                <button id="sendChatBtn" class="send-btn" disabled>
-                    <span class="material-icons">send</span>
-                </button>
+            <div class="panel-footer">
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" placeholder="Send a message..." autocomplete="off">
+                    <button id="sendChatBtn" class="chat-send-btn" disabled>
+                        <span class="material-icons">send</span>
+                    </button>
+                </div>
             </div>
         </div>
 
+    </div>
+
+    <!-- Full Room Modal -->
+    <div id="full-room-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 380px;">
+            <div class="modal-icon" style="color: #ef4444; background: rgba(239, 68, 68, 0.1);">
+                <span class="material-icons" style="font-size: 48px;">group_off</span>
+            </div>
+            <h2 style="margin-bottom: 12px; font-size: 1.5rem;">Meeting is Full</h2>
+            <p style="color: var(--text-muted); margin-bottom: 24px; font-size: 0.95rem;">This video call already has the maximum of 2 participants.</p>
+            <div class="modal-actions" style="justify-content: center;">
+                <button class="btn-primary" id="fullRoomOkBtn" style="width: 100%; justify-content: center;">OK</button>
+            </div>
+        </div>
     </div>
 
     <!-- Diagnostics Modal -->

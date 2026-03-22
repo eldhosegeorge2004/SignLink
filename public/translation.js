@@ -187,27 +187,44 @@ async function loadSavedModelAndLabels() {
         const localLoad = async () => {
             console.log("Attempting to load Local Static Model...");
             try {
-                const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
+                let localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
+                let localModelKey = `localstorage://${localStorageModelKey}-static`;
+
+                if (!localLabelData) {
+                    console.log("Local static labels missing. Checking cloud...");
+                    const cloudData = await fetchCloudModel('static', langSelect.value);
+                    if (cloudData) {
+                        localLabels = cloudData.labels;
+                        localModel = cloudData.model;
+                        console.log("Loaded static model from Cloud.");
+                        return;
+                    }
+                }
+
                 if (localLabelData) {
                     const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
                     localLabels = normalizedLocalLabels.labels;
                     if (normalizedLocalLabels.changed) {
                         localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(localLabels));
                     }
-                    console.log(`Diagnostic -> Loaded Local Static Labels for ${localStorageLabelKey}:`, localLabels);
                     try {
-                        localModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
-                        console.log(`Local Static Model loaded (${localLabels.length} labels)`);
+                        localModel = await tf.loadLayersModel(localModelKey);
+                        console.log(`Local Static Model loaded from LocalStorage (${localLabels.length} labels)`);
                     } catch (e) {
-                        console.warn("Local static model weights not found in localStorage.");
-                        localModel = null;
+                        console.warn("Local static model not in LocalStorage. Checking cloud...");
+                        const cloudData = await fetchCloudModel('static', langSelect.value);
+                        if (cloudData) {
+                            localLabels = cloudData.labels;
+                            localModel = cloudData.model;
+                        } else {
+                            localModel = null;
+                        }
                     }
                 }
             } catch (e) {
                 console.warn("Local static model load failed:", e);
                 localModel = null;
             }
-            return Promise.resolve(); // NEVER reject because we want server model to survive
         };
         promises.push(localLoad());
 
@@ -215,7 +232,20 @@ async function loadSavedModelAndLabels() {
         const dynamicLoad = async () => {
             console.log("Attempting to load Local Dynamic Model...");
             try {
-                const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
+                let dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
+                
+                if (!dynamicLabelData) {
+                    console.log("Local dynamic labels missing. Checking cloud...");
+                    const cloudData = await fetchCloudModel('dynamic', langSelect.value);
+                    if (cloudData) {
+                        localLabelsDynamic = cloudData.labels;
+                        localModelDynamic = cloudData.model;
+                        dynamicLabelHandRequirements = cloudData.handReqs || {};
+                        console.log("Loaded dynamic model from Cloud.");
+                        return;
+                    }
+                }
+
                 if (dynamicLabelData) {
                     const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
                     localLabelsDynamic = normalizedDynamicLabels.labels;
@@ -230,10 +260,17 @@ async function loadSavedModelAndLabels() {
                     }
                     try {
                         localModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
-                        console.log(`Local Dynamic Model loaded (${localLabelsDynamic.length} labels)`);
+                        console.log(`Local Dynamic Model loaded from LocalStorage (${localLabelsDynamic.length} labels)`);
                     } catch (e) {
-                        console.warn("Local dynamic model weights not found in localStorage.");
-                        localModelDynamic = null;
+                        console.warn("Local dynamic model not in LocalStorage. Checking cloud...");
+                        const cloudData = await fetchCloudModel('dynamic', langSelect.value);
+                        if (cloudData) {
+                            localLabelsDynamic = cloudData.labels;
+                            localModelDynamic = cloudData.model;
+                            dynamicLabelHandRequirements = cloudData.handReqs || {};
+                        } else {
+                            localModelDynamic = null;
+                        }
                     }
                 }
             } catch (e) {
@@ -278,6 +315,33 @@ async function loadSavedModelAndLabels() {
         sttResult.innerText = "Error loading systems.";
     }
 }
+async function fetchCloudModel(type, lang) {
+    try {
+        const baseUrl = `https://ynvykdraupxkhsxxsonb.supabase.co/storage/v1/object/public/sign-cards/models/${lang.toLowerCase()}/${type}`;
+        
+        // 1. Check for labels first
+        const labelsRes = await fetch(`${baseUrl}/labels.json`);
+        if (!labelsRes.ok) return null;
+        
+        const labels = await labelsRes.json();
+        
+        // 2. Load the model
+        // tf.loadLayersModel handles the model.json which points to weights.bin
+        const model = await tf.loadLayersModel(`${baseUrl}/model.json`);
+        
+        let handReqs = null;
+        if (type === 'dynamic') {
+            const reqRes = await fetch(`${baseUrl}/hand_reqs.json`);
+            if (reqRes.ok) handReqs = await reqRes.json();
+        }
+        
+        return { model, labels, handReqs };
+    } catch (err) {
+        console.warn(`Cloud model fetch failed for ${type}:`, err);
+        return null;
+    }
+}
+
 loadSavedModelAndLabels();
 
 // --- MediaPipe Setup ---
@@ -917,8 +981,11 @@ setInterval(() => {
 function finishSpelling(forceSpeak = false) {
     const wordToSpeak = accumulatedWord.charAt(0).toUpperCase() + accumulatedWord.slice(1).toLowerCase();
 
-    // Speak the whole word
-    speakText(wordToSpeak, forceSpeak);
+    // Speak the whole word only if TTS is OFF (to avoid redundancy since letters are already spoken)
+    // but allow forceSpeak (hand loss) to still trigger it if TTS is disabled.
+    if (!isTTSOn) {
+        speakText(wordToSpeak, forceSpeak);
+    }
 
     // Show in main result area
     sttResult.innerText = `Spelled: ${wordToSpeak}`;
@@ -1155,7 +1222,30 @@ function initSpeechRecognition() {
     };
 
     recognition.onerror = (event) => {
-        console.error("Speech error", event.error);
+        console.error("Speech recognition error:", event.error);
+        if (event.error === 'network') {
+            if (listeningText) listeningText.innerText = "Network Error. Check connection.";
+        }
+        if (event.error === 'not-allowed') {
+            if (listeningText) listeningText.innerText = "Mic access blocked.";
+        }
+    };
+
+    recognition.onend = () => {
+        console.log("Speech recognition ended.");
+        // Auto-restart if we are still in voice mode
+        if (!isSignMode) {
+            console.log("Restarting speech recognition...");
+            try {
+                recognition.start();
+            } catch (e) {
+                console.error("Error restarting recognition:", e);
+                // If it fails immediately, try again after a short delay
+                setTimeout(() => {
+                    if (!isSignMode) recognition.start();
+                }, 1000);
+            }
+        }
     };
 }
 
@@ -1331,148 +1421,184 @@ async function resolveTranslationUnitTokens(unit, langFolder) {
     return fallbackTokens;
 }
 
-function displaySignCards(text) {
+/**
+ * Renders the state of translationCardQueue to the UI.
+ * Scoped here to be called during incremental updates.
+ */
+function renderTranslationCardQueue() {
+    const cardArea = document.querySelector('.sign-cards-area-right');
+    if (!cardArea) return;
+
+    cardArea.innerHTML = '';
+
+    const lineGroups = [];
+    let currentLine = [];
+    let currentGroup = [];
+    for (const token of translationCardQueue) {
+        if (token.type === 'linebreak') {
+            if (currentGroup.length) {
+                currentLine.push(currentGroup);
+                currentGroup = [];
+            }
+            if (currentLine.length) {
+                lineGroups.push(currentLine);
+                currentLine = [];
+            }
+            continue;
+        }
+
+        if (token.type === 'space') {
+            if (currentGroup.length) {
+                currentLine.push(currentGroup);
+                currentGroup = [];
+            }
+            continue;
+        }
+
+        currentGroup.push(token);
+    }
+    if (currentGroup.length) currentLine.push(currentGroup);
+    if (currentLine.length) lineGroups.push(currentLine);
+
+    lineGroups.forEach((line) => {
+        const lineEl = document.createElement('div');
+        lineEl.style.display = 'flex';
+        lineEl.style.flexWrap = 'nowrap';
+        lineEl.style.alignItems = 'flex-start';
+        lineEl.style.gap = '25px';
+        lineEl.style.flexShrink = '0';
+
+        line.forEach((group) => {
+            const wordGroupEl = document.createElement('div');
+            wordGroupEl.style.display = 'flex';
+            wordGroupEl.style.flexWrap = 'nowrap';
+            wordGroupEl.style.alignItems = 'flex-start';
+            wordGroupEl.style.gap = '10px';
+            wordGroupEl.style.flexShrink = '0';
+
+            group.forEach((token) => {
+                const card = document.createElement('div');
+                card.style.width = '78px';
+                card.style.height = '88px';
+                card.style.border = '1px solid rgba(148,163,184,0.35)';
+                card.style.borderRadius = '10px';
+                card.style.background = 'rgba(15,23,42,0.92)';
+                card.style.display = 'flex';
+                card.style.flexDirection = 'column';
+                card.style.alignItems = 'center';
+                card.style.justifyContent = 'center';
+                card.style.padding = '5px';
+                card.style.flexShrink = '0';
+
+                if (token.type === 'card') {
+                    const img = document.createElement('img');
+                    img.src = token.src;
+                    img.alt = token.label;
+                    img.style.width = '100%';
+                    img.style.height = '50px';
+                    img.style.objectFit = 'contain';
+                    img.style.borderRadius = '6px';
+                    img.style.background = 'rgba(0,0,0,0.45)';
+                    img.onerror = () => img.style.display = 'none';
+                    card.appendChild(img);
+                }
+
+                const label = document.createElement('div');
+                label.textContent = token.label;
+                label.style.fontSize = '0.64rem';
+                label.style.color = '#fff';
+                label.style.marginTop = '3px';
+                label.style.textAlign = 'center';
+                label.style.width = '100%';
+                label.style.whiteSpace = 'nowrap';
+                label.style.overflow = 'hidden';
+                label.style.textOverflow = 'ellipsis';
+                card.appendChild(label);
+
+                wordGroupEl.appendChild(card);
+            });
+            lineEl.appendChild(wordGroupEl);
+        });
+        cardArea.appendChild(lineEl);
+    });
+    
+    // Auto-scroll logic with smooth panning for new words
+    // Calculate the jump point (previous end) to start the smooth pan from
+    const oldScrollWidth = cardArea.dataset.lastScrollWidth ? parseInt(cardArea.dataset.lastScrollWidth) : 0;
+    const newScrollWidth = cardArea.scrollWidth;
+    
+    // 1. Instantly jump back to the previous end position so we can pan from there
+    cardArea.scrollLeft = oldScrollWidth;
+
+    // 2. Perform smooth scroll to the new end position
+    setTimeout(() => {
+        cardArea.scrollTo({
+            left: newScrollWidth,
+            behavior: 'smooth'
+        });
+        // Store current width for the next word
+        cardArea.dataset.lastScrollWidth = newScrollWidth.toString();
+    }, 10);
+
+    // Vertical scroll for desktop side-panel
+    cardArea.scrollTop = cardArea.scrollHeight;
+}
+
+async function displaySignCards(text) {
     const cardArea = document.querySelector('.sign-cards-area-right');
     if (!cardArea) return;
 
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length === 0) {
-        cardArea.innerHTML = '<div class="placeholder-msg">Sign Cards will appear here.</div>';
+        if (translationCardQueue.length === 0) {
+            cardArea.innerHTML = '<div class="placeholder-msg">Sign Cards will appear here.</div>';
+        }
         return;
     }
 
     const langFolder = getTranslationLangFolder();
+    const units = buildTranslationCardUnits(words, langFolder);
 
-    (async () => {
-        const tokens = [];
-        const units = buildTranslationCardUnits(words, langFolder);
-        for (let i = 0; i < units.length; i++) {
-            const resolved = await resolveTranslationUnitTokens(units[i], langFolder);
-            tokens.push(...resolved);
-            // Every word/phrase gets its own line
-            tokens.push({ type: 'linebreak' });
-        }
-
-        translationCardQueue.push(...tokens);
-
-        if (translationCardQueue.length > TRANSLATION_MAX_CARD_TOKENS) {
-            const sliceStart = translationCardQueue.length - TRANSLATION_MAX_CARD_TOKENS;
-            let trimmedQueue = translationCardQueue.slice(sliceStart);
-
-            if (sliceStart > 0 && !['space', 'linebreak'].includes(translationCardQueue[sliceStart - 1]?.type)) {
-                while (trimmedQueue.length && !['space', 'linebreak'].includes(trimmedQueue[0].type)) {
-                    trimmedQueue.shift();
-                }
-            }
-
-            translationCardQueue.length = 0;
-            translationCardQueue.push(...trimmedQueue);
-
-            while (translationCardQueue.length && ['space', 'linebreak'].includes(translationCardQueue[0].type)) {
-                translationCardQueue.shift();
-            }
-        }
-
-        cardArea.innerHTML = '';
-
-        const lineGroups = [];
-        let currentLine = [];
-        let currentGroup = [];
-        for (const token of translationCardQueue) {
-            if (token.type === 'linebreak') {
-                if (currentGroup.length) {
-                    currentLine.push(currentGroup);
-                    currentGroup = [];
-                }
-                if (currentLine.length) {
-                    lineGroups.push(currentLine);
-                    currentLine = [];
-                }
-                continue;
-            }
-
-            if (token.type === 'space') {
-                if (currentGroup.length) {
-                    currentLine.push(currentGroup);
-                    currentGroup = [];
-                }
-                continue;
-            }
-
-            currentGroup.push(token);
-        }
-        if (currentGroup.length) {
-            currentLine.push(currentGroup);
-        }
-        if (currentLine.length) {
-            lineGroups.push(currentLine);
-        }
-
-        lineGroups.forEach((line) => {
-            const lineEl = document.createElement('div');
-            lineEl.style.display = 'flex';
-            lineEl.style.flexWrap = 'wrap';
-            lineEl.style.alignItems = 'flex-start';
-            lineEl.style.gap = '10px';
-            lineEl.style.width = '100%';
-
-            line.forEach((group) => {
-                const wordGroupEl = document.createElement('div');
-                wordGroupEl.style.display = 'flex';
-                wordGroupEl.style.flexWrap = 'nowrap';
-                wordGroupEl.style.alignItems = 'flex-start';
-                wordGroupEl.style.gap = '10px';
-
-                group.forEach((token) => {
-                    const card = document.createElement('div');
-                    card.style.width = '78px';
-                    card.style.height = '88px';
-                    card.style.border = '1px solid rgba(148,163,184,0.35)';
-                    card.style.borderRadius = '10px';
-                    card.style.background = 'rgba(15,23,42,0.92)';
-                    card.style.display = 'flex';
-                    card.style.flexDirection = 'column';
-                    card.style.alignItems = 'center';
-                    card.style.justifyContent = 'center';
-                    card.style.padding = '5px';
-
-                    if (token.type === 'card') {
-                        const img = document.createElement('img');
-                        img.src = token.src;
-                        img.alt = token.label;
-                        img.style.width = '100%';
-                        img.style.height = '50px';
-                        img.style.objectFit = 'contain';
-                        img.style.borderRadius = '6px';
-                        img.style.background = 'rgba(0,0,0,0.45)';
-                        img.onerror = () => img.style.display = 'none';
-                        card.appendChild(img);
-                    }
-
-                    const label = document.createElement('div');
-                    label.textContent = token.label;
-                    label.style.fontSize = '0.64rem';
-                    label.style.color = '#fff';
-                    label.style.marginTop = '3px';
-                    label.style.textAlign = 'center';
-                    label.style.width = '100%';
-                    label.style.whiteSpace = 'nowrap';
-                    label.style.overflow = 'hidden';
-                    label.style.textOverflow = 'ellipsis';
-                    card.appendChild(label);
-
-                    wordGroupEl.appendChild(card);
-                });
-
-                lineEl.appendChild(wordGroupEl);
-            });
-
-            cardArea.appendChild(lineEl);
-        });
+    for (let i = 0; i < units.length; i++) {
+        const tokens = await resolveTranslationUnitTokens(units[i], langFolder);
         
-        // Auto-scroll to the bottom as new cards are added
-        cardArea.scrollTop = cardArea.scrollHeight;
-    })();
+        // Add each token (card/label) with a small delay for a streaming effect
+        // This ensures long words enter the screen predictably and remain readable
+        for (const token of tokens) {
+            translationCardQueue.push(token);
+
+            // Prune queue within the loop to keep it responsive
+            if (translationCardQueue.length > TRANSLATION_MAX_CARD_TOKENS) {
+                const sliceStart = translationCardQueue.length - TRANSLATION_MAX_CARD_TOKENS;
+                let trimmedQueue = translationCardQueue.slice(sliceStart);
+                if (sliceStart > 0 && !['space', 'linebreak'].includes(translationCardQueue[sliceStart-1]?.type)) {
+                    while (trimmedQueue.length && !['space', 'linebreak'].includes(trimmedQueue[0].type)) {
+                        trimmedQueue.shift();
+                    }
+                }
+                translationCardQueue.length = 0;
+                translationCardQueue.push(...trimmedQueue);
+                while (translationCardQueue.length && ['space', 'linebreak'].includes(translationCardQueue[0].type)) {
+                    translationCardQueue.shift();
+                }
+            }
+
+            // Reveal this card now
+            renderTranslationCardQueue();
+
+            // Delay for readability (250ms is roughly matching manual sign speed)
+            await new Promise(r => setTimeout(r, 250));
+        }
+
+        // Add linebreak after each word unit
+        translationCardQueue.push({ type: 'linebreak' });
+        renderTranslationCardQueue();
+
+        // Extra gap between words
+        if (i < units.length - 1) {
+            await new Promise(r => setTimeout(r, 600));
+        }
+    }
 }
 
 // --- Sign/Voice Mode Toggle ---
@@ -1515,7 +1641,7 @@ function bindSignVoiceToggle() {
             // Switch to Sign Mode
             toggleBtn.innerHTML = '<span class="material-icons">pan_tool</span>';
             toggleBtn.title = 'Switch to Voice Mode';
-            sttResult.style.display = 'inline-block';
+            if (sttResult.parentElement) sttResult.parentElement.style.display = '';
             if (speechPanel) speechPanel.classList.remove('active');
 
             if (isCamOn && !localStream) startCamera();
@@ -1524,7 +1650,7 @@ function bindSignVoiceToggle() {
             // Switch to Voice Mode
             toggleBtn.innerHTML = '<span class="material-icons">mic</span>';
             toggleBtn.title = 'Switch to Sign Mode';
-            sttResult.style.display = 'none';
+            if (sttResult.parentElement) sttResult.parentElement.style.display = 'none';
             if (speechPanel) speechPanel.classList.add('active');
             if (listeningText) listeningText.innerText = "Listening...";
             
@@ -1555,6 +1681,59 @@ if (speechPanel) {
 // --- Legacy Mode Button Removed (replaced by Sign/Voice Toggle) ---
 // The old modeBtn had two different modes (sign-to-text vs speech-to-sign)
 // Now we have Sign Mode (sign detection) vs Voice Mode (speech recognition + captions)
+
+// --- Drag to Scroll Utility ---
+function enableDragToScroll(el, direction = 'both') {
+    if (!el) return;
+    let isDown = false;
+    let startX, startY;
+    let scrollLeft, scrollTop;
+
+    el.addEventListener('mousedown', (e) => {
+        isDown = true;
+        el.style.cursor = 'grabbing';
+        startX = e.pageX - el.offsetLeft;
+        startY = e.pageY - el.offsetTop;
+        scrollLeft = el.scrollLeft;
+        scrollTop = el.scrollTop;
+    });
+
+    el.addEventListener('mouseleave', () => {
+        isDown = false;
+        el.style.cursor = 'default';
+    });
+
+    el.addEventListener('mouseup', () => {
+        isDown = false;
+        el.style.cursor = 'default';
+    });
+
+    el.addEventListener('mousemove', (e) => {
+        if (!isDown) return;
+        e.preventDefault();
+        
+        if (direction === 'both' || direction === 'horizontal') {
+            const x = e.pageX - el.offsetLeft;
+            const walkX = (x - startX) * 2;
+            el.scrollLeft = scrollLeft - walkX;
+        }
+        
+        if (direction === 'both' || direction === 'vertical') {
+            const y = e.pageY - el.offsetTop;
+            const walkY = (y - startY) * 2;
+            el.scrollTop = scrollTop - walkY;
+        }
+    });
+}
+
+if (speechCaptionLog) {
+    enableDragToScroll(speechCaptionLog, 'vertical');
+}
+
+const cardArea = document.querySelector('.sign-cards-area-right');
+if (cardArea) {
+    enableDragToScroll(cardArea, 'horizontal');
+}
 
 // Initialize (start in sign mode by default)
 if (isSignMode && isCamOn) {

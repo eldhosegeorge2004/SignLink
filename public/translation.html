@@ -340,12 +340,20 @@
             position: fixed;
             left: 50%;
             transform: translateX(-50%);
-            bottom: 24px;
+            bottom: 30px;
             z-index: 210;
             display: flex;
-            gap: 12px;
+            gap: 15px;
             align-items: center;
             justify-content: center;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            padding: 8px 24px;
+            border-radius: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            width: fit-content;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            max-width: 95vw;
         }
 
         /* Control button styling */
@@ -457,61 +465,88 @@
                 padding-top: 0;
             }
 
-            /* Camera fills portion of screen */
+            /* Full-Screen Vertical Camera Feed */
             .video-container {
+                position: fixed;
+                top: 0;
                 left: 0;
-                width: 100%;
-                height: 40vh;
-                aspect-ratio: unset;
+                width: 100vw;
+                height: 100dvh;
                 border-radius: 0;
                 border: none;
-                box-shadow: none;
-                flex-shrink: 0;
+                margin: 0;
                 background: #000;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                z-index: 1; /* Background layer */
+            }
+
+            .video-container video, 
+            .video-container canvas {
+                width: 100%;
+                height: 100%;
+                object-fit: cover !important; /* Forces vertical full-screen crop */
+            }
+
+            /* Overlays positioned on top of the camera */
+            .result-overlay {
+                position: fixed;
+                bottom: 110px; /* Above the pill control bar */
+                left: 50%;
+                transform: translateX(-50%);
+                width: 85%;
+                background: rgba(13, 20, 36, 0.9);
+                padding: 15px 20px;
+                border-radius: 30px;
+                z-index: 110;
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+                display: none;
+            }
+
+            .result-overlay:has(#stt-result:not(:empty)) {
+                display: flex;
+                justify-content: center;
+                align-items: center;
             }
 
             /* Back button: icon-only circle */
             .back-btn {
+                position: fixed;
                 top: 14px;
                 left: 14px;
                 padding: 10px;
                 border-radius: 50%;
                 gap: 0;
-                background: rgba(0, 0, 0, 0.5);
-                backdrop-filter: blur(6px);
+                background: rgba(0, 0, 0, 0.4);
+                backdrop-filter: blur(8px);
                 width: 44px;
                 height: 44px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                z-index: 200;
+                border: 1px solid rgba(255, 255, 255, 0.1);
             }
             .back-btn span:last-child {
                 display: none;
             }
             .back-btn .material-icons {
-                font-size: 24px;
+                font-size: 28px;
+                margin-right: 2px; /* Visual centering for chevron */
             }
 
-            /* Translation result strip — compact */
-            .result-overlay {
-                bottom: 80px;
-                padding: 10px 18px;
-                font-size: 0.95rem;
-                max-width: 90%;
-                border-radius: 30px;
-            }
 
             /* Control bar — fits in one tight row */
             .control-bar {
-                bottom: 10px;
+                bottom: 15px;
                 gap: 10px;
-                padding: 0 10px;
+                padding: 6px 15px;
                 display: flex;
                 flex-direction: row;
                 flex-wrap: nowrap;
                 align-items: center;
                 justify-content: center;
+                border-radius: 40px;
             }
 
             /* Control buttons styling for mobile */
@@ -538,110 +573,95 @@
 
             /* Speech panel: captions and sign cards area */
             .speech-container {
-                position: relative !important;
-                bottom: auto !important;
-                left: auto !important;
-                right: auto !important;
-                width: 100% !important;
+                position: fixed !important;
+                bottom: 110px !important; /* Increased space above the pill control bar */
+                left: 50% !important;
+                transform: translateX(-50%);
+                width: 92% !important;
                 height: auto;
-                max-height: 50vh;
-                min-height: 0;
-                border: none !important;
-                background: rgba(30, 41, 59, 0.6);
-                backdrop-filter: blur(8px);
-                padding: 0 !important;
-                box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
-                grid-column: auto !important;
-                grid-row: auto !important;
-                display: flex;
+                max-height: 45vh;
+                border-radius: 24px !important;
+                background: rgba(13, 20, 36, 0.7) !important;
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                display: none;
                 flex-direction: column;
-                justify-content: flex-start;
-                align-items: stretch;
-                overflow-y: auto;
-                flex: 1;
+                z-index: 105;
+                overflow: hidden;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
             }
 
             body.voice-mode-active .speech-container {
-                position: relative !important;
-                background: transparent !important;
-                backdrop-filter: none !important;
-                border: none !important;
-            }
-
-            /* Captions in the middle */
-            .listening-indicator {
-                position: static !important;
-                display: none !important;
-                left: auto !important;
-                top: auto !important;
-                z-index: auto;
-                margin: 24px 16px 0 16px !important;
-                font-size: 0.9rem !important;
-                color: #3b82f6;
-            }
-
-            body.voice-mode-active .listening-indicator {
                 display: flex !important;
+                /* Keeps the fixed positioning from .speech-container above */
             }
 
-            body.voice-mode-active .listening-indicator.show {
-                display: flex !important;
-            }
-
-            .speech-caption-log {
-                max-height: auto;
-                min-height: auto;
-                position: static !important;
-                display: none !important;
-                left: auto !important;
-                top: auto !important;
-                z-index: auto;
-                width: 100% !important;
-                background: transparent !important;
-                padding: 6px 16px 12px 16px !important;
-                margin: 0 !important;
-                border: none !important;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            /* Listening text and captions */
+            #listening-text {
                 font-size: 0.85rem !important;
-                color: #e2e8f0;
+                color: #58a6ff;
+                font-weight: 600;
+                margin: 12px 16px 4px 16px !important;
             }
 
-            body.voice-mode-active .speech-caption-log {
-                max-height: auto !important;
-                min-height: auto !important;
+            #speech-panel .card-header {
+                display: none !important; /* Hide mic icon/header on mobile for space */
+            }
+
+            body.voice-mode-active #listening-text {
                 display: block !important;
             }
 
-            body.voice-mode-active .speech-caption-log.show {
-                display: block !important;
-            }
-
-            /* Sign cards area at bottom */
-            .sign-cards-area {
-                height: auto;
-                min-height: 100px;
-                max-height: 30vh;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 12px 16px !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 0 !important;
-                background: rgba(15, 23, 42, 0.5);
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
-                gap: 6px;
+            #speech-caption-log {
+                max-height: 100px;
                 overflow-y: auto;
+                background: transparent !important;
+                padding: 4px 16px 10px 16px !important;
+                margin: 0 !important;
+                border: none !important;
+                font-size: 0.9rem !important;
+                color: #e6edf3;
+                line-height: 1.4;
+                display: none;
+                /* Hide scrollbar */
+                scrollbar-width: none; /* Firefox */
+                -ms-overflow-style: none;  /* IE and Edge */
+            }
+            #speech-caption-log::-webkit-scrollbar {
+                display: none; /* Chrome, Safari and Opera */
             }
 
-            body.voice-mode-active .sign-cards-area {
+            body.voice-mode-active #speech-caption-log {
+                display: block !important;
+            }
+
+            /* Sign cards area nested in container */
+            .sign-cards-area-right {
+                height: auto;
+                max-height: 160px;
                 width: 100% !important;
                 margin: 0 !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.15);
-                background: rgba(15, 23, 42, 0.5);
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
-                gap: 6px;
-                padding: 12px 16px;
+                padding: 10px 14px !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 0 !important;
+                background: rgba(0, 0, 0, 0.2);
+                display: flex;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                gap: 25px;
+                align-items: center;
+                -webkit-overflow-scrolling: touch;
+                /* Hide scrollbar */
+                scrollbar-width: none;
+                -ms-overflow-style: none;
+            }
+            .sign-cards-area-right::-webkit-scrollbar {
+                display: none;
+            }
+
+            body.voice-mode-active .sign-cards-area-right {
+                display: flex !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
             }
 
             /* Spelling overlay: smaller on mobile */
@@ -714,15 +734,18 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
         crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <!-- TF.js for future model integration if needed -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-client.js"></script>
 </head>
 
 <body>
 
     <a href="index.html" class="back-btn">
-        <span class="material-icons">arrow_back</span>
-        Back to Home
+        <span class="material-icons">chevron_left</span>
+        <span>Back to Home</span>
     </a>
 
     <div class="translation-container">
@@ -747,7 +770,7 @@
 
                     <!-- Sign Mode Result Overlay -->
                     <div class="result-overlay">
-                        <span id="stt-result">Translated Text Will Appear Here...</span>
+                        <span id="stt-result"></span>
                     </div>
 
                     <!-- Spelling Overlay (Top Left) -->

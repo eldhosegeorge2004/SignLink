@@ -367,7 +367,7 @@
             background: transparent;
             color: #8b949e;
             border: 1px solid #30363d;
-            border-radius: 8px;
+            border-radius: 50%;
             width: 34px;
             height: 34px;
             align-items: center;
@@ -396,177 +396,609 @@
             pointer-events: auto;
         }
 
-        @media (max-width: 1200px) {
-            .studio-layout {
-                grid-template-columns: 300px 1fr 280px;
-            }
-        }
-
         @media (max-width: 980px) {
             body {
-                overflow-y: auto;
-                overflow-x: hidden;
+                overflow: hidden; /* App feel: no scroll */
+                height: 100dvh;
+                background-color: #050510;
             }
 
             .studio-layout {
                 display: flex;
                 flex-direction: column;
                 width: 100%;
-                height: auto;
-                min-height: 100dvh;
+                height: 100dvh;
+                background-color: #050510;
+                gap: 0;
+            }
+
+            /* Desktop Sidebar hide */
+            .sidebar-title-desktop {
+                display: none;
+            }
+
+            /* Mobile Header appearance */
+            .mobile-app-header {
+                display: flex !important;
+                align-items: center;
+                justify-content: space-between;
+                padding: 14px 14px;
+                background: transparent;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                z-index: 100;
+                pointer-events: none;
+            }
+
+            .mobile-app-header > * {
+                pointer-events: all;
+            }
+
+
+
+
+            .app-title {
+                font-family: 'Outfit', sans-serif;
+                font-size: 1.1rem;
+                font-weight: 700;
+                color: #e6edf3;
+                margin: 0;
+            }
+
+            .header-actions {
+                display: flex;
+                gap: 12px;
+            }
+
+            .header-icon-btn {
+                background: rgba(59, 130, 246, 0.1);
+                border: 1px solid rgba(59, 130, 246, 0.2);
+                color: #58a6ff;
+                width: 38px;
+                height: 38px;
+                border-radius: 10px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
             }
 
             .workspace {
+                flex: 1;
                 order: 1;
-            }
-
-            .sidebar {
-                order: 2;
-            }
-
-            .data-panel {
-                order: 3;
-            }
-
-            .sidebar {
-                border-right: none;
-                border-bottom: 1px solid #30363d;
-                padding: 16px;
-                gap: 14px;
-            }
-
-            .workspace {
-                padding: 14px 14px 24px;
-                justify-content: flex-start;
-            }
-
-            .mobile-data-toggle {
-                display: inline-flex;
+                padding: 0;
+                justify-content: center;
+                position: relative;
+                overflow: hidden;
+                background: #000;
             }
 
             .camera-wrapper {
-                max-width: none;
                 width: 100%;
+                height: 100%;
+                max-width: none;
+                border-radius: 0;
+                border: none;
+                aspect-ratio: auto;
             }
 
-            .capture-fab {
-                position: fixed;
+            video, canvas {
+                object-fit: cover !important;
+            }
+
+            /* Bottom Control Bar */
+            .mobile-bottom-bar {
+                display: flex !important;
+                justify-content: center;
+                align-items: center;
+                position: absolute;
+                bottom: calc(30px + env(safe-area-inset-bottom));
                 left: 50%;
                 transform: translateX(-50%);
-                bottom: calc(12px + env(safe-area-inset-bottom));
-                width: 68px;
-                height: 68px;
-                z-index: 20;
+                background: rgba(13, 17, 23, 0.95);
+                backdrop-filter: blur(20px);
+                border: 1px solid #30363d;
+                border-radius: 40px;
+                padding: 12px 24px;
+                z-index: 90;
+                gap: 24px;
+                width: max-content;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
             }
 
-            .capture-fab:hover {
-                transform: translateX(-50%);
+            .mobile-side-actions {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
             }
 
-            .capture-fab:active {
-                transform: translateX(-50%) scale(0.95);
+            .mobile-bottom-btn {
+                background: #21262d;
+                color: #c9d1d9;
+                border: 1px solid #30363d;
+                padding: 8px 10px;
+                border-radius: 50%;
+                font-size: 0.75rem;
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                cursor: pointer;
+                white-space: nowrap;
             }
 
-            .capture-inner {
-                width: 50px;
-                height: 50px;
+            .mobile-bottom-btn.primary {
+                background: rgba(59, 130, 246, 0.15);
+                color: #58a6ff;
+                border-color: rgba(59, 130, 246, 0.3);
             }
 
-            .capture-fab.active .capture-inner {
-                width: 28px;
-                height: 28px;
+            .mobile-bottom-btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
             }
 
-            #captureHint {
-                text-align: center;
-                padding: 0 8px;
+            .mobile-add-btn-wrapper {
+                position: relative;
+                display: inline-flex;
+                align-items: center;
             }
 
-            #dynamicControls {
-                width: 100%;
+            .mobile-clear-sign-btn {
+                position: absolute;
+                top: -12px;
+                right: -12px;
+                background: rgba(218, 54, 51, 0.1);
+                color: #da3633;
+                border: 1px solid rgba(218, 54, 51, 0.2);
+                border-radius: 50%;
+                width: 24px;
+                height: 24px;
+                display: none; /* Shown when sign info is added */
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                z-index: 10;
             }
 
-            #startRecordBtn,
-            #stopRecordBtn,
-            #recordingProgress {
-                width: min(100%, 320px) !important;
+            .mobile-revert-badge-btn {
+                position: absolute;
+                bottom: -12px;
+                right: -12px;
+                background: rgba(242, 204, 96, 0.1);
+                color: #f2cc60;
+                border: 1px solid rgba(242, 204, 96, 0.2);
+                border-radius: 50%;
+                width: 24px;
+                height: 24px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                z-index: 10;
             }
 
-            #testResult {
-                position: static !important;
-                left: auto !important;
-                bottom: auto !important;
-                transform: none !important;
-                margin-top: 12px;
-                white-space: normal !important;
-                max-width: 100%;
-                text-align: center;
+            .mobile-revert-badge-btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
             }
 
-            .data-panel {
+            /* DRAWERS (Sidebar & Data) */
+            .sidebar, .data-panel {
                 position: fixed;
                 top: 0;
                 right: 0;
-                width: min(86vw, 380px);
-                max-width: 100%;
+                width: min(88vw, 400px);
                 height: 100dvh;
                 transform: translateX(100%);
-                transition: transform 0.25s ease;
+                transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                z-index: 150;
+                box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+                display: flex;
+                flex-direction: column;
+                background: #0d1117;
                 border-left: 1px solid #30363d;
-                border-top: none;
-                z-index: 30;
-                min-height: 100dvh;
-                box-shadow: -20px 0 40px rgba(0, 0, 0, 0.35);
             }
 
-            .data-panel.open {
+            .sidebar.open, .data-panel.open {
                 transform: translateX(0);
             }
 
-            .list-header {
-                padding: 14px 16px;
+            .sidebar {
+                padding: 0;
+                height: 100dvh;
+                border-right: none;
             }
 
-            .drawer-close-btn {
-                display: inline-flex;
+            .sidebar-header {
+                display: flex !important;
+                align-items: center;
+                justify-content: space-between;
+                padding: 16px 20px;
+                border-bottom: 1px solid #30363d;
+                background: #161b22;
             }
 
-            .data-list {
-                max-height: none;
+            .sidebar-content {
+                flex: 1;
+                overflow-y: auto;
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .sidebar-footer {
+                padding: 20px;
+                border-top: 1px solid #30363d;
+                background: #0d1117;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .mobile-data-toggle {
+                display: none !important; /* Replaced by header icon */
+            }
+
+            /* Floating Capture Button Improvements */
+            .capture-fab {
+                position: absolute;
+                bottom: calc(100px + env(safe-area-inset-bottom));
+                left: 50%;
+                transform: translateX(-50%);
+                width: 68px;
+                height: 68px;
+                background: white;
+                border: 4px solid rgba(255, 255, 255, 0.4);
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+                z-index: 80;
+            }
+
+            .capture-fab:active {
+                transform: scale(0.92);
+            }
+
+            .capture-fab.active {
+                border-color: rgba(239, 68, 68, 0.4);
+                background: #da3633;
+            }
+
+            /* Portal: use display:contents so it never takes up space when
+               the capture button inside it is hidden (display:none) */
+            #captureBtnPortal {
+                display: contents;
+            }
+
+            /* When the capture button is moved into the portal / bottom bar,
+               override the floating absolute positioning so it sits inline */
+            #captureBtnPortal .capture-fab {
+                position: static !important;
+                transform: none !important;
+                bottom: auto !important;
+                left: auto !important;
+                width: 44px !important;
+                height: 44px !important;
+                border-radius: 50% !important;
+                background: rgba(255, 255, 255, 0.12) !important;
+                border: 1.5px solid rgba(255, 255, 255, 0.2) !important;
+                box-shadow: none !important;
+                z-index: auto;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 0;
+                transition: background 0.2s, border-color 0.2s, transform 0.1s;
+            }
+
+            /* Show a record icon inside the button via pseudo-element */
+            #captureBtnPortal .capture-fab .capture-inner {
+                width: 16px !important;
+                height: 16px !important;
+                border-radius: 50% !important;
+                background: #ef4444 !important;
+                flex-shrink: 0;
+            }
+
+            /* Active (recording) state */
+            #captureBtnPortal .capture-fab.active {
+                background: rgba(239, 68, 68, 0.15) !important;
+                border-color: rgba(239, 68, 68, 0.5) !important;
+            }
+
+            #captureBtnPortal .capture-fab.active .capture-inner {
+                background: #ef4444 !important;
+                border-radius: 4px !important;
+                width: 14px !important;
+                height: 14px !important;
+            }
+
+            #captureBtnPortal .capture-fab:active {
+                transform: scale(0.92) !important;
+            }
+
+            #testResult {
+                display: none !important;
+            }
+
+            .recording-indicator {
+                top: 70px;
+                right: 16px;
+                z-index: 110;
+            }
+
+            .sidebar .back-link {
+                display: none; /* Hidden in side-drawer, use header back button */
+            }
+
+            .sidebar-close-btn, .drawer-close-btn {
+                background: transparent;
+                border: 1px solid #30363d;
+                color: #8b949e;
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            /* Modal for Sign Setup */
+            .sign-setup-modal {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: #161b22;
+                border-top: 1px solid #30363d;
+                border-radius: 24px 24px 0 0;
+                z-index: 200;
+                padding: 24px;
+                transform: translateY(100%);
+                transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+            }
+
+            .sign-setup-modal.active {
+                transform: translateY(0);
+            }
+
+            .modal-step {
+                display: none;
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .modal-step.active {
+                display: flex;
+            }
+
+            .modal-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 4px;
+            }
+
+            .modal-title {
+                font-family: 'Outfit', sans-serif;
+                font-weight: 700;
+                font-size: 1.25rem;
+                color: #e6edf3;
+            }
+
+            .modal-step-indicator {
+                color: #8b949e;
+                font-size: 0.8rem;
+                font-weight: 500;
+            }
+
+            .modal-body {
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .modal-footer {
+                display: flex;
+                gap: 12px;
+                margin-top: 10px;
+            }
+
+            .modal-btn {
+                flex: 1;
+                padding: 14px;
+                border-radius: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+            }
+
+            .modal-btn.primary {
+                background: #238636;
+                color: white;
+                border: none;
+            }
+
+            .modal-btn.secondary {
+                background: #21262d;
+                color: #c9d1d9;
+                border: 1px solid #30363d;
             }
         }
 
         @media (max-width: 600px) {
-            .sidebar {
-                padding: 12px;
+            .sidebar, .data-panel {
+                width: 100vw;
             }
+        }
 
-            .panel-section {
-                padding: 12px;
-            }
+        /* Custom Alert Dialog */
+        .custom-alert {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 20px;
+            padding: 30px 24px;
+            z-index: 1000;
+            width: 90%;
+            max-width: 360px;
+            text-align: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+        }
 
-            .section-title {
-                font-size: 0.78rem;
-                margin-bottom: 10px;
-            }
+        .custom-alert.active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translate(-50%, -50%) scale(1);
+        }
 
-            .recording-indicator {
-                top: 10px;
-                right: 10px;
-                font-size: 0.72rem;
-                padding: 4px 10px;
-            }
+        .alert-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
 
-            .mobile-data-toggle {
-                top: 10px;
-                right: 10px;
-                padding: 7px 10px;
-                font-size: 0.78rem;
-            }
+        .alert-backdrop.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
 
-            .data-panel {
-                width: 92vw;
-            }
+        .alert-icon {
+            font-size: 48px;
+            color: #f2cc60;
+            margin-bottom: 16px;
+            display: block;
+        }
+
+        .alert-message {
+            color: #e6edf3;
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .alert-btn {
+            background: #2f81f7;
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+        }
+
+        .alert-btn:hover {
+            background: #4493f8;
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: rgba(13, 17, 23, 0.95);
+            color: #e6edf3;
+            padding: 12px 20px;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+            font-size: 0.9rem;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            animation: toast-in 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+            opacity: 0;
+        }
+
+        @keyframes toast-in {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .toast.out {
+            animation: toast-out 0.3s ease forwards;
+        }
+
+        @keyframes toast-out {
+            from { transform: translateY(0); opacity: 1; }
+            to { transform: translateY(-20px); opacity: 0; }
+        }
+
+        /* Processing Modal */
+        .processing-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(13, 17, 23, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 3000;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #e6edf3;
+            text-align: center;
+        }
+
+        .processing-modal.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 5px solid rgba(88, 166, 255, 0.1);
+            border-top: 5px solid #58a6ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 24px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .processing-text {
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .processing-status {
+            font-size: 0.9rem;
+            color: #8b949e;
         }
     </style>
 
@@ -578,6 +1010,10 @@
         crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-client.js"></script>
 
 </head>
 
@@ -585,92 +1021,107 @@
 
     <div class="studio-layout">
 
-        <!-- SIDEBAR -->
-        <div class="sidebar">
-            <a href="index.html" class="back-link">
-                <span class="material-icons" style="font-size:16px;">arrow_back</span> Back to Home
+        <!-- MOBILE APP HEADER - just back button floating above camera -->
+        <div class="mobile-app-header" style="display: none;">
+            <a href="index.html" class="header-icon-btn" style="background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.1); color: white; border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; text-decoration: none;">
+                <span class="material-icons" style="font-size: 28px; margin-right: 2px;">chevron_left</span>
             </a>
+        </div>
 
-            <h2 style="margin: 0 0 10px 0;">Studio Settings</h2>
-
-            <!-- 1. Language Toggle -->
-            <div class="panel-section">
-                <div class="section-title">Target Language</div>
-                <select id="langSelect" class="select-input" style="width: 100%;">
-                    <option value="ISL">🇮🇳 Indian Sign Language (ISL)</option>
-                    <option value="ASL">🇺🇸 American Sign Language (ASL)</option>
-                </select>
+        <!-- SIDEBAR (Settings & Tools) -->
+        <div class="sidebar" id="sidebarPanel">
+            <div class="sidebar-header" style="display: none;">
+                <span style="font-weight: 600; color: #e6edf3;">Studio Settings</span>
+                <button id="closeSidebarBtn" class="sidebar-close-btn">
+                    <span class="material-icons" style="font-size: 18px;">close</span>
+                </button>
             </div>
 
-            <!-- 2. Recording Mode -->
-            <div class="panel-section">
-                <div class="section-title">Recording Mode</div>
-                <div style="display: flex; gap: 10px; background: #0d1117; padding: 5px; border-radius: 8px;">
-                    <button id="staticModeBtn" class="mode-toggle-btn active" data-mode="static">
-                        Static
-                    </button>
-                    <button id="dynamicModeBtn" class="mode-toggle-btn" data-mode="dynamic">
-                        Dynamic
-                    </button>
+            <div class="sidebar-content">
+                <a href="index.html" class="back-link">
+                    <span class="material-icons" style="font-size:16px;">arrow_back</span> Back to Home
+                </a>
+
+                <h2 class="sidebar-title-desktop" style="margin: 0 0 10px 0;">Studio Settings</h2>
+
+                <!-- 1. Language Toggle -->
+                <div class="panel-section">
+                    <div class="section-title">Target Language</div>
+                    <select id="langSelect" class="select-input" style="width: 100%;">
+                        <option value="ISL">🇮🇳 Indian Sign Language (ISL)</option>
+                        <option value="ASL">🇺🇸 American Sign Language (ASL)</option>
+                    </select>
                 </div>
-                <p id="modeDescription" style="font-size: 0.75rem; color: #8b949e; margin-top: 8px;">
-                    Static: Single pose signs (A, B, Hello, etc.)
-                </p>
-            </div>
 
-            <!-- 3. Sign Labelling -->
-            <div class="panel-section">
-                <div class="section-title">New Sign Details</div>
-                <div class="input-group-vertical">
-                    <input type="text" id="labelInput" class="text-input" placeholder="Sign Name (e.g. Hello)">
-                    <p style="font-size: 0.8rem; color: #8b949e;">Enter the name of the sign you are about to record.
-                    </p>
-
-                    <input type="file" id="signCardInput" class="hidden-file-input" accept=".jpg,.jpeg,.png,.gif,.webp">
-                    <button id="signCardBtn" class="secondary-btn"
-                        style="width: 100%; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:5px;">
-                        <span class="material-icons" style="font-size:18px;">add_photo_alternate</span>
-                        Add Sign Card (Optional)
-                    </button>
-                    <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-                        <div id="signCardFileName"
-                            style="font-size: 0.8rem; color: #8b949e; font-style: italic; display: none;"></div>
-                        <button id="clearSignDetailsBtn"
-                            style="background: none; border: none; color: #da3633; font-size: 0.8rem; cursor: pointer; padding: 0; text-decoration: underline;">
-                            Clear
+                <!-- 2. Recording Mode -->
+                <div class="panel-section">
+                    <div class="section-title">Recording Mode</div>
+                    <div style="display: flex; gap: 10px; background: #0d1117; padding: 5px; border-radius: 8px;">
+                        <button id="staticModeBtn" class="mode-toggle-btn active" data-mode="static">
+                            Static
+                        </button>
+                        <button id="dynamicModeBtn" class="mode-toggle-btn" data-mode="dynamic">
+                            Dynamic
                         </button>
                     </div>
-                    <div id="signCardStatus" style="font-size: 0.8rem; color: #2ea043; margin-top: 2px;"></div>
+                    <p id="modeDescription" style="font-size: 0.75rem; color: #8b949e; margin-top: 8px;">
+                        Static: Single pose signs (A, B, Hello, etc.)
+                    </p>
                 </div>
+
+                <!-- 3. Sign Labelling -->
+                <div class="panel-section">
+                    <div class="section-title">New Sign Details</div>
+                    <div class="input-group-vertical">
+                        <input type="text" id="labelInput" class="text-input" placeholder="Sign Name (e.g. Hello)">
+                        <p style="font-size: 0.8rem; color: #8b949e;">Enter the name of the sign you are about to record.
+                        </p>
+
+                        <input type="file" id="signCardInput" class="hidden-file-input"
+                            accept=".jpg,.jpeg,.png,.gif,.webp">
+                        <button id="signCardBtn" class="secondary-btn"
+                            style="width: 100%; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:5px;">
+                            <span class="material-icons" style="font-size:18px;">add_photo_alternate</span>
+                            Add Sign Card (Optional)
+                        </button>
+                        <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                            <div id="signCardFileName"
+                                style="font-size: 0.8rem; color: #8b949e; font-style: italic; display: none;"></div>
+                            <button id="clearSignDetailsBtn"
+                                style="background: none; border: none; color: #da3633; font-size: 0.8rem; cursor: pointer; padding: 0; text-decoration: underline;">
+                                Clear
+                            </button>
+                        </div>
+                        <div id="signCardStatus" style="font-size: 0.8rem; color: #2ea043; margin-top: 2px;"></div>
+                    </div>
+                </div>
+
+
+                <div style="flex: 1;"></div> <!-- Spacer -->
             </div>
 
-            <!-- 3. External Dataset -->
-            <div class="panel-section">
-                <div class="section-title">External Dataset</div>
-                <input type="file" id="uploadInput" class="hidden-file-input" accept=".json">
-                <button id="uploadBtn" class="secondary-btn"
-                    style="display:flex; align-items:center; justify-content:center; gap:8px;">
-                    <span class="material-icons" style="font-size:18px;">upload_file</span>
-                    Import from Kaggle/JSON
+            <div class="sidebar-footer">
+                <button id="trainBtn" class="primary-btn">
+                    <span class="material-icons">model_training</span>
+                    Train Model
                 </button>
-                <div id="uploadStatus" style="font-size: 0.8rem; color: #8b949e; margin-top: 5px;"></div>
-            </div>
-
-            <!-- 4. Training Actions -->
-            <div style="flex: 1;"></div> <!-- Spacer -->
-            <button id="trainBtn" class="primary-btn">
-                <span class="material-icons">model_training</span>
-                Train Model
-            </button>
-            <button id="saveBtn" class="secondary-btn" disabled>
-                <span class="material-icons">save</span>
-                Save to Application
-            </button>
-            <button id="testBtn" class="secondary-btn">
-                <span class="material-icons">science</span>
-                Start Test Mode
-            </button>
-            <div id="statusMsg" style="text-align: center; font-size: 0.85rem; color: #8b949e; margin-top: 10px;">Ready
+                <button id="saveBtn" class="secondary-btn" disabled>
+                    <span class="material-icons">save</span>
+                    Save to Application
+                </button>
+                <div style="display: flex; gap: 8px;">
+                    <button id="testBtn" class="secondary-btn" style="flex: 1;">
+                        <span class="material-icons">science</span>
+                        Test Mode
+                    </button>
+                    <button id="cloudSyncBtn" class="secondary-btn" title="Click 'Save To Application' First" disabled style="flex: 1;">
+                        <span class="material-icons">cloud_upload</span>
+                        Sync Cloud
+                    </button>
+                </div>
+                <div id="statusMsg" style="text-align: center; font-size: 0.85rem; color: #8b949e; margin-top: 10px;">
+                    Ready
+                </div>
             </div>
         </div>
 
@@ -691,10 +1142,9 @@
             </div>
 
             <!-- Capture Button -->
-            <button id="captureBtn" class="capture-fab" title="Click to Start/Stop Recording">
+            <button id="captureBtn" class="capture-fab" title="Click to Start/Stop Recording" style="display: none;">
                 <div class="capture-inner"></div>
             </button>
-            <p id="captureHint" style="margin-top: 15px; color: #8b949e; font-size: 0.9rem;">Press once to start, press again to stop. Pauses when no hands are detected, auto-stops at 100 samples.</p>
 
             <!-- Dynamic Recording Controls (hidden by default) -->
             <div id="dynamicControls" style="display: none; margin-top: 20px; text-align: center;">
@@ -723,19 +1173,52 @@
                 style="position: absolute; left: calc(50% + 60px); transform: translateY(50%); bottom: 70px; z-index: 6; color: #e6edf3; font-size: 0.95rem; font-weight: 600; background: rgba(13, 17, 23, 0.9); border: 1px solid #30363d; border-radius: 8px; padding: 8px 12px; white-space: nowrap;">
                 Test mode is off.
             </div>
+
+            <!-- MOBILE CONTROL BAR -->
+            <div class="mobile-bottom-bar" style="display: none;">
+                <div class="mobile-side-actions">
+                    <div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                        <div class="mobile-add-btn-wrapper">
+                            <button id="mobileAddSignBtn" class="mobile-bottom-btn primary" title="Add New Sign" style="width: 44px; height: 44px; padding: 0;">
+                                <span class="material-icons" style="font-size: 28px;">add_circle</span>
+                            </button>
+                            <button id="mobileClearSignBtn" class="mobile-clear-sign-btn" title="Clear sign details">
+                                <span class="material-icons" style="font-size: 16px;">close</span>
+                            </button>
+                            <button id="mobileRevertBtn" class="mobile-revert-badge-btn" title="Undo last sign record" disabled>
+                                <span class="material-icons" style="font-size: 14px;">undo</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Capture Button (will be moved here in JS/CSS) -->
+                <div id="captureBtnPortal" style="display: contents;"></div>
+
+                <div class="mobile-side-actions" style="flex-direction: row; gap: 16px; align-items: center;">
+                    <button id="mobileUploadBtn" class="mobile-bottom-btn primary" title="Upload" style="width: 44px; height: 44px; padding: 0;">
+                        <span class="material-icons" style="font-size: 28px;">cloud_upload</span>
+                    </button>
+                    <button id="openDataPanelBtnMobile" class="mobile-bottom-btn primary" title="View Collected Data" style="width: 44px; height: 44px; padding: 0;">
+                        <span class="material-icons" style="font-size: 28px;">analytics</span>
+                    </button>
+                </div>
+            </div>
         </div>
 
 
         <!-- DATA PANEL -->
         <div class="data-panel">
             <div class="list-header">
-                <span style="font-weight: 600;">Collected Data</span>
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <button id="backToMainBtn" class="drawer-close-btn" type="button" aria-label="Back to training">
+                        <span class="material-icons" style="font-size: 18px;">arrow_back</span>
+                    </button>
+                    <span style="font-weight: 600;">Collected Data</span>
+                </div>
                 <div style="display:flex; align-items:center; gap:10px;">
                     <span id="totalSamples"
                         style="background: #21262d; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem;">0</span>
-                    <button id="closeDataPanelBtn" class="drawer-close-btn" type="button" aria-label="Close data panel">
-                        <span class="material-icons" style="font-size: 18px;">close</span>
-                    </button>
                 </div>
             </div>
             <div id="dataList" class="data-list">
@@ -745,21 +1228,109 @@
                 </div>
             </div>
 
-            <div style="padding: 20px; border-top: 1px solid #30363d;">
-                <button id="revertBtn" class="secondary-btn"
-                    style="margin-bottom: 10px; color: #f2cc60; border-color: rgba(242, 204, 96, 0.35);">
-                    Revert New Data
-                </button>
-                <button id="clearAllBtn" class="secondary-btn"
-                    style="color: #da3633; border-color: rgba(218, 54, 51, 0.3);">
-                    Clear All Data
+            <div style="padding: 20px; border-top: 1px solid #30363d; display: flex; justify-content: center;">
+                <button id="clearAllBtn" class="secondary-btn" title="Clear All Data"
+                    style="color: #da3633; border-color: rgba(218, 54, 51, 0.3); display: flex; justify-content: center; align-items: center; width: 44px; height: 44px; border-radius: 50%; padding: 0;">
+                    <span class="material-icons" style="font-size: 24px;">close</span>
                 </button>
             </div>
         </div>
 
     </div>
 
+    <!-- SIGN SETUP MODAL (MOBILE) -->
+    <div id="signSetupModal" class="sign-setup-modal">
+        <!-- Step 1: Language -->
+        <div class="modal-step active" data-step="1">
+            <div class="modal-header">
+                <h3 class="modal-title">Target Language</h3>
+                <span class="modal-step-indicator">Step 1 of 3</span>
+            </div>
+            <div class="modal-body">
+                <p style="color: #8b949e; font-size: 0.9rem;">Choose the sign language you want to train.</p>
+                <div class="input-group-vertical">
+                    <button class="modal-btn secondary lang-option active" data-value="ISL" style="justify-content: flex-start; border-color: #58a6ff;">
+                        🇮🇳 Indian Sign Language (ISL)
+                    </button>
+                    <button class="modal-btn secondary lang-option" data-value="ASL" style="justify-content: flex-start;">
+                        🇺🇸 American Sign Language (ASL)
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary cancel-setup">Cancel</button>
+                <button class="modal-btn primary next-step">
+                    Next <span class="material-icons">arrow_forward</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 2: Recording Mode -->
+        <div class="modal-step" data-step="2">
+            <div class="modal-header">
+                <h3 class="modal-title">Recording Mode</h3>
+                <span class="modal-step-indicator">Step 2 of 3</span>
+            </div>
+            <div class="modal-body">
+                <p style="color: #8b949e; font-size: 0.9rem;">Select how the sign is performed.</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <button class="modal-btn secondary mode-option active" data-value="static" style="flex-direction: column; height: 80px; border-color: #58a6ff;">
+                        <span class="material-icons">front_hand</span>
+                        Static
+                    </button>
+                    <button class="modal-btn secondary mode-option" data-value="dynamic" style="flex-direction: column; height: 80px;">
+                        <span class="material-icons">sync</span>
+                        Dynamic
+                    </button>
+                </div>
+                <p id="modalModeDesc" style="font-size: 0.75rem; color: #8b949e; text-align: center;">Static: Single pose signs (A, B, etc.)</p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary prev-step">Back</button>
+                <button class="modal-btn primary next-step">Next</button>
+            </div>
+        </div>
+
+        <div class="modal-step" data-step="3">
+            <div class="modal-header">
+                <h3 class="modal-title">Sign Details</h3>
+                <span class="modal-step-indicator">Step 3 of 3</span>
+            </div>
+            <div class="modal-body">
+                <p style="color: #8b949e; font-size: 0.9rem;">Give the sign a name (Required).</p>
+                <input type="text" id="modalLabelInput" class="text-input" placeholder="Sign Name (e.g. Hello)" style="font-size: 1rem; padding: 14px;">
+                
+                <button id="modalSignCardBtn" class="modal-btn secondary" style="margin-top: 4px;">
+                    <span class="material-icons">add_photo_alternate</span>
+                    Add Sign Card Image
+                </button>
+                <div id="modalSignCardStatus" style="font-size: 0.8rem; color: #2ea043; text-align: center;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary prev-step">Back</button>
+                <button id="startRecordingBtn" class="modal-btn primary">Start Recording</button>
+            </div>
+        </div>
+    </div>
+
     <div id="drawerBackdrop" class="drawer-backdrop"></div>
+    <div id="toastContainer" class="toast-container"></div>
+
+    <div id="processingModal" class="processing-modal">
+        <div class="spinner"></div>
+        <div id="processingText" class="processing-text">Processing...</div>
+        <div id="processingStatus" class="processing-status">Please wait</div>
+    </div>
+
+    <div id="alertBackdrop" class="alert-backdrop"></div>
+    <div id="customAlert" class="custom-alert">
+        <span class="material-icons alert-icon">warning_amber</span>
+        <div id="alertMessage" class="alert-message">Please enter the details of the sign!</div>
+        <div style="display: flex; gap: 12px; width: 100%;">
+            <button id="alertCancelBtn" class="alert-btn" style="display: none; background: #21262d; border: 1px solid #30363d; color: #c9d1d9;">Cancel</button>
+            <button id="alertOkBtn" class="alert-btn">OK</button>
+        </div>
+    </div>
 
     <script src="training.js"></script>
 </body>
