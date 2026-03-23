@@ -16,245 +16,200 @@
     <!-- specific styles for translation page -->
     <style>
         .translation-container {
+            padding: 0;
+            gap: 0;
+            overflow: hidden;
+            height: 100dvh;
+            min-height: 100dvh;
+            justify-content: flex-start;
+            background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
             display: flex;
             flex-direction: column;
-            align-items: center;
-            justify-content: flex-start;
-            min-height: 100vh;
             width: 100vw;
             position: relative;
-            overflow: auto;
-            padding: 20px 20px 110px;
-            background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
         }
 
         .translation-main {
-            width: min(1200px, 96vw);
-            display: grid;
-            grid-template-columns: 1.4fr 1fr; /* Two column layout */
-            gap: 24px;
-            align-items: start;
-            margin: 0 auto;
-            padding-top: 60px;
+            width: 100%;
+            flex: none;
+            height: auto;
+            gap: 0;
+            display: flex;
+            flex-direction: column;
+            padding-top: 0;
         }
 
         .video-section {
             width: 100%;
         }
 
-        .info-side-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            width: 100%;
-        }
-
-        .info-card {
-            background: rgba(15, 23, 42, 0.7);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .card-header {
-            padding: 15px 20px;
-            background: rgba(255, 255, 255, 0.05);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .card-header h3 {
-            margin: 0;
-            font-size: 1.1rem;
-            font-weight: 600;
-            font-family: 'Outfit', sans-serif;
-            color: #fff;
-        }
-
-        .card-header .material-icons {
-            color: #3b82f6;
-        }
-
-        .card-body {
-            padding: 20px;
-            flex: 1;
-        }
-
-        .prediction-text {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #3b82f6;
-            text-align: center;
-            font-family: 'Outfit', sans-serif;
-            min-height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            word-break: break-word;
-        }
 
         /* Result Overlay over Camera */
         .result-overlay {
-            position: absolute;
-            bottom: 30px;
+            position: fixed;
+            bottom: 110px; /* Above the pill control bar */
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(15, 23, 42, 0.85);
-            padding: 12px 24px;
-            border-radius: 40px;
-            color: white;
-            font-size: 1.1rem;
+            width: 85%;
+            background: rgba(13, 20, 36, 0.9);
+            padding: 15px 20px;
+            border-radius: 30px;
+            z-index: 110;
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            max-width: 85%;
-            text-align: center;
-            z-index: 100;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            color: white;
+            font-size: 1.1rem;
+            display: none;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            display: block;
+            text-align: center;
+        }
+
+        .result-overlay:has(#stt-result:not(:empty)) {
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         body.voice-mode-active .result-overlay {
             display: none !important;
         }
 
-        /* Two-column layout when voice mode is active on desktop */
+        /* Remove old desktop grid overrides */
         body.voice-mode-active .translation-main {
-            width: min(1400px, 96vw);
-            grid-template-columns: 1.2fr 1fr;
+            width: 100%;
+            grid-template-columns: 1fr;
         }
 
         .back-btn {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            text-decoration: none;
-            color: white;
+            position: fixed;
+            top: 14px;
+            left: 14px;
+            padding: 10px;
+            border-radius: 50%;
+            gap: 0;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(8px);
+            width: 44px;
+            height: 44px;
             display: flex;
             align-items: center;
-            gap: 10px;
-            background: rgba(255, 255, 255, 0.1);
-            padding: 10px 20px;
-            border-radius: 30px;
-            transition: background 0.3s;
+            justify-content: center;
             z-index: 200;
-            font-size: 0.9rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-decoration: none;
+            color: white;
+            transition: background 0.3s;
+        }
+
+        .back-btn span:last-child {
+            display: none;
+        }
+
+        .back-btn .material-icons {
+            font-size: 28px;
+            margin-right: 2px; /* Visual centering for chevron */
         }
 
         .back-btn:hover {
             background: rgba(255, 255, 255, 0.2);
         }
 
-        /* Video Container */
+        /* Video Container - Full Screen */
         .video-container {
-            width: 100%;
-            aspect-ratio: 16 / 9;
-            position: relative;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100dvh;
+            border-radius: 0;
+            border: none;
+            margin: 0;
+            background: #000;
+            z-index: 1; /* Background layer */
             display: flex;
             justify-content: center;
             align-items: center;
-            border-radius: 20px;
             overflow: hidden;
-            background: #000;
-            border: 1px solid rgba(255, 255, 255, 0.1);
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
         }
 
-        /* Grid positioning for voice mode on desktop */
-        body.voice-mode-active .video-container {
-            grid-column: 1;
-            grid-row: 1;
-        }
-
-        video {
+        video, canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover !important; /* Forces vertical full-screen crop */
+            transform: scaleX(-1);
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: contain !important;
-            transform: scaleX(-1);
         }
 
         canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: contain !important;
-            transform: scaleX(-1);
             pointer-events: none;
         }
 
-        /* Speech Container Right Panel Mode */
-        .speech-container.right-sidebar-mode {
-            background: rgba(15, 23, 42, 0.7);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            display: none; /* Initially hidden */
-            flex-direction: column;
-            overflow: hidden;
-            justify-content: flex-start;
-            align-items: stretch;
-            z-index: 150;
-        }
-
-        body.voice-mode-active .speech-container.right-sidebar-mode {
-            display: flex;
-        }
-
-        /* Hide Sign Result Card in Voice Mode if both modes are separate */
-        body.voice-mode-active .sign-result-card {
+        /* Speech Container - Integrated Bottom Panel like Mobile */
+        .speech-container {
+            position: fixed !important;
+            bottom: 110px !important; /* Above the pill control bar */
+            left: 50% !important;
+            transform: translateX(-50%);
+            width: 92% !important;
+            height: auto;
+            max-height: 45vh;
+            border-radius: 24px !important;
+            background: rgba(13, 20, 36, 0.7) !important;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
             display: none;
+            flex-direction: column;
+            z-index: 105;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
         }
 
-        /* Desktop voice mode: position as grid item if using standard container */
-        body.voice-mode-active .speech-container:not(.right-sidebar-mode) {
-            position: relative;
-            width: 100%;
-            bottom: auto;
-            left: auto;
-            display: flex;
-            background: rgba(30, 41, 59, 0.5);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 16px;
-            overflow-y: auto;
-            grid-column: 2;
-            grid-row: 1;
-            flex-direction: column;
-            justify-content: flex-start;
-            align-items: stretch;
+        body.voice-mode-active .speech-container {
+            display: flex !important;
         }
 
         .listening-indicator {
-            font-size: 1.1rem;
-            color: #3b82f6;
-            margin-bottom: 12px;
+            font-size: 0.85rem !important;
+            color: #58a6ff;
+            font-weight: 600;
+            margin: 12px 16px 4px 16px !important;
             display: none;
             align-items: center;
             gap: 10px;
-            font-weight: 500;
-            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.6);
         }
 
-        .speech-caption-log-right {
-            max-height: 200px;
+        body.voice-mode-active .listening-indicator {
+            display: flex !important;
+        }
+
+        .speech-caption-log {
+            max-height: 100px;
             overflow-y: auto;
-            color: #e2e8f0;
-            font-size: 0.95rem;
-            line-height: 1.5;
-            padding: 5px;
-            margin-bottom: 20px;
+            background: transparent !important;
+            padding: 4px 16px 10px 16px !important;
+            margin: 0 !important;
+            border: none !important;
+            font-size: 0.9rem !important;
+            color: #e6edf3;
+            line-height: 1.4;
+            display: none;
+            /* Hide scrollbar */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .speech-caption-log::-webkit-scrollbar {
+            display: none;
+        }
+
+        body.voice-mode-active .speech-caption-log {
+            display: block !important;
         }
 
         .speech-caption-line {
@@ -267,35 +222,35 @@
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
         }
 
-        /* Desktop specific caption overlay if not using sidebar */
-        body.voice-mode-active .speech-caption-log:not(.speech-caption-log-right) {
-            position: fixed;
-            display: block;
-            left: 80px;
-            top: calc(55% + 30px);
-            min-height: auto;
-            max-height: 30vh;
-            width: 50vw;
-            background: transparent;
-            padding: 0;
-            margin: 0;
-            z-index: 100;
-            border: none;
-            flex: none;
-            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.6);
+
+
+        /* Sign cards area nested in container */
+        .sign-cards-area-right {
+            height: auto;
+            max-height: 160px;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 10px 14px !important;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0 !important;
+            background: rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            gap: 25px;
+            align-items: center;
+            -webkit-overflow-scrolling: touch;
+            /* Hide scrollbar */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
         }
 
-        .sign-cards-area-right {
-            width: 100%;
-            height: 280px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 12px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            overflow-y: auto;
-            padding: 10px;
-            align-content: flex-start;
+        .sign-cards-area-right::-webkit-scrollbar {
+            display: none;
+        }
+
+        body.voice-mode-active .sign-cards-area-right {
+            display: flex !important;
         }
 
         .placeholder-msg {
@@ -309,29 +264,7 @@
             font-size: 0.9rem;
         }
 
-        /* Result Overlay over Camera */
-        .result-overlay {
-            position: absolute;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(15, 23, 42, 0.85);
-            padding: 12px 24px;
-            border-radius: 40px;
-            color: white;
-            font-size: 1.1rem;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            max-width: 85%;
-            text-align: center;
-            z-index: 100;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            display: block;
-        }
-
-        /* Hide entire sign-result HUD in voice mode definitely */
+        /* Result Overlay over Camera - Moved to base styles */
         body.voice-mode-active .result-overlay {
             display: none !important;
         }
@@ -340,16 +273,18 @@
             position: fixed;
             left: 50%;
             transform: translateX(-50%);
-            bottom: 30px;
+            bottom: 15px;
             z-index: 210;
             display: flex;
-            gap: 15px;
+            gap: 10px;
+            padding: 6px 15px;
+            flex-direction: row;
+            flex-wrap: nowrap;
             align-items: center;
             justify-content: center;
             background: rgba(15, 23, 42, 0.8);
             backdrop-filter: blur(12px);
-            padding: 8px 24px;
-            border-radius: 50px;
+            border-radius: 40px;
             border: 1px solid rgba(255, 255, 255, 0.1);
             width: fit-content;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -358,20 +293,34 @@
 
         /* Control button styling */
         .control-btn {
+            width: 44px;
+            height: 44px;
+            min-width: 44px;
+            min-height: 44px;
+            padding: 8px;
+            border-radius: 50%;
             background: rgba(255, 255, 255, 0.1);
             border: none;
             color: white;
-            border-radius: 50%;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.3s;
-            padding: 0;
-            min-width: 48px;
-            min-height: 48px;
-            width: 48px;
-            height: 48px;
+        }
+
+        #lang-select {
+            background: rgba(255,255,255,0.1); 
+            color: white; 
+            border: 1px solid rgba(255,255,255,0.2); 
+            padding: 8px 12px !important;
+            font-size: 0.75rem !important;
+            border-radius: 16px !important;
+            min-width: 100px;
+            max-width: 140px;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            outline: none;
         }
 
         .control-btn:hover {
@@ -383,301 +332,52 @@
             font-size: 28px;
         }
 
-        /* Subtitles for Voice Mode - Hidden in favor of HUD captions */
-        .voice-subtitles {
-            display: none !important;
+
+
+
+        /* Remove old desktop grid overrides */
+        body.voice-mode-active .translation-main {
+            width: 100%;
+            grid-template-columns: 1fr;
         }
 
-        /* Desktop voice mode: captions overlay on video (fallback) */
-        body.voice-mode-active .listening-indicator:not(.right-sidebar-mode .listening-indicator) {
-            position: fixed;
-            display: flex;
-            left: 80px;
-            top: 55%;
-            transform: translateY(-100%);
-            z-index: 100;
-            background: transparent;
-            margin: 0;
+        body.voice-mode-active .video-container {
+            grid-column: auto;
+            grid-row: auto;
         }
 
         #listening-text {
-            color: #fff;
-            opacity: 0.9;
-            font-style: italic;
-            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.6);
+            color: #58a6ff;
+            opacity: 1;
+            font-style: normal;
         }
 
         body:not(.voice-mode-active) .speech-container {
             display: none !important;
         }
 
-        /* Responsive */
-        @media (max-width: 980px) {
-            .translation-main {
-                grid-template-columns: 1fr;
-                width: 94vw;
-            }
-            
-            .info-side-panel {
-                order: 2;
-            }
-
-            /* Adjust captions position for tablet */
-            body.voice-mode-active .listening-indicator {
-                left: 60px;
-                top: 50%;
-            }
-
-            body.voice-mode-active .speech-caption-log {
-                left: 60px;
-                top: calc(50% + 25px);
-                width: calc(100% - 120px);
-            }
+        /* Spelling overlay: smaller on mobile */
+        #spelling-overlay {
+            top: 14px !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            padding: 6px 16px !important;
+            border-radius: 8px !important;
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            display: none; /* Hidden by default */
+            z-index: 100;
+            pointer-events: none;
         }
 
-        @media (max-width: 600px) {
-
-            /* Override desktop voice mode layout on mobile */
-            body.voice-mode-active .translation-main {
-                grid-template-columns: 1fr;
-                width: 100%;
-            }
-
-            /* Full-screen container — no scroll */
-            .translation-container {
-                padding: 0;
-                gap: 0;
-                overflow: hidden;
-                height: 100dvh;
-                min-height: 100dvh;
-                justify-content: flex-start;
-                background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
-                flex-direction: column;
-            }
-            .translation-main {
-                grid-template-columns: 1fr;
-                width: 100%;
-                flex: none;
-                height: auto;
-                gap: 0;
-                display: flex;
-                flex-direction: column;
-                padding-top: 0;
-            }
-
-            /* Full-Screen Vertical Camera Feed */
-            .video-container {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100dvh;
-                border-radius: 0;
-                border: none;
-                margin: 0;
-                background: #000;
-                z-index: 1; /* Background layer */
-            }
-
-            .video-container video, 
-            .video-container canvas {
-                width: 100%;
-                height: 100%;
-                object-fit: cover !important; /* Forces vertical full-screen crop */
-            }
-
-            /* Overlays positioned on top of the camera */
-            .result-overlay {
-                position: fixed;
-                bottom: 110px; /* Above the pill control bar */
-                left: 50%;
-                transform: translateX(-50%);
-                width: 85%;
-                background: rgba(13, 20, 36, 0.9);
-                padding: 15px 20px;
-                border-radius: 30px;
-                z-index: 110;
-                backdrop-filter: blur(10px);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-                display: none;
-            }
-
-            .result-overlay:has(#stt-result:not(:empty)) {
-                display: flex;
-                justify-content: center;
-                align-items: center;
-            }
-
-            /* Back button: icon-only circle */
-            .back-btn {
-                position: fixed;
-                top: 14px;
-                left: 14px;
-                padding: 10px;
-                border-radius: 50%;
-                gap: 0;
-                background: rgba(0, 0, 0, 0.4);
-                backdrop-filter: blur(8px);
-                width: 44px;
-                height: 44px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 200;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-            }
-            .back-btn span:last-child {
-                display: none;
-            }
-            .back-btn .material-icons {
-                font-size: 28px;
-                margin-right: 2px; /* Visual centering for chevron */
-            }
-
-
-            /* Control bar — fits in one tight row */
-            .control-bar {
-                bottom: 15px;
-                gap: 10px;
-                padding: 6px 15px;
-                display: flex;
-                flex-direction: row;
-                flex-wrap: nowrap;
-                align-items: center;
-                justify-content: center;
-                border-radius: 40px;
-            }
-
-            /* Control buttons styling for mobile */
-            .control-btn {
-                width: 44px;
-                height: 44px;
-                min-width: 44px;
-                min-height: 44px;
-                padding: 8px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-
-            /* Shrink lang select to be compact */
-            #lang-select {
-                padding: 8px 12px !important;
-                font-size: 0.75rem !important;
-                border-radius: 16px !important;
-                min-width: 100px;
-                max-width: 140px;
-            }
-
-            /* Speech panel: captions and sign cards area */
-            .speech-container {
-                position: fixed !important;
-                bottom: 110px !important; /* Increased space above the pill control bar */
-                left: 50% !important;
-                transform: translateX(-50%);
-                width: 92% !important;
-                height: auto;
-                max-height: 45vh;
-                border-radius: 24px !important;
-                background: rgba(13, 20, 36, 0.7) !important;
-                backdrop-filter: blur(10px);
-                border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                display: none;
-                flex-direction: column;
-                z-index: 105;
-                overflow: hidden;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-            }
-
-            body.voice-mode-active .speech-container {
-                display: flex !important;
-                /* Keeps the fixed positioning from .speech-container above */
-            }
-
-            /* Listening text and captions */
-            #listening-text {
-                font-size: 0.85rem !important;
-                color: #58a6ff;
-                font-weight: 600;
-                margin: 12px 16px 4px 16px !important;
-            }
-
-            #speech-panel .card-header {
-                display: none !important; /* Hide mic icon/header on mobile for space */
-            }
-
-            body.voice-mode-active #listening-text {
-                display: block !important;
-            }
-
-            #speech-caption-log {
-                max-height: 100px;
-                overflow-y: auto;
-                background: transparent !important;
-                padding: 4px 16px 10px 16px !important;
-                margin: 0 !important;
-                border: none !important;
-                font-size: 0.9rem !important;
-                color: #e6edf3;
-                line-height: 1.4;
-                display: none;
-                /* Hide scrollbar */
-                scrollbar-width: none; /* Firefox */
-                -ms-overflow-style: none;  /* IE and Edge */
-            }
-            #speech-caption-log::-webkit-scrollbar {
-                display: none; /* Chrome, Safari and Opera */
-            }
-
-            body.voice-mode-active #speech-caption-log {
-                display: block !important;
-            }
-
-            /* Sign cards area nested in container */
-            .sign-cards-area-right {
-                height: auto;
-                max-height: 160px;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 10px 14px !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 0 !important;
-                background: rgba(0, 0, 0, 0.2);
-                display: flex;
-                flex-wrap: nowrap;
-                overflow-x: auto;
-                gap: 25px;
-                align-items: center;
-                -webkit-overflow-scrolling: touch;
-                /* Hide scrollbar */
-                scrollbar-width: none;
-                -ms-overflow-style: none;
-            }
-            .sign-cards-area-right::-webkit-scrollbar {
-                display: none;
-            }
-
-            body.voice-mode-active .sign-cards-area-right {
-                display: flex !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.1);
-            }
-
-            /* Spelling overlay: smaller on mobile */
-            #spelling-overlay {
-                top: 14px !important;
-                left: 50% !important;
-                transform: translateX(-50%) !important;
-                padding: 6px 16px !important;
-                border-radius: 8px !important;
-            }
-
-            #spelling-text {
-                font-size: 1.4rem !important;
-                letter-spacing: 3px !important;
-            }
+        #spelling-text {
+            color: white;
+            font-size: 1.4rem !important;
+            font-weight: bold;
+            font-family: 'Outfit', sans-serif;
+            letter-spacing: 3px !important;
         }
+
 
         /* Extra small devices (< 360px) */
         @media (max-width: 360px) {
@@ -765,8 +465,6 @@
                         <p style="color: #777; margin-top: 10px;">Camera is Off</p>
                     </div>
 
-                    <!-- Voice Mode Subtitles -->
-                    <div class="voice-subtitles" id="voice-subtitles"></div>
 
                     <!-- Sign Mode Result Overlay -->
                     <div class="result-overlay">
@@ -796,28 +494,22 @@
                 </div>
             </div>
 
-            <!-- Right Side: Info Panel -->
-            <div class="info-side-panel">
-                
-                <!-- Speech HUD (Shown in voice mode) -->
-                <div id="speech-panel" class="speech-container right-sidebar-mode">
-                    <div class="card-header">
-                        <span class="material-icons" style="color: #3b82f6;">mic</span>
-                        <h3 id="listening-text">Listening...</h3>
+
+            <!-- Speech HUD (Shown in voice mode) -->
+            <div id="speech-panel" class="speech-container">
+                <div class="card-body" style="padding: 0;">
+                    <h3 id="listening-text" class="listening-indicator">Listening...</h3>
+                    <div id="speech-caption-log" class="speech-caption-log">
+                        <div class="speech-caption-line">Speech captions will appear here.</div>
                     </div>
-                    <div class="card-body">
-                        <div id="speech-caption-log" class="speech-caption-log-right">
-                            <div class="speech-caption-line">Speech captions will appear here.</div>
-                        </div>
-                        <div class="sign-cards-area-right">
-                            <!-- JS will inject cards here -->
-                            <div class="placeholder-msg">Sign Cards will appear here.</div>
-                        </div>
+                    <div class="sign-cards-area-right">
+                        <!-- JS will inject cards here -->
+                        <div class="placeholder-msg">Sign Cards will appear here.</div>
                     </div>
                 </div>
             </div>
-
         </div>
+
 
         <!-- Controls -->
         <div class="control-bar">
@@ -832,17 +524,8 @@
             </button>
 
             <!-- Language Select -->
-            <div style="position: relative; margin: 0 10px;">
-                <select id="lang-select" style="
-                    background: rgba(255,255,255,0.1); 
-                    color: white; 
-                    border: 1px solid rgba(255,255,255,0.2); 
-                    padding: 10px 15px; 
-                    border-radius: 20px; 
-                    font-family: 'Inter', sans-serif;
-                    cursor: pointer;
-                    outline: none;
-                ">
+            <div style="position: relative;">
+                <select id="lang-select">
                     <option value="ISL" style="background: #1e293b;">ISL (Indian)</option>
                     <option value="ASL" style="background: #1e293b;">ASL (American)</option>
                 </select>

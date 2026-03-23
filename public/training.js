@@ -6,15 +6,11 @@ const canvasCtx = canvasElement.getContext('2d');
 const langSelect = document.getElementById('langSelect');
 const labelInput = document.getElementById('labelInput');
 const captureBtn = document.getElementById('captureBtn');
-const trainBtn = document.getElementById('trainBtn');
-const saveBtn = document.getElementById('saveBtn');
 const statusMsg = document.getElementById('statusMsg');
 const dataList = document.getElementById('dataList');
 const totalSamplesBadge = document.getElementById('totalSamples');
 const recIndicator = document.getElementById('recIndicator');
 const clearAllBtn = document.getElementById('clearAllBtn');
-const testBtn = document.getElementById('testBtn');
-const testResult = document.getElementById('testResult');
 const dataPanel = document.querySelector('.data-panel');
 const openDataPanelBtn = document.getElementById('openDataPanelBtn');
 const openDataPanelBtnMobile = document.getElementById('openDataPanelBtnMobile');
@@ -25,12 +21,9 @@ const alertBackdrop = document.getElementById('alertBackdrop');
 const customAlert = document.getElementById('customAlert');
 const alertMessage = document.getElementById('alertMessage');
 const alertOkBtn = document.getElementById('alertOkBtn');
-const cloudSyncBtn = document.getElementById('cloudSyncBtn');
 
 // Mobile Sidebar Elements
 // Mobile Sidebar Elements
-const closeSidebarBtn = document.getElementById('closeSidebarBtn');
-const sidebarPanel = document.getElementById('sidebarPanel');
 const mobileLabelDisplay = document.getElementById('mobileLabelDisplay');
 const mobileModeDisplay = document.getElementById('mobileModeDisplay');
 
@@ -88,16 +81,6 @@ const TARGET_FPS = 10; // Capture ~10 frames per second
 let lastFrameCaptureTime = 0;
 let dynamicRecordingMaxHands = 1;
 
-// Test mode state
-let isTestMode = false;
-let testStaticModel = null;
-let testStaticLabels = [];
-let testDynamicModel = null;
-let testDynamicLabels = [];
-let testDynamicFrameBuffer = [];
-let testDynamicBufferStartTime = 0;
-const TEST_DYNAMIC_ANALYZE_MS = 1200;
-
 // Pending data for mobile "Finish Setup" workflow
 let pendingSignCard = null; // { base64Data, extension }
 let lastSessionSampleCountAtStart = 0;
@@ -142,7 +125,6 @@ async function init() {
     setupMobileDataDrawer();
     setupMobileSignSetup(); // New mobile workflow
     setupCustomAlert();
-    setupCloudSync();
     await loadDataFromServer();
 }
 
@@ -258,18 +240,16 @@ function hideProcessingModal() {
 }
 
 function setupMobileDataDrawer() {
-    if (!dataPanel || !sidebarPanel) return;
+    if (!dataPanel) return;
 
     const openData = () => {
         dataPanel.classList.add('open');
-        sidebarPanel.classList.remove('open');
         if (drawerBackdrop) drawerBackdrop.classList.add('active');
     };
 
 
     const closeAll = () => {
         dataPanel.classList.remove('open');
-        sidebarPanel.classList.remove('open');
         if (drawerBackdrop) drawerBackdrop.classList.remove('active');
     };
 
@@ -277,8 +257,6 @@ function setupMobileDataDrawer() {
     if (openDataPanelBtnMobile) openDataPanelBtnMobile.addEventListener('click', openData);
     if (closeDataPanelBtn) closeDataPanelBtn.addEventListener('click', closeAll);
     if (backToMainBtn) backToMainBtn.addEventListener('click', closeAll);
-    
-    if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', closeAll);
 
     if (drawerBackdrop) {
         drawerBackdrop.addEventListener('click', closeAll);
@@ -288,17 +266,14 @@ function setupMobileDataDrawer() {
         if (event.key === 'Escape') closeAll();
     });
 
-    window.addEventListener('resize', () => {
-        if (window.innerWidth > 980) {
-            closeAll();
-        }
-    });
+    // Drawer behavior is now consistent across all screen sizes
 
     // Initial sync for mobile status tags
     updateMobileStatusTags();
 
     // Move capture button to portal on small screens
-    if (window.innerWidth <= 980 && captureBtnPortal && captureBtn) {
+    // Always move capture button to portal for the unified view
+    if (captureBtnPortal && captureBtn) {
         captureBtnPortal.appendChild(captureBtn);
     }
 }
@@ -536,18 +511,22 @@ function setupMobileSignSetup() {
         if (!model) return;
 
         const uploadComponent = async (type, fileName, fileDataB64, contentType) => {
-            const res = await fetch('/api/upload-model-component', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    lang: currentLang,
-                    type: type,
-                    fileName: fileName,
-                    fileDataB64: fileDataB64,
-                    contentType: contentType
-                })
-            });
-            if (!res.ok) throw new Error(`Cloud save failed for ${fileName}`);
+            const path = `${currentLang.toLowerCase()}/${type}/${fileName}`;
+            
+            // Convert base64 to Blob
+            const byteCharacters = atob(fileDataB64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: contentType });
+
+            const { error: uploadErr } = await window.supabaseClient.storage
+                .from('models')
+                .upload(path, blob, { contentType, upsert: true });
+
+            if (uploadErr) throw uploadErr;
         };
 
         // Static Model Backup
@@ -710,44 +689,6 @@ function updateMobileRevertState() {
     mobileRevertBtn.innerHTML = `<span class="material-icons" style="font-size: 14px;">undo</span>`;
 }
 
-function setupCloudSync() {
-    if (!cloudSyncBtn) return;
-    
-    cloudSyncBtn.addEventListener('click', async () => {
-        try {
-            statusMsg.innerText = "☁️ Syncing models to cloud...";
-            cloudSyncBtn.disabled = true;
-            
-            let syncedCount = 0;
-            
-            // 1. Sync Static Model
-            if (model?.static && model?.staticLabels) {
-                await uploadModelToCloud('static', model.static, model.staticLabels);
-                syncedCount++;
-            }
-            
-            // 2. Sync Dynamic Model
-            if (model?.dynamic && model?.dynamicLabels) {
-                await uploadModelToCloud('dynamic', model.dynamic, model.dynamicLabels, model.dynamicHandRequirements);
-                syncedCount++;
-            }
-            
-            if (syncedCount > 0) {
-                statusMsg.innerText = `✅ Cloud Sync Complete! (${syncedCount} models synced)`;
-                showCustomAlert("Cloud Sync Successful! Your models are now available on all your devices.");
-            } else {
-                statusMsg.innerText = "❌ Nothing to sync. Save to application first.";
-                showCustomAlert("Please 'Save to Application' before syncing to cloud.");
-            }
-        } catch (err) {
-            console.error("Cloud sync failed:", err);
-            statusMsg.innerText = `❌ Cloud Sync Failed: ${err.message}`;
-            showCustomAlert(`Cloud Sync failed: ${err.message}`);
-        } finally {
-            cloudSyncBtn.disabled = false;
-        }
-    });
-}
 
 async function uploadModelToCloud(type, modelInstance, labels, handReqs = null) {
     // 1. Save model to get artifacts
@@ -780,18 +721,22 @@ async function uploadModelToCloud(type, modelInstance, labels, handReqs = null) 
 }
 
 async function uploadComponent(type, fileName, b64Data, contentType) {
-    const res = await fetch('/api/upload-model-component', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            lang: currentLang,
-            type,
-            fileName,
-            fileDataB64: b64Data,
-            contentType
-        })
-    });
-    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    const path = `${currentLang.toLowerCase()}/${type}/${fileName}`;
+    
+    // Convert base64 to Blob
+    const byteCharacters = atob(b64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: contentType });
+
+    const { error: uploadErr } = await window.supabaseClient.storage
+        .from('models')
+        .upload(path, blob, { contentType, upsert: true });
+
+    if (uploadErr) throw new Error(`Supabase upload error: ${uploadErr.message}`);
 }
 
 function arrayBufferToBase64(buffer) {
@@ -824,18 +769,12 @@ async function checkForSavedModels() {
 
 // Mode toggle setup
 function setupModeToggle() {
-    staticModeBtn.addEventListener('click', () => switchMode('static'));
-    dynamicModeBtn.addEventListener('click', () => switchMode('dynamic'));
-
     startRecordBtn.addEventListener('click', startDynamicRecording);
     stopRecordBtn.addEventListener('click', stopDynamicRecording);
 }
 
 function switchMode(mode) {
     recordingMode = mode;
-    testDynamicFrameBuffer = [];
-    testDynamicBufferStartTime = 0;
-
     // Update button states
     staticModeBtn.classList.toggle('active', mode === 'static');
     dynamicModeBtn.classList.toggle('active', mode === 'dynamic');
@@ -859,141 +798,7 @@ function switchMode(mode) {
 // Update mobile tags when label changes
 labelInput.addEventListener('input', updateMobileStatusTags);
 
-function setTestResult(text) {
-    if (testResult) testResult.textContent = text;
-}
 
-async function loadTestModels() {
-    testStaticModel = null;
-    testStaticLabels = [];
-    testDynamicModel = null;
-    testDynamicLabels = [];
-
-    if (model?.static && Array.isArray(model.staticLabels) && model.staticLabels.length) {
-        testStaticModel = model.static;
-        testStaticLabels = model.staticLabels;
-    }
-    if (model?.dynamic && Array.isArray(model.dynamicLabels) && model.dynamicLabels.length) {
-        testDynamicModel = model.dynamic;
-        testDynamicLabels = model.dynamicLabels;
-    }
-
-    if (!testStaticModel) {
-        const savedStaticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
-        if (savedStaticLabels) {
-            testStaticLabels = JSON.parse(savedStaticLabels);
-            try {
-                testStaticModel = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-static`);
-            } catch (e) {
-                console.warn('Unable to load saved static model for test mode.', e);
-                testStaticModel = null;
-                testStaticLabels = [];
-            }
-        }
-    }
-
-    if (!testDynamicModel) {
-        const savedDynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
-        if (savedDynamicLabels) {
-            testDynamicLabels = JSON.parse(savedDynamicLabels);
-            try {
-                testDynamicModel = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
-            } catch (e) {
-                console.warn('Unable to load saved dynamic model for test mode.', e);
-                testDynamicModel = null;
-                testDynamicLabels = [];
-            }
-        }
-    }
-}
-
-function runStaticTestPrediction(flatLandmarks) {
-    if (!testStaticModel || !testStaticLabels.length) {
-        setTestResult('No static model available for testing.');
-        return;
-    }
-
-    tf.tidy(() => {
-        const input = tf.tensor2d([flatLandmarks]);
-        const pred = testStaticModel.predict(input);
-        const conf = pred.max().dataSync()[0];
-        const idx = pred.argMax(-1).dataSync()[0];
-        const label = testStaticLabels[idx] || 'Unknown';
-        setTestResult(`Test (Static): ${label} (${Math.round(conf * 100)}%)`);
-    });
-}
-
-function runDynamicTestPrediction(flatLandmarks) {
-    if (!testDynamicModel || !testDynamicLabels.length) {
-        setTestResult('No dynamic model available for testing.');
-        return;
-    }
-
-    if (testDynamicBufferStartTime === 0) {
-        testDynamicBufferStartTime = Date.now();
-    }
-
-    testDynamicFrameBuffer.push(flatLandmarks);
-    if (testDynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
-        testDynamicFrameBuffer.shift();
-    }
-
-    const dynamicReady = (Date.now() - testDynamicBufferStartTime) >= TEST_DYNAMIC_ANALYZE_MS;
-    if (!dynamicReady || testDynamicFrameBuffer.length < 1) {
-        setTestResult(`Test (Dynamic): collecting frames ${testDynamicFrameBuffer.length}/${MAX_DYNAMIC_FRAMES}`);
-        return;
-    }
-
-    tf.tidy(() => {
-        const paddedFrames = [...testDynamicFrameBuffer];
-        const lastFrame = paddedFrames[paddedFrames.length - 1];
-        while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
-            paddedFrames.push(lastFrame);
-        }
-
-        const input = tf.tensor3d([paddedFrames]);
-        const pred = testDynamicModel.predict(input);
-        const conf = pred.max().dataSync()[0];
-        const idx = pred.argMax(-1).dataSync()[0];
-        const label = testDynamicLabels[idx] || 'Unknown';
-        setTestResult(`Test (Dynamic): ${label} (${Math.round(conf * 100)}%)`);
-    });
-}
-
-async function toggleTestMode() {
-    if (isTestMode) {
-        isTestMode = false;
-        testDynamicFrameBuffer = [];
-        testDynamicBufferStartTime = 0;
-        if (testBtn) {
-            testBtn.innerHTML = '<span class="material-icons">science</span>Start Test Mode';
-            testBtn.classList.remove('primary-btn');
-            testBtn.classList.add('secondary-btn');
-        }
-        setTestResult('Test mode is off.');
-        return;
-    }
-
-    setTestResult('Loading models for test mode...');
-    await loadTestModels();
-
-    if (!testStaticModel && !testDynamicModel) {
-        setTestResult('No trained/saved model found. Train first, then test.');
-        showCustomAlert('No trained/saved model found for testing. Train and save first.');
-        return;
-    }
-
-    isTestMode = true;
-    testDynamicFrameBuffer = [];
-    testDynamicBufferStartTime = 0;
-
-    if (testBtn) {
-        testBtn.innerHTML = '<span class="material-icons">stop</span>Stop Test Mode';
-        testBtn.classList.remove('secondary-btn');
-        testBtn.classList.add('primary-btn');
-    }
-    setTestResult(`Test mode active (${recordingMode}). Show a sign.`);
-}
 
 function startDynamicRecording() {
     const label = normalizeLabel(labelInput.value);
@@ -1048,28 +853,11 @@ langSelect.addEventListener('change', async (e) => {
     collectedData = []; // Clear current view
     saveBtn.disabled = false; // Re-enable to allow checking for saved models
     statusMsg.innerText = `Switched to ${currentLang}`;
-    isTestMode = false;
-    testDynamicFrameBuffer = [];
-    testDynamicBufferStartTime = 0;
-    if (testBtn) {
-        testBtn.innerHTML = '<span class="material-icons">science</span>Start Test Mode';
-        testBtn.classList.remove('primary-btn');
-        testBtn.classList.add('secondary-btn');
-    }
-    setTestResult('Test mode is off.');
     await loadDataFromServer();
     checkForSavedModels(); // Check if models exist for this language
     renderDataList();
 });
 
-if (testBtn) {
-    testBtn.addEventListener('click', () => {
-        toggleTestMode().catch((err) => {
-            console.error('Failed to toggle test mode:', err);
-            setTestResult('Failed to start test mode. Check console.');
-        });
-    });
-}
 
 // --- MediaPipe Hands ---
 const hands = new Hands({
@@ -1163,25 +951,12 @@ function onResults(results) {
             }
         }
 
-        if (isTestMode) {
-            const primaryLandmarks = results.multiHandLandmarks[0];
-            const flatLandmarks = preprocessLandmarks(primaryLandmarks);
-
-            if (recordingMode === 'dynamic' && testDynamicModel) {
-                runDynamicTestPrediction(flatLandmarks);
-            } else if (testStaticModel) {
-                runStaticTestPrediction(flatLandmarks);
-            } else if (testDynamicModel) {
-                runDynamicTestPrediction(flatLandmarks);
-            }
-        }
     } else if (isCollecting && recordingMode === 'static') {
         if (!isStaticPausedNoHands) {
             isStaticPausedNoHands = true;
             statusMsg.textContent = `Paused: no hands detected (${staticSessionSampleCount}/${MAX_STATIC_SAMPLES_PER_SESSION})`;
         }
-    } else if (isTestMode) {
-        setTestResult('Test mode active. Show your hand to predict.');
+        // No hands detected
     }
 
     canvasCtx.restore();
@@ -1637,18 +1412,31 @@ async function ensureTrainingModelsLoaded() {
 
 async function fetchCloudModel(type, lang) {
     try {
-        const baseUrl = `https://ynvykdraupxkhsxxsonb.supabase.co/storage/v1/object/public/sign-cards/models/${lang.toLowerCase()}/${type}`;
+        const langLower = lang.toLowerCase();
         
-        const labelsRes = await fetch(`${baseUrl}/labels.json`);
+        // 1. Get Public URLs for labels and model
+        const { data: labelsUrlData } = window.supabaseClient.storage
+            .from('models')
+            .getPublicUrl(`${langLower}/${type}/labels.json`);
+            
+        const { data: modelUrlData } = window.supabaseClient.storage
+            .from('models')
+            .getPublicUrl(`${langLower}/${type}/model.json`);
+
+        // 2. Load Labels
+        const labelsRes = await fetch(labelsUrlData.publicUrl);
         if (!labelsRes.ok) return null;
         const labels = await labelsRes.json();
         
-        // Load model.json which automatically pulls weights.bin
-        const cloudModel = await tf.loadLayersModel(`${baseUrl}/model.json`);
+        // 3. Load Model
+        const cloudModel = await tf.loadLayersModel(modelUrlData.publicUrl);
         
         let handReqs = null;
         if (type === 'dynamic') {
-            const reqRes = await fetch(`${baseUrl}/hand_reqs.json`);
+            const { data: handReqsUrlData } = window.supabaseClient.storage
+                .from('models')
+                .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
+            const reqRes = await fetch(handReqsUrlData.publicUrl);
             if (reqRes.ok) handReqs = await reqRes.json();
         }
         
@@ -1801,29 +1589,6 @@ async function runInternalTraining() {
         throw error;
     }
 }
-
-trainBtn.addEventListener('click', async () => {
-    statusMsg.innerText = "Preparing data...";
-    trainBtn.disabled = true;
-    saveBtn.disabled = true;
-
-    try {
-        const result = await runInternalTraining();
-        if (result.alreadyTrained) {
-            statusMsg.innerText = "No new samples found. Add new recordings, then train.";
-        } else if (result.trained) {
-            statusMsg.innerText = `✅ Incremental training complete! (${result.types.join(', ')}) - Click 'Save to Application' to use your updated models.`;
-        }
-        trainBtn.disabled = false;
-        saveBtn.disabled = false;
-    } catch (error) {
-        console.error("Training error:", error);
-        statusMsg.innerText = `❌ Training failed: ${error.message}`;
-        trainBtn.disabled = false;
-        saveBtn.disabled = true;
-        alert(`Training failed: ${error.message}`);
-    }
-});
 
 async function trainStaticModel(staticData, newStaticData) {
     const hasExistingModel = Boolean(model?.static);
@@ -2125,68 +1890,6 @@ async function trainDynamicModel(dynamicData, newDynamicData) {
     }
 }
 
-saveBtn.addEventListener('click', async () => {
-    // First, check if we have a trained model in memory
-    if (!model || (!model.static && !model.dynamic)) {
-        // If not, check if models are already saved in localStorage
-        const staticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
-        const dynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
-
-        if (staticLabels || dynamicLabels) {
-            statusMsg.innerText = `✅ Models already saved! Ready to use in Live Translation.`;
-            alert(`✅ Models are already saved!\n\nStatic: ${staticLabels ? '✓' : '✗'}\nDynamic: ${dynamicLabels ? '✓' : '✗'}\n\nYou can use them in Live Translation now.`);
-            return;
-        }
-
-        alert("❌ No trained model found! Please train first.");
-        return;
-    }
-
-    saveBtn.disabled = true;
-    statusMsg.innerText = "💾 Saving models to browser storage...";
-
-    try {
-        let saved = false;
-
-        // Save Static Model
-        if (model.static && model.staticLabels) {
-            await model.static.save(`localstorage://${STORAGE_KEYS[currentLang].model}-static`);
-            localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-static`, JSON.stringify(model.staticLabels));
-            console.log('✅ Static model saved');
-            saved = true;
-        }
-
-        // Save Dynamic Model
-        if (model.dynamic && model.dynamicLabels) {
-            await model.dynamic.save(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
-            localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`, JSON.stringify(model.dynamicLabels));
-            localStorage.setItem(
-                `${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`,
-                JSON.stringify(model.dynamicHandRequirements || {})
-            );
-            console.log('✅ Dynamic model saved');
-            saved = true;
-        }
-
-        if (saved) {
-            statusMsg.innerText = `✅ Model(s) saved! Ready for use in Live Translation.`;
-            showCustomAlert(`✅ Model(s) saved to ${currentLang} slot!\n\nYou can now use them in Live Translation and Video Call.`);
-            if (cloudSyncBtn) {
-                cloudSyncBtn.disabled = false;
-                cloudSyncBtn.title = "Backup these models to Cloud";
-            }
-        } else {
-            statusMsg.innerText = "❌ Nothing to save. Train a model first.";
-            alert("❌ No trained model components found. Please train first.");
-        }
-    } catch (error) {
-        console.error('Save error:', error);
-        statusMsg.innerText = `❌ Save failed: ${error.message}`;
-        alert(`❌ Failed to save model: ${error.message}\n\nCheck browser console for details.`);
-    } finally {
-        saveBtn.disabled = false;
-    }
-});
 
 
 // --- Sign Card Upload ---

@@ -510,8 +510,7 @@ updateClock();
 
 // 1. Speech to Text (Bi-Directional)
 function initSTT() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    if (!isSTTSupported) {
         console.warn("Speech Recognition not supported in this browser.");
         if (sttToggleBtn) sttToggleBtn.style.display = 'none';
         return;
@@ -564,11 +563,11 @@ function initSTT() {
                 isRemoteEcho = true;
             }
 
-            // Only show the speech locally if it belongs to the other participant
-            if (isRemoteEcho) {
-                appendCaptionLog(speakerName, capitalized);
-                displayVCSignCards(capitalized);
-            }
+            // NEW: Always show the speech locally in the caption log and cards if STT is ON
+            // Use 'You' for own speech and speakerName (remoteName) for echo
+            const displayName = isRemoteEcho ? remoteName : "You";
+            appendCaptionLog(displayName, capitalized);
+            displayVCSignCards(capitalized);
             
             // Send finalized text to remote peer ONLY if it's our own speech
             // to avoid an infinite loop of echoing transcripts.
@@ -608,8 +607,16 @@ function initSTT() {
     };
 }
 
+// --- Speech Recognition Support Check ---
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const isSTTSupported = !!SpeechRecognition;
+
 function updateSTTUI() {
     if (!sttToggleBtn) return;
+    if (!isSTTSupported) {
+        sttToggleBtn.style.display = 'none';
+        return;
+    }
     sttToggleBtn.innerHTML = `<span class="material-icons">${isSTTOn ? 'interpreter_mode' : 'voice_over_off'}</span>`;
     sttToggleBtn.classList.toggle('red-btn', !isSTTOn);
     sttToggleBtn.title = isSTTOn ? "Turn off Speech-to-Text" : "Turn on Speech-to-Text";
@@ -659,8 +666,14 @@ function appendCaptionLog(speaker, text) {
     const panel = document.querySelector('.caption-log-panel');
     if (panel) panel.classList.add('visible');
 
-    // Only show the latest caption, similar to sign cards
-    captionLogList.innerHTML = '';
+    // Remove empty placeholder
+    const emptyMsg = captionLogList.querySelector('.caption-log-empty');
+    if (emptyMsg) emptyMsg.remove();
+
+    // Maintain a history of the last 15 messages for context
+    while (captionLogList.children.length > 15) {
+        captionLogList.removeChild(captionLogList.firstChild);
+    }
 
     const entry = document.createElement('div');
     entry.className = 'caption-log-entry';
@@ -692,7 +705,6 @@ function displayVCSignCards(text) {
 
     const renderSeq = ++vcCardRenderSeq;
     const langFolder = currentMode.toLowerCase(); // 'isl' or 'asl'
-    const isMobileViewport = window.innerWidth <= 768;
 
     // Always clear history to only show the most recent utterance
     vcCardQueue = [];
@@ -738,10 +750,10 @@ function displayVCSignCards(text) {
             }
         }
 
-        // Auto-hide the panel 2.5 seconds after all cards are displayed
+        // Auto-hide the panel 7 seconds after all cards are displayed
         vcAutoHideTimeout = setTimeout(() => {
             if (panel) panel.classList.remove('visible');
-        }, 2500);
+        }, 7000);
     })();
 }
 
@@ -1389,30 +1401,48 @@ joinBtn.addEventListener('click', async (e) => {
             }
         })
         .on('broadcast', { event: 'sign-message' }, data => {
-            const payload = data.payload || data; // Handle different payload structures
-            remotePredictionDiv.innerText = payload.text;
-            
-            // Update remote says label in case name synchronization was delayed
-            const remoteSaysLabel = document.getElementById('remote-says-label');
-            if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+            const payload = data.payload || data;
+            if (payload.text) {
+                const text = payload.text;
+                const isDynamic = !!payload.isDynamic;
+                const name = payload.name || "Remote User";
+                setRemoteName(name);
 
-            remoteCaptionOverlay.classList.remove('hidden');
-            setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
+                // Update Remote Overlay (Toast)
+                if (remotePredictionDiv) {
+                    const displayText = isDynamic ? `${text} 🔄` : text;
+                    remotePredictionDiv.innerText = displayText;
+                }
+                if (remoteCaptionOverlay) {
+                    remoteCaptionOverlay.classList.remove('hidden');
+                    // Auto-hide toast after 3s
+                    if (window.vcRemoteToastTimeout) clearTimeout(window.vcRemoteToastTimeout);
+                    window.vcRemoteToastTimeout = setTimeout(() => {
+                        remoteCaptionOverlay.classList.add('hidden');
+                    }, 3000);
+                }
 
-            const now = Date.now();
-            const wordLastSpoken = remoteWordLastSpoken[payload.text] || 0;
-            const timeSinceAny = now - lastRemoteSpokenTime;
-            const timeSinceSame = now - wordLastSpoken;
+                // NEW: Unify with STT Caption Log and Cards
+                // Note: isSTTOn check removed to allow one-way translation (everyone sees remote captions)
+                const logText = isDynamic ? `${text} 🔄` : text;
+                appendCaptionLog(name, logText);
+                displayVCSignCards(text); // Resolve cards for the sign label
 
-            if (isTTSOn && timeSinceSame > 4000 && timeSinceAny > 800) {
-                speak(payload.text);
-                lastRemoteSpokenText = payload.text;
-                lastRemoteSpokenTime = now;
-                remoteWordLastSpoken[payload.text] = now;
+                const now = Date.now();
+                const wordLastSpoken = remoteWordLastSpoken[text] || 0;
+                const timeSinceAny = now - lastRemoteSpokenTime;
+                const timeSinceSame = now - wordLastSpoken;
+
+                if (isTTSOn && timeSinceSame > 4000 && timeSinceAny > 800) {
+                    speak(text);
+                    lastRemoteSpokenText = text;
+                    lastRemoteSpokenTime = now;
+                    remoteWordLastSpoken[text] = now;
+                }
             }
         })
         .on('broadcast', { event: 'speech-message' }, data => {
-            if (!isSTTOn) return; // Only show live captions/cards if STT is toggled ON
+            // Note: isSTTOn check removed to allow one-way translation (everyone sees remote captions)
             const payload = data.payload || data;
             if (payload.text && payload.text.trim()) {
                 if (payload.name) setRemoteName(payload.name);
@@ -2400,11 +2430,21 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 lastSpokenTime = now;
                 localWordLastSpoken[outputLabel] = now;
 
+                if (isSTTOn) {
+                    const logText = best.isDynamic ? `${outputLabel} 🔄` : outputLabel;
+                    appendCaptionLog(localName, logText);
+                    displayVCSignCards(outputLabel);
+                }
+
                 if (supabaseChannel) {
                     supabaseChannel.send({
                         type: 'broadcast',
                         event: 'sign-message',
-                        payload: { text: outputLabel }
+                        payload: { 
+                            text: outputLabel, 
+                            name: localName, 
+                            isDynamic: !!best.isDynamic 
+                        }
                     });
                 }
 

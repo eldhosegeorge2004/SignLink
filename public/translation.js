@@ -3,7 +3,6 @@ const videoElement = document.getElementById('input-video');
 const canvasElement = document.getElementById('output-canvas');
 const canvasCtx = canvasElement.getContext('2d');
 const signView = document.getElementById('sign-view');
-const speechView = document.getElementById('speech-view');
 const speechPanel = document.getElementById('speech-panel');
 const speechCaptionLog = document.getElementById('speech-caption-log');
 const camBtn = document.getElementById('cam-btn');
@@ -11,7 +10,6 @@ const ttsBtn = document.getElementById('tts-btn');
 const sttResult = document.getElementById('stt-result');
 const listeningText = document.getElementById('listening-text');
 let signVoiceToggle = document.getElementById('sign-voice-toggle');
-const voiceSubtitles = document.getElementById('voice-subtitles');
 
 let isSignMode = true; // true = sign detection, false = voice recognition
 let isCamOn = true;
@@ -317,21 +315,31 @@ async function loadSavedModelAndLabels() {
 }
 async function fetchCloudModel(type, lang) {
     try {
-        const baseUrl = `https://ynvykdraupxkhsxxsonb.supabase.co/storage/v1/object/public/sign-cards/models/${lang.toLowerCase()}/${type}`;
+        const langLower = lang.toLowerCase();
         
-        // 1. Check for labels first
-        const labelsRes = await fetch(`${baseUrl}/labels.json`);
+        // 1. Get Public URLs for labels and model
+        const { data: labelsUrlData } = window.supabaseClient.storage
+            .from('models')
+            .getPublicUrl(`${langLower}/${type}/labels.json`);
+            
+        const { data: modelUrlData } = window.supabaseClient.storage
+            .from('models')
+            .getPublicUrl(`${langLower}/${type}/model.json`);
+
+        // 2. Load Labels
+        const labelsRes = await fetch(labelsUrlData.publicUrl);
         if (!labelsRes.ok) return null;
-        
         const labels = await labelsRes.json();
         
-        // 2. Load the model
-        // tf.loadLayersModel handles the model.json which points to weights.bin
-        const model = await tf.loadLayersModel(`${baseUrl}/model.json`);
+        // 3. Load Model
+        const model = await tf.loadLayersModel(modelUrlData.publicUrl);
         
         let handReqs = null;
         if (type === 'dynamic') {
-            const reqRes = await fetch(`${baseUrl}/hand_reqs.json`);
+            const { data: handReqsUrlData } = window.supabaseClient.storage
+                .from('models')
+                .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
+            const reqRes = await fetch(handReqsUrlData.publicUrl);
             if (reqRes.ok) handReqs = await reqRes.json();
         }
         
@@ -1641,8 +1649,6 @@ function bindSignVoiceToggle() {
             // Switch to Sign Mode
             toggleBtn.innerHTML = '<span class="material-icons">pan_tool</span>';
             toggleBtn.title = 'Switch to Voice Mode';
-            if (sttResult.parentElement) sttResult.parentElement.style.display = '';
-            if (speechPanel) speechPanel.classList.remove('active');
 
             if (isCamOn && !localStream) startCamera();
             if (recognition) recognition.stop();
@@ -1650,8 +1656,6 @@ function bindSignVoiceToggle() {
             // Switch to Voice Mode
             toggleBtn.innerHTML = '<span class="material-icons">mic</span>';
             toggleBtn.title = 'Switch to Sign Mode';
-            if (sttResult.parentElement) sttResult.parentElement.style.display = 'none';
-            if (speechPanel) speechPanel.classList.add('active');
             if (listeningText) listeningText.innerText = "Listening...";
             
             if (isCamOn && !localStream) startCamera();
@@ -1674,9 +1678,7 @@ function bindSignVoiceToggle() {
 bindSignVoiceToggle();
 document.addEventListener('DOMContentLoaded', bindSignVoiceToggle, { once: true });
 
-if (speechPanel) {
-    speechPanel.classList.remove('active');
-}
+
 
 // --- Legacy Mode Button Removed (replaced by Sign/Voice Toggle) ---
 // The old modeBtn had two different modes (sign-to-text vs speech-to-sign)
