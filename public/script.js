@@ -1330,6 +1330,12 @@ joinBtn.addEventListener('click', async (e) => {
             if (payload.name) {
                 setRemoteName(payload.name);
             }
+
+            supabaseChannel.send({
+                type: 'broadcast',
+                event: 'camera-toggle',
+                payload: { isCamOn }
+            });
             
             // If we are the host, immediately announce ourselves back to the new joiner
             if (isCreatingMeeting) {
@@ -1661,7 +1667,7 @@ joinBtn.addEventListener('click', async (e) => {
                     supabaseChannel.send({
                         type: 'broadcast',
                         event: 'camera-toggle',
-                        payload: { isCamOn: false }
+                        payload: { isCamOn }
                     });
                 }, 1000);
             } else if (status === 'CHANNEL_ERROR') {

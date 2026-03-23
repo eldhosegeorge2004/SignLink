@@ -1635,6 +1635,11 @@ body.stt-active .caption-log-panel.visible {
 @media (max-width: 600px) {
 
     /* Lock body to screen — no scroll on join screen */
+    .main-stage.is-connected .local-view-container {
+        bottom: 155px;
+        right: 10px;
+    }
+
     footer {
         display: none !important;
     }
