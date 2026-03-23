@@ -411,17 +411,11 @@
                 </div>
             </div>
 
-            <!-- Prediction Overlay (Toast style) -->
+            <!-- Remote Caption Overlay -->
             <div id="remote-caption-overlay" class="caption-overlay hidden">
                 <span class="material-icons" style="color: #4db6ac;">record_voice_over</span>
                 <span id="remote-says-label" class="remote-says-label">Remote User Says:</span>
                 <span id="remotePrediction"></span>
-            </div>
-
-
-
-            <div id="prediction-overlay" class="caption-overlay">
-                <span id="prediction">Waiting for sign...</span>
             </div>
 
 
@@ -452,6 +446,11 @@
                 "></span>
             </div>
 
+        </div>
+
+        <!-- Prediction Overlay (Fixed to viewport, above main-stage) -->
+        <div id="prediction-overlay">
+            <span id="prediction">Waiting for sign...</span>
         </div>
 
         <!-- Bottom Control Bar -->
