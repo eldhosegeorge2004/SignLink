@@ -463,12 +463,7 @@ header {
 }
 
 
-.main-stage {
-    flex: 1;
-    position: relative;
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-template-rows: 40fr 40fr 20fr;
+.main-stage { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr;
     width: 100%;
     height: calc(100dvh - 72px - env(safe-area-inset-bottom) - 8px);
     min-height: 0;
@@ -677,6 +672,7 @@ video {
 }
 
 .prediction-sign-cards-container {
+    display: none !important;
     position: relative;
     grid-column: 2 / 4;
     grid-row: 3;
