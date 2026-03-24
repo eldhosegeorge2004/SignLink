@@ -1338,59 +1338,36 @@ joinBtn.addEventListener('click', async (e) => {
                 remoteVideo.srcObject = null;
             }
         })
-        .on('broadcast', { event: 'ping-request' }, () => {
-            // Host responds to joiner's ping so joiner knows the meeting exists
-            if (isCreatingMeeting && supabaseChannel) {
-                supabaseChannel.send({
-                    type: 'broadcast',
-                    event: 'ping-response',
-                    payload: { host: true }
-                });
-            }
-        })
         .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
                 updateStatus("Connected to signaling server", "success");
 
-                // Check for existing meeting if we are NOT the creator
+                // Check for existing users if we are NOT the creator
                 if (!isCreatingMeeting) {
-                    let meetingFound = false;
-
-                    // Listen for a ping-response from the host
-                    const pingResponseHandler = supabaseChannel.on(
-                        'broadcast',
-                        { event: 'ping-response' },
-                        () => {
-                            if (!meetingFound) {
-                                meetingFound = true;
-                                joiningLoader.classList.remove('active');
-                                meetingRoom.classList.add('active');
-                                console.log("Host ping received — meeting exists.");
-                            }
-                        }
-                    );
-
-                    // Send ping to host
+                    // Register presence first to be noticed
+                    supabaseChannel.track({ user_id: 'joiner', online_at: new Date().toISOString() });
+                    
+                    // Small delay to let presence sync
                     setTimeout(() => {
-                        supabaseChannel.send({
-                            type: 'broadcast',
-                            event: 'ping-request',
-                            payload: {}
-                        });
-                    }, 300);
-
-                    // If no response in 5 seconds, meeting doesn't exist
-                    setTimeout(() => {
-                        if (!meetingFound) {
+                        const presenceState = supabaseChannel.presenceState();
+                        const participantCount = Object.keys(presenceState).length;
+                        
+                        // If no one else is in the room, it means the meeting doesn't exist
+                        if (false && participantCount <= 1) {
                             alert("Meeting not found. Please check your code or wait for the host to start.");
-                            stopCamera();
+                            stopCamera(); // Safety: Turn off camera since we are leaving
                             joiningLoader.classList.remove('active');
                             joinScreen.classList.add('active');
                             lobbyStatus.innerText = "Meeting not found.";
                             lobbyStatus.style.color = "#ef4444";
-                            isCreatingMeeting = false;
+                            isCreatingMeeting = false; // Reset state
+                            return;
+                        } else {
+                            // Host found, show meeting room
+                            joiningLoader.classList.remove('active');
+                            meetingRoom.classList.add('active');
                         }
-                    }, 5000);
+                    }, 2500); // Increased slightly for better visual feedback
                 }
 
                 // Notify others that we joined
