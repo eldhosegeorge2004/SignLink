@@ -894,15 +894,121 @@ function processDynamicPredictedLetter(letter, confidence = 0) {
 function updateSpellingDisplay() {
     const overlay = document.getElementById('spelling-overlay');
     const textEl = document.getElementById('spelling-text');
+    const eraseBtn = document.getElementById('erase-btn');
 
     if (accumulatedWord.length > 0) {
-        if (overlay) overlay.style.display = 'block';
+        if (overlay) {
+            overlay.style.display = 'flex';
+            overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        }
         if (textEl) textEl.innerText = accumulatedWord;
+        if (eraseBtn) {
+            eraseBtn.style.display = 'flex';
+            eraseBtn.style.opacity = '1';
+            eraseBtn.disabled = false;
+        }
     } else {
-        if (overlay) overlay.style.display = 'none';
+        // Show overlay with just the button (dimmed) to indicate feature presence
+        if (overlay) {
+            overlay.style.display = 'flex';
+            overlay.style.backgroundColor = 'transparent'; // Hide background when empty
+        }
         if (textEl) textEl.innerText = "";
+        if (eraseBtn) {
+            eraseBtn.style.display = 'flex';
+            eraseBtn.style.opacity = '0.3';
+            eraseBtn.disabled = true;
+        }
     }
 }
+
+// Ensure Overlay & Button Exist (Dynamic Injection for Caching Issues)
+function ensureSpellingUI() {
+    let overlay = document.getElementById('spelling-overlay');
+    if (!overlay) {
+        // If overlay is missing entirely from HTML, create it
+        overlay = document.createElement('div');
+        overlay.id = 'spelling-overlay';
+        overlay.style.position = 'absolute';
+        overlay.style.top = '20px';
+        overlay.style.left = '20px';
+        overlay.style.background = 'transparent';
+        overlay.style.padding = '10px 20px';
+        overlay.style.borderRadius = '10px';
+        overlay.style.display = 'flex';
+        overlay.style.zIndex = '100';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.alignItems = 'center';
+        overlay.style.gap = '15px';
+        
+        // Find a suitable parent (video container preferred)
+        const videoContainer = document.querySelector('.video-container') || document.body;
+        videoContainer.appendChild(overlay);
+        
+        const textEl = document.createElement('span');
+        textEl.id = 'spelling-text';
+        textEl.style.color = 'white';
+        textEl.style.fontSize = '2rem';
+        textEl.style.fontWeight = 'bold';
+        textEl.style.fontFamily = "'Outfit', sans-serif";
+        textEl.style.letterSpacing = '2px';
+        overlay.appendChild(textEl);
+    }
+
+    let eraseBtn = document.getElementById('erase-btn');
+    if (!eraseBtn) {
+        eraseBtn = document.createElement('button');
+        eraseBtn.id = 'erase-btn';
+        eraseBtn.innerHTML = '<span class="material-icons" style="font-size: 24px;">backspace</span>';
+        
+        // Style the button
+        eraseBtn.style.background = 'rgba(0, 0, 0, 0.6)';
+        eraseBtn.style.border = '2px solid rgba(255, 255, 255, 0.5)';
+        eraseBtn.style.color = 'white';
+        eraseBtn.style.borderRadius = '50%';
+        eraseBtn.style.width = '44px';
+        eraseBtn.style.height = '44px';
+        eraseBtn.style.display = 'flex';
+        eraseBtn.style.alignItems = 'center';
+        eraseBtn.style.justifyContent = 'center';
+        eraseBtn.style.cursor = 'pointer';
+        eraseBtn.style.pointerEvents = 'auto'; // Important!
+        eraseBtn.style.transition = 'background 0.2s';
+        eraseBtn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.3)';
+
+        // NOTE: Event listener will be attached below in the global block to avoid duplication
+        
+        overlay.appendChild(eraseBtn);
+        // Ensure icon font is loaded or provide text fallback if needed
+        if (!document.querySelector('link[href*="Material+Icons"]')) {
+           eraseBtn.innerText = "←"; 
+        }
+    }
+}
+
+// Call ensureSpellingUI on load
+ensureSpellingUI();
+
+// Erase Button Logic (Safe, single attachment)
+const eraseBtn = document.getElementById('erase-btn');
+if (eraseBtn && !eraseBtn.hasAttribute('data-listener-attached')) {
+    eraseBtn.setAttribute('data-listener-attached', 'true');
+    eraseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (accumulatedWord.length > 0) {
+            accumulatedWord = accumulatedWord.slice(0, -1);
+            // Update lastAddedLetter to avoid immediate duplicate prevention of the new last letter
+            // but also allow the deleted letter to be re-added if signed again.
+            lastAddedLetter = accumulatedWord.length > 0 ? accumulatedWord.charAt(accumulatedWord.length - 1) : null;
+            
+            updateSpellingDisplay();
+            
+            // Extend the timeout so the word doesn't complete while editing
+            lastLetterTime = Date.now();
+        }
+    });
+}
+
 
 // Check for spelling inactivity to finish the word
 setInterval(() => {
@@ -1559,4 +1665,9 @@ if (speechPanel) {
 // Initialize (start in sign mode by default)
 if (isSignMode && isCamOn) {
     startCamera();
+}
+
+// Initialize Spelling Display (ensure button is visible but blank)
+if (typeof updateSpellingDisplay === 'function') {
+    updateSpellingDisplay();
 }
