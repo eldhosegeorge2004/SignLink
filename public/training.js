@@ -36,6 +36,7 @@ const mobileRecordingCounter = document.getElementById('mobileRecordingCounter')
 const mobileBackBtn = document.getElementById('mobileBackBtn');
 const mobileClearSignBtn = document.getElementById('mobileClearSignBtn');
 const mobileUploadBtn = document.getElementById('mobileUploadBtn');
+const cloudSyncBtn = document.getElementById('cloudSyncBtn');
 const mobileRevertBtn = document.getElementById('mobileRevertBtn');
 const signSetupModal = document.getElementById('signSetupModal');
 const modalLabelInput = document.getElementById('modalLabelInput');
@@ -93,6 +94,18 @@ let isInSetupMode = false;
 let lastRecordedBatchCount = 0;
 let sessionHistory = [];
 let lastTrainSaveState = { lang: '', label: '', sampleCount: 0 };
+
+function openDataDrawer() {
+    if (!dataPanel) return;
+    dataPanel.classList.add('open');
+    if (drawerBackdrop) drawerBackdrop.classList.add('active');
+}
+
+function closeDataDrawer() {
+    if (!dataPanel) return;
+    dataPanel.classList.remove('open');
+    if (drawerBackdrop) drawerBackdrop.classList.remove('active');
+}
 
 function normalizeLabel(label) {
     const trimmed = (label || '').trim();
@@ -275,29 +288,25 @@ function hideProcessingModal() {
 function setupMobileDataDrawer() {
     if (!dataPanel) return;
 
-    const openData = () => {
-        dataPanel.classList.add('open');
-        if (drawerBackdrop) drawerBackdrop.classList.add('active');
-    };
-
-
-    const closeAll = () => {
-        dataPanel.classList.remove('open');
-        if (drawerBackdrop) drawerBackdrop.classList.remove('active');
-    };
-
-    if (openDataPanelBtn) openDataPanelBtn.addEventListener('click', openData);
-    if (openDataPanelBtnMobile) openDataPanelBtnMobile.addEventListener('click', openData);
-    if (closeDataPanelBtn) closeDataPanelBtn.addEventListener('click', closeAll);
-    if (backToMainBtn) backToMainBtn.addEventListener('click', closeAll);
+    if (openDataPanelBtn) openDataPanelBtn.addEventListener('click', openDataDrawer);
+    if (openDataPanelBtnMobile) openDataPanelBtnMobile.addEventListener('click', openDataDrawer);
+    if (closeDataPanelBtn) closeDataPanelBtn.addEventListener('click', closeDataDrawer);
+    if (backToMainBtn) backToMainBtn.addEventListener('click', closeDataDrawer);
 
     if (drawerBackdrop) {
-        drawerBackdrop.addEventListener('click', closeAll);
+        drawerBackdrop.addEventListener('click', closeDataDrawer);
     }
 
     window.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') closeAll();
+        if (event.key === 'Escape') closeDataDrawer();
     });
+
+    dataPanel.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element)) return;
+        const button = event.target.closest('button');
+        if (!button || !dataPanel.contains(button)) return;
+        closeDataDrawer();
+    }, true);
 
     // Drawer behavior is now consistent across all screen sizes
 
