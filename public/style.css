@@ -553,10 +553,10 @@ video {
 
 .main-stage.is-connected .local-view-container {
     position: absolute;
-    bottom: 110px; /* Above control bar */
+    bottom: 140px; /* Above control bar */
     right: 15px;
-    width: clamp(100px, 20vw, 160px);
-    height: clamp(140px, 28vw, 220px);
+    width: clamp(140px, 26vw, 220px);
+    height: clamp(190px, 35vw, 300px);
     aspect-ratio: 3 / 4 !important;
     z-index: 100;
     grid-column: unset;
@@ -1636,7 +1636,7 @@ body.stt-active .caption-log-panel.visible {
 
     /* Lock body to screen — no scroll on join screen */
     .main-stage.is-connected .local-view-container {
-        bottom: 155px;
+        bottom: 185px;
         right: 10px;
     }
 
