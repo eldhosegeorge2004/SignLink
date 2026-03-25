@@ -12,11 +12,33 @@
         rel="stylesheet">
 
     <style>
+        :root {
+            --studio-bg: #020817;
+            --studio-bg-soft: rgba(15, 23, 42, 0.86);
+            --studio-surface: rgba(13, 20, 36, 0.82);
+            --studio-surface-strong: rgba(15, 23, 42, 0.96);
+            --studio-surface-muted: rgba(30, 41, 59, 0.72);
+            --studio-border: rgba(148, 163, 184, 0.18);
+            --studio-border-strong: rgba(191, 219, 254, 0.26);
+            --studio-text: #e6edf3;
+            --studio-text-muted: #94a3b8;
+            --studio-accent: #58a6ff;
+            --studio-accent-strong: #3b82f6;
+            --studio-accent-soft: rgba(59, 130, 246, 0.16);
+            --studio-success: #22c55e;
+            --studio-danger: #ef4444;
+            --studio-warning: #f59e0b;
+            --studio-shadow: 0 18px 54px rgba(0, 0, 0, 0.42);
+        }
+
         /* Training Studio Specific Styles */
         body {
             overflow: hidden;
-            /* Prevent scrolling, use internal scrolling */
-            background-color: #0d1117;
+            background:
+                radial-gradient(circle at top, rgba(59, 130, 246, 0.18), transparent 34%),
+                radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.12), transparent 30%),
+                linear-gradient(180deg, #020617 0%, #020817 48%, #01040d 100%);
+            color: var(--studio-text);
         }
 
         .studio-layout {
@@ -24,7 +46,7 @@
             flex-direction: column;
             width: 100vw;
             height: 100dvh;
-            background-color: #050510;
+            background: transparent;
             gap: 0;
             padding-top: 0;
             position: relative;
@@ -35,19 +57,21 @@
 
 
         .panel-section {
-            background: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 12px;
+            background: var(--studio-surface);
+            border: 1px solid var(--studio-border);
+            border-radius: 20px;
             padding: 15px;
+            backdrop-filter: blur(18px);
+            box-shadow: var(--studio-shadow);
         }
 
         .section-title {
             font-size: 0.85rem;
             text-transform: uppercase;
-            color: #8b949e;
-            font-weight: 600;
+            color: var(--studio-text-muted);
+            font-weight: 700;
             margin-bottom: 12px;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.12em;
         }
 
         .input-group-vertical {
@@ -57,75 +81,83 @@
         }
 
         .text-input {
-            background: #21262d;
-            border: 1px solid #30363d;
-            color: white;
-            padding: 10px;
-            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.82);
+            border: 1px solid var(--studio-border);
+            color: var(--studio-text);
+            padding: 12px 14px;
+            border-radius: 14px;
             outline: none;
             font-family: 'Inter', sans-serif;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
         }
 
         .text-input:focus {
-            border-color: #58a6ff;
+            border-color: rgba(96, 165, 250, 0.85);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+            background: rgba(15, 23, 42, 0.96);
         }
 
         .select-input {
-            background: #21262d;
-            border: 1px solid #30363d;
-            color: white;
+            background: rgba(15, 23, 42, 0.82);
+            border: 1px solid var(--studio-border);
+            color: var(--studio-text);
             padding: 10px;
-            border-radius: 8px;
+            border-radius: 14px;
             outline: none;
             cursor: pointer;
         }
 
         .primary-btn {
-            background: #238636;
+            background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb);
             color: white;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(191, 219, 254, 0.2);
             padding: 12px;
-            border-radius: 8px;
-            font-weight: 600;
+            border-radius: 14px;
+            font-weight: 700;
             cursor: pointer;
             width: 100%;
-            transition: background 0.2s;
+            transition: transform 0.2s ease, filter 0.2s ease, border-color 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 8px;
+            box-shadow: 0 12px 30px rgba(37, 99, 235, 0.28);
         }
 
         .primary-btn:hover {
-            background: #2ea043;
+            filter: brightness(1.05);
+            transform: translateY(-1px);
         }
 
         .primary-btn:disabled {
-            background: #21262d;
-            color: #8b949e;
+            background: rgba(30, 41, 59, 0.75);
+            color: var(--studio-text-muted);
             cursor: not-allowed;
+            box-shadow: none;
         }
 
         .secondary-btn {
-            background: #21262d;
-            color: #c9d1d9;
-            border: 1px solid #30363d;
+            background: rgba(15, 23, 42, 0.78);
+            color: var(--studio-text);
+            border: 1px solid var(--studio-border);
             padding: 10px;
-            border-radius: 8px;
+            border-radius: 14px;
             cursor: pointer;
             width: 100%;
-            transition: 0.2s;
+            transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+            backdrop-filter: blur(12px);
         }
 
         .secondary-btn:hover {
-            background: #30363d;
-            border-color: #8b949e;
+            background: rgba(30, 41, 59, 0.95);
+            border-color: rgba(96, 165, 250, 0.35);
+            transform: translateY(-1px);
         }
 
         /* CENTER PANEL: Canvas/Video */
         .workspace {
             position: relative;
-            background: #0d1117;
+            background: transparent;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -139,10 +171,10 @@
             max-width: 800px;
             aspect-ratio: 16/9;
             background: black;
-            border-radius: 12px;
+            border-radius: 28px;
             overflow: hidden;
-            box-shadow: 0 0 40px rgba(0, 0, 0, 0.3);
-            border: 1px solid #30363d;
+            box-shadow: 0 28px 60px rgba(0, 0, 0, 0.45);
+            border: 1px solid rgba(191, 219, 254, 0.16);
         }
 
         video,
@@ -160,16 +192,18 @@
             position: absolute;
             top: 20px;
             right: 20px;
-            background: rgba(220, 38, 38, 0.9);
+            background: rgba(239, 68, 68, 0.92);
             color: white;
-            padding: 5px 12px;
-            border-radius: 4px;
-            font-weight: 600;
+            padding: 8px 14px;
+            border-radius: 999px;
+            font-weight: 700;
             font-size: 0.8rem;
             display: none;
             align-items: center;
             gap: 6px;
             animation: pulse-red 1.5s infinite;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            box-shadow: 0 12px 28px rgba(127, 29, 29, 0.35);
         }
 
         @keyframes pulse-red {
@@ -190,28 +224,30 @@
 
         .list-header {
             padding: 20px;
-            border-bottom: 1px solid #30363d;
+            border-bottom: 1px solid var(--studio-border);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            color: #e6edf3;
+            color: var(--studio-text);
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.86));
         }
 
         .data-list {
             flex: 1;
             overflow-y: auto;
-            padding: 10px;
+            padding: 12px;
         }
 
         .data-item {
-            background: #21262d;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 10px;
+            background: rgba(15, 23, 42, 0.78);
+            border: 1px solid var(--studio-border);
+            border-radius: 16px;
+            padding: 12px;
             margin-bottom: 10px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
         }
 
         .data-item-info {
@@ -220,27 +256,27 @@
         }
 
         .data-label {
-            color: white;
-            font-weight: 500;
+            color: var(--studio-text);
+            font-weight: 600;
             font-size: 0.9rem;
         }
 
         .data-count {
-            color: #8b949e;
+            color: var(--studio-text-muted);
             font-size: 0.8rem;
         }
 
         .delete-btn {
             background: transparent;
             border: none;
-            color: #da3633;
+            color: var(--studio-danger);
             cursor: pointer;
             padding: 5px;
-            border-radius: 4px;
+            border-radius: 999px;
         }
 
         .delete-btn:hover {
-            background: rgba(218, 54, 51, 0.1);
+            background: rgba(239, 68, 68, 0.12);
         }
 
         .hidden-file-input {
@@ -254,14 +290,14 @@
             width: 80px;
             height: 80px;
             border-radius: 50%;
-            background: white;
-            border: 4px solid rgba(255, 255, 255, 0.3);
+            background: rgba(248, 250, 252, 0.96);
+            border: 4px solid rgba(191, 219, 254, 0.35);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
         }
 
         .capture-fab:hover {
@@ -274,8 +310,8 @@
         }
 
         .capture-fab.active {
-            background: #da3633;
-            border-color: rgba(218, 54, 51, 0.5);
+            background: rgba(239, 68, 68, 0.95);
+            border-color: rgba(254, 202, 202, 0.45);
         }
 
         .capture-fab.active .capture-inner {
@@ -288,51 +324,53 @@
         .capture-inner {
             width: 60px;
             height: 60px;
-            background: #da3633;
+            background: var(--studio-danger);
             border-radius: 50%;
         }
 
         .mode-toggle-btn.active {
-            background: #238636 !important;
+            background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb) !important;
             color: white !important;
-            border-color: #238636 !important;
+            border-color: rgba(191, 219, 254, 0.28) !important;
         }
 
         .mode-toggle-btn {
             flex: 1;
             background: transparent;
-            color: #8b949e;
-            border: 1px solid #30363d;
+            color: var(--studio-text-muted);
+            border: 1px solid var(--studio-border);
             padding: 8px;
-            border-radius: 6px;
+            border-radius: 12px;
             cursor: pointer;
-            font-weight: 600;
+            font-weight: 700;
             transition: all 0.2s;
         }
 
         .mode-toggle-btn:not(.active):hover {
-            background: #21262d;
-            border-color: #58a6ff;
+            background: rgba(15, 23, 42, 0.8);
+            border-color: rgba(96, 165, 250, 0.35);
         }
 
-        .mobile-data-toggle {
-            display: none;
-            position: absolute;
-            top: 16px;
-            right: 16px;
-            z-index: 15;
-            background: rgba(13, 17, 23, 0.92);
-            color: #e6edf3;
-            border: 1px solid #30363d;
-            border-radius: 999px;
-            padding: 8px 12px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            cursor: pointer;
-        }
+            .mobile-data-toggle {
+                display: none;
+                position: absolute;
+                top: 16px;
+                right: 16px;
+                z-index: 15;
+                background: var(--studio-surface);
+                color: var(--studio-text);
+                border: 1px solid var(--studio-border);
+                border-radius: 999px;
+                padding: 8px 12px;
+                font-size: 0.85rem;
+                font-weight: 700;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                cursor: pointer;
+                backdrop-filter: blur(14px);
+                box-shadow: var(--studio-shadow);
+            }
 
         .drawer-close-btn {
             display: none;
@@ -377,7 +415,7 @@
                 display: flex !important;
                 align-items: center;
                 justify-content: space-between;
-                padding: 14px 14px;
+                padding: calc(10px + env(safe-area-inset-top)) 14px 0 14px;
                 background: transparent;
                 position: fixed;
                 top: 0;
@@ -390,34 +428,75 @@
             .mobile-app-header > * {
                 pointer-events: all;
             }
-
-
-
-
             .app-title {
                 font-family: 'Outfit', sans-serif;
-                font-size: 1.1rem;
+                font-size: 1rem;
                 font-weight: 700;
-                color: #e6edf3;
+                color: var(--studio-text);
                 margin: 0;
             }
 
             .header-actions {
                 display: flex;
-                gap: 12px;
+                align-items: center;
+                gap: 10px;
             }
 
             .header-icon-btn {
-                background: rgba(59, 130, 246, 0.1);
-                border: 1px solid rgba(59, 130, 246, 0.2);
-                color: #58a6ff;
-                width: 38px;
-                height: 38px;
-                border-radius: 10px;
+                background: rgba(13, 20, 36, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: var(--studio-text);
+                width: 44px;
+                height: 44px;
+                border-radius: 50%;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
+                backdrop-filter: blur(12px);
+                box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+                text-decoration: none;
+                transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+            }
+
+            .header-icon-btn:hover {
+                background: rgba(30, 41, 59, 0.9);
+                border-color: rgba(191, 219, 254, 0.24);
+                transform: translateY(-1px);
+            }
+
+            .header-title-pill {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                min-width: 0;
+                padding: 11px 16px;
+                border-radius: 999px;
+                background: rgba(13, 20, 36, 0.72);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: var(--studio-text);
+                backdrop-filter: blur(12px);
+                box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+            }
+
+            .header-title-pill .material-icons {
+                color: #7dd3fc;
+                font-size: 20px;
+            }
+
+            .header-title-text {
+                display: flex;
+                flex-direction: column;
+                min-width: 0;
+            }
+
+            .header-kicker {
+                color: var(--studio-text-muted);
+                font-size: 0.62rem;
+                font-weight: 700;
+                line-height: 1;
+                text-transform: uppercase;
+                letter-spacing: 0.14em;
             }
 
             .workspace {
@@ -427,7 +506,9 @@
                 justify-content: center;
                 position: relative;
                 overflow: hidden;
-                background: #000;
+                background:
+                    radial-gradient(circle at top, rgba(59, 130, 246, 0.14), transparent 30%),
+                    linear-gradient(180deg, rgba(2, 6, 23, 0.78), rgba(1, 4, 13, 0.98));
             }
 
             .camera-wrapper {
@@ -437,6 +518,7 @@
                 border-radius: 0;
                 border: none;
                 aspect-ratio: auto;
+                box-shadow: none;
             }
 
             video, canvas {
@@ -452,15 +534,15 @@
                 bottom: calc(30px + env(safe-area-inset-bottom));
                 left: 50%;
                 transform: translateX(-50%);
-                background: rgba(13, 17, 23, 0.95);
+                background: rgba(13, 20, 36, 0.82);
                 backdrop-filter: blur(20px);
-                border: 1px solid #30363d;
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 40px;
-                padding: 12px 24px;
+                padding: 14px 18px;
                 z-index: 90;
-                gap: 24px;
+                gap: 0;
                 width: max-content;
-                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+                box-shadow: 0 20px 42px rgba(0, 0, 0, 0.38);
             }
 
             .mobile-side-actions {
@@ -470,25 +552,32 @@
             }
 
             .mobile-bottom-btn {
-                background: #21262d;
-                color: #c9d1d9;
-                border: 1px solid #30363d;
+                background: rgba(255, 255, 255, 0.08);
+                color: var(--studio-text);
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 padding: 8px 10px;
                 border-radius: 50%;
                 font-size: 0.75rem;
-                font-weight: 600;
+                font-weight: 700;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 gap: 6px;
                 cursor: pointer;
                 white-space: nowrap;
+                transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
             }
 
             .mobile-bottom-btn.primary {
-                background: rgba(59, 130, 246, 0.15);
-                color: #58a6ff;
-                border-color: rgba(59, 130, 246, 0.3);
+                background: rgba(59, 130, 246, 0.18);
+                color: #dbeafe;
+                border-color: rgba(96, 165, 250, 0.28);
+            }
+
+            .mobile-bottom-btn:hover {
+                background: rgba(255, 255, 255, 0.14);
+                border-color: rgba(191, 219, 254, 0.2);
+                transform: translateY(-1px);
             }
 
             .mobile-bottom-btn:disabled {
@@ -502,13 +591,94 @@
                 align-items: center;
             }
 
+            .mobile-bottom-bar .mobile-add-btn-wrapper .mobile-bottom-btn.primary {
+                width: 64px !important;
+                height: 64px !important;
+                border-radius: 50% !important;
+            }
+
+            .mobile-bottom-bar .mobile-add-btn-wrapper .mobile-bottom-btn.primary .material-icons {
+                font-size: 38px !important;
+            }
+
+            .mobile-recording-actions {
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                gap: 10px;
+            }
+
+            .mobile-train-save-btn {
+                display: none;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                min-width: 188px;
+                padding: 12px 18px;
+                border-radius: 999px;
+                border: 1px solid rgba(134, 239, 172, 0.28);
+                background: linear-gradient(135deg, #16a34a, #22c55e);
+                color: white;
+                font-size: 0.95rem;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+                box-shadow: 0 14px 32px rgba(34, 197, 94, 0.24);
+                cursor: pointer;
+                transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
+            }
+
+            .mobile-train-save-btn:hover {
+                filter: brightness(1.04);
+                transform: translateY(-1px);
+            }
+
+            .mobile-train-save-btn:disabled {
+                cursor: not-allowed;
+                opacity: 0.72;
+                transform: none;
+                filter: none;
+            }
+
+            .mobile-recording-counter {
+                min-width: 88px;
+                padding: 6px 12px;
+                border-radius: 999px;
+                background: rgba(13, 20, 36, 0.82);
+                border: 1px solid rgba(96, 165, 250, 0.22);
+                color: #dbeafe;
+                font-size: 0.9rem;
+                font-weight: 700;
+                text-align: center;
+                letter-spacing: 0.04em;
+                backdrop-filter: blur(10px);
+                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+            }
+
+            .mobile-recording-buttons {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+
+            .mobile-recording-actions .mobile-bottom-btn {
+                width: 52px;
+                height: 52px;
+                padding: 0;
+            }
+
+            .capture-btn-portal {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
             .mobile-clear-sign-btn {
                 position: absolute;
                 top: -12px;
                 right: -12px;
-                background: rgba(218, 54, 51, 0.1);
-                color: #da3633;
-                border: 1px solid rgba(218, 54, 51, 0.2);
+                background: rgba(239, 68, 68, 0.14);
+                color: #fecaca;
+                border: 1px solid rgba(239, 68, 68, 0.24);
                 border-radius: 50%;
                 width: 24px;
                 height: 24px;
@@ -523,9 +693,9 @@
                 position: absolute;
                 bottom: -12px;
                 right: -12px;
-                background: rgba(242, 204, 96, 0.1);
-                color: #f2cc60;
-                border: 1px solid rgba(242, 204, 96, 0.2);
+                background: rgba(245, 158, 11, 0.14);
+                color: #fde68a;
+                border: 1px solid rgba(245, 158, 11, 0.24);
                 border-radius: 50%;
                 width: 24px;
                 height: 24px;
@@ -554,8 +724,11 @@
                 box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
                 display: flex;
                 flex-direction: column;
-                background: #0d1117;
-                border-left: 1px solid #30363d;
+                background:
+                    radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 24%),
+                    linear-gradient(180deg, rgba(6, 12, 25, 0.98), rgba(2, 8, 23, 0.98));
+                border-left: 1px solid rgba(191, 219, 254, 0.12);
+                backdrop-filter: blur(18px);
             }
 
             .sidebar.open, .data-panel.open {
@@ -573,8 +746,8 @@
                 align-items: center;
                 justify-content: space-between;
                 padding: 16px 20px;
-                border-bottom: 1px solid #30363d;
-                background: #161b22;
+                border-bottom: 1px solid var(--studio-border);
+                background: rgba(15, 23, 42, 0.78);
             }
 
             .sidebar-content {
@@ -588,8 +761,8 @@
 
             .sidebar-footer {
                 padding: 20px;
-                border-top: 1px solid #30363d;
-                background: #0d1117;
+                border-top: 1px solid var(--studio-border);
+                background: rgba(15, 23, 42, 0.68);
                 display: flex;
                 flex-direction: column;
                 gap: 10px;
@@ -607,9 +780,9 @@
                 transform: translateX(-50%);
                 width: 68px;
                 height: 68px;
-                background: white;
-                border: 4px solid rgba(255, 255, 255, 0.4);
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+                background: rgba(248, 250, 252, 0.96);
+                border: 4px solid rgba(191, 219, 254, 0.35);
+                box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
                 z-index: 80;
             }
 
@@ -638,8 +811,8 @@
                 width: 44px !important;
                 height: 44px !important;
                 border-radius: 50% !important;
-                background: rgba(255, 255, 255, 0.12) !important;
-                border: 1.5px solid rgba(255, 255, 255, 0.2) !important;
+                background: rgba(255, 255, 255, 0.08) !important;
+                border: 1.5px solid rgba(255, 255, 255, 0.14) !important;
                 box-shadow: none !important;
                 z-index: auto;
                 display: flex;
@@ -654,14 +827,14 @@
                 width: 16px !important;
                 height: 16px !important;
                 border-radius: 50% !important;
-                background: #ef4444 !important;
+                background: var(--studio-danger) !important;
                 flex-shrink: 0;
             }
 
             /* Active (recording) state */
             #captureBtnPortal .capture-fab.active {
                 background: rgba(239, 68, 68, 0.15) !important;
-                border-color: rgba(239, 68, 68, 0.5) !important;
+                border-color: rgba(254, 202, 202, 0.35) !important;
             }
 
             #captureBtnPortal .capture-fab.active .capture-inner {
@@ -688,8 +861,8 @@
 
             .sidebar-close-btn, .drawer-close-btn {
                 background: transparent;
-                border: 1px solid #30363d;
-                color: #8b949e;
+                border: 1px solid var(--studio-border);
+                color: var(--studio-text-muted);
                 width: 32px;
                 height: 32px;
                 border-radius: 50%;
@@ -704,14 +877,17 @@
                 bottom: 0;
                 left: 0;
                 right: 0;
-                background: #161b22;
-                border-top: 1px solid #30363d;
+                background:
+                    radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 24%),
+                    linear-gradient(180deg, rgba(9, 15, 28, 0.98), rgba(2, 8, 23, 0.98));
+                border-top: 1px solid rgba(191, 219, 254, 0.14);
                 border-radius: 24px 24px 0 0;
                 z-index: 200;
                 padding: 24px;
                 transform: translateY(100%);
                 transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+                backdrop-filter: blur(20px);
             }
 
             .sign-setup-modal.active {
@@ -739,11 +915,11 @@
                 font-family: 'Outfit', sans-serif;
                 font-weight: 700;
                 font-size: 1.25rem;
-                color: #e6edf3;
+                color: var(--studio-text);
             }
 
             .modal-step-indicator {
-                color: #8b949e;
+                color: var(--studio-text-muted);
                 font-size: 0.8rem;
                 font-weight: 500;
             }
@@ -763,8 +939,8 @@
             .modal-btn {
                 flex: 1;
                 padding: 14px;
-                border-radius: 12px;
-                font-weight: 600;
+                border-radius: 16px;
+                font-weight: 700;
                 cursor: pointer;
                 transition: 0.2s;
                 display: flex;
@@ -774,15 +950,16 @@
             }
 
             .modal-btn.primary {
-                background: #238636;
+                background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb);
                 color: white;
-                border: none;
+                border: 1px solid rgba(191, 219, 254, 0.2);
+                box-shadow: 0 12px 30px rgba(37, 99, 235, 0.28);
             }
 
             .modal-btn.secondary {
-                background: #21262d;
-                color: #c9d1d9;
-                border: 1px solid #30363d;
+                background: rgba(15, 23, 42, 0.78);
+                color: var(--studio-text);
+                border: 1px solid var(--studio-border);
             }
 
 
@@ -792,8 +969,10 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%) scale(0.9);
-            background: #161b22;
-            border: 1px solid #30363d;
+            background:
+                radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 25%),
+                linear-gradient(180deg, rgba(9, 15, 28, 0.98), rgba(2, 8, 23, 0.98));
+            border: 1px solid rgba(191, 219, 254, 0.14);
             border-radius: 20px;
             padding: 30px 24px;
             z-index: 1000;
@@ -830,13 +1009,13 @@
 
         .alert-icon {
             font-size: 48px;
-            color: #f2cc60;
+            color: #fbbf24;
             margin-bottom: 16px;
             display: block;
         }
 
         .alert-message {
-            color: #e6edf3;
+            color: var(--studio-text);
             font-size: 1.1rem;
             font-weight: 500;
             margin-bottom: 24px;
@@ -844,19 +1023,19 @@
         }
 
         .alert-btn {
-            background: #2f81f7;
+            background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb);
             color: white;
             border: none;
             padding: 12px 32px;
-            border-radius: 10px;
-            font-weight: 600;
+            border-radius: 14px;
+            font-weight: 700;
             cursor: pointer;
             transition: background 0.2s;
             width: 100%;
         }
 
         .alert-btn:hover {
-            background: #4493f8;
+            filter: brightness(1.06);
         }
 
         /* Toast Notifications */
@@ -873,19 +1052,20 @@
         }
 
         .toast {
-            background: rgba(13, 17, 23, 0.95);
-            color: #e6edf3;
+            background: rgba(13, 20, 36, 0.92);
+            color: var(--studio-text);
             padding: 12px 20px;
-            border-radius: 12px;
-            border: 1px solid #30363d;
+            border-radius: 16px;
+            border: 1px solid var(--studio-border);
             font-size: 0.9rem;
-            font-weight: 500;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            font-weight: 600;
+            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34);
             display: flex;
             align-items: center;
             gap: 8px;
             animation: toast-in 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
             opacity: 0;
+            backdrop-filter: blur(12px);
         }
 
         @keyframes toast-in {
@@ -906,7 +1086,7 @@
         .processing-modal {
             position: fixed;
             inset: 0;
-            background: rgba(13, 17, 23, 0.85);
+            background: rgba(2, 6, 23, 0.8);
             backdrop-filter: blur(8px);
             z-index: 3000;
             display: none;
@@ -924,8 +1104,8 @@
         .spinner {
             width: 60px;
             height: 60px;
-            border: 5px solid rgba(88, 166, 255, 0.1);
-            border-top: 5px solid #58a6ff;
+            border: 5px solid rgba(191, 219, 254, 0.12);
+            border-top: 5px solid var(--studio-accent);
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-bottom: 24px;
@@ -944,7 +1124,7 @@
 
         .processing-status {
             font-size: 0.9rem;
-            color: #8b949e;
+            color: var(--studio-text-muted);
         }
     </style>
 
@@ -969,9 +1149,21 @@
 
         <!-- MOBILE APP HEADER - just back button floating above camera -->
         <div class="mobile-app-header">
-            <a href="index.html" class="header-icon-btn" style="background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.1); color: white; border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; text-decoration: none;">
+            <a href="index.html" class="header-icon-btn" aria-label="Back to home">
                 <span class="material-icons" style="font-size: 28px; margin-right: 2px;">chevron_left</span>
             </a>
+            <div class="header-title-pill">
+                <span class="material-icons">model_training</span>
+                <div class="header-title-text">
+                    <span class="header-kicker">SignLink</span>
+                    <h1 class="app-title">AI Training Studio</h1>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button id="openDataPanelBtn" class="header-icon-btn" type="button" aria-label="Open collected data">
+                    <span class="material-icons" style="font-size: 22px;">analytics</span>
+                </button>
+            </div>
         </div>
 
         <!-- HIDDEN STATE HOLDERS (Internal logic depends on these) -->
@@ -994,11 +1186,6 @@
 
         <!-- WORKSPACE (Camera) -->
         <div class="workspace">
-            <button id="openDataPanelBtn" class="mobile-data-toggle" type="button">
-                <span class="material-icons" style="font-size: 16px;">menu</span>
-                Data
-            </button>
-
             <div class="camera-wrapper">
                 <video id="inputVideo" autoplay playsinline muted></video>
                 <canvas id="outputCanvas"></canvas>
@@ -1038,32 +1225,29 @@
 
             <!-- MOBILE CONTROL BAR -->
             <div class="mobile-bottom-bar">
-                <div class="mobile-side-actions">
-                    <div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
-                        <div class="mobile-add-btn-wrapper">
-                            <button id="mobileAddSignBtn" class="mobile-bottom-btn primary" title="Add New Sign" style="width: 44px; height: 44px; padding: 0;">
-                                <span class="material-icons" style="font-size: 28px;">add_circle</span>
-                            </button>
-                            <button id="mobileClearSignBtn" class="mobile-clear-sign-btn" title="Clear sign details">
-                                <span class="material-icons" style="font-size: 16px;">close</span>
-                            </button>
-                            <button id="mobileRevertBtn" class="mobile-revert-badge-btn" title="Undo last sign record" disabled>
-                                <span class="material-icons" style="font-size: 14px;">undo</span>
-                            </button>
-                        </div>
-                    </div>
+                <div id="mobileAddButtonWrap" class="mobile-add-btn-wrapper">
+                    <button id="mobileAddSignBtn" class="mobile-bottom-btn primary" title="Add New Sign" style="width: 64px; height: 64px; padding: 0;">
+                        <span class="material-icons" style="font-size: 38px;">add_circle</span>
+                    </button>
+                    <button id="mobileClearSignBtn" class="mobile-clear-sign-btn" title="Clear sign details">
+                        <span class="material-icons" style="font-size: 16px;">close</span>
+                    </button>
+                    <button id="mobileRevertBtn" class="mobile-revert-badge-btn" title="Undo last sign record" disabled>
+                        <span class="material-icons" style="font-size: 14px;">undo</span>
+                    </button>
                 </div>
-
-                <!-- Capture Button (will be moved here in JS/CSS) -->
-                <div id="captureBtnPortal" style="display: contents;"></div>
-
-                <div class="mobile-side-actions" style="flex-direction: row; gap: 16px; align-items: center;">
-                    <button id="mobileUploadBtn" class="mobile-bottom-btn primary" title="Upload" style="width: 44px; height: 44px; padding: 0;">
-                        <span class="material-icons" style="font-size: 28px;">cloud_upload</span>
+                <div id="mobileRecordingActions" class="mobile-recording-actions">
+                    <button id="mobileTrainSaveBtn" class="mobile-train-save-btn" type="button">
+                        <span class="material-icons" style="font-size: 22px;">task_alt</span>
+                        <span>Train &amp; Save</span>
                     </button>
-                    <button id="openDataPanelBtnMobile" class="mobile-bottom-btn primary" title="View Collected Data" style="width: 44px; height: 44px; padding: 0;">
-                        <span class="material-icons" style="font-size: 28px;">analytics</span>
-                    </button>
+                    <div id="mobileRecordingCounter" class="mobile-recording-counter">0/100</div>
+                    <div class="mobile-recording-buttons">
+                        <div id="captureBtnPortal" class="capture-btn-portal"></div>
+                        <button id="mobileBackBtn" class="mobile-bottom-btn" title="Back to add button">
+                            <span class="material-icons" style="font-size: 28px;">arrow_back</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1076,23 +1260,23 @@
                     <button id="backToMainBtn" class="drawer-close-btn" type="button" aria-label="Back to training">
                         <span class="material-icons" style="font-size: 18px;">arrow_back</span>
                     </button>
-                    <span style="font-weight: 600;">Collected Data</span>
+                    <span style="font-weight: 700;">Collected Data</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px;">
                     <span id="totalSamples"
-                        style="background: #21262d; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem;">0</span>
+                        style="background: rgba(59, 130, 246, 0.16); color: #dbeafe; border: 1px solid rgba(96, 165, 250, 0.22); padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 700;">0</span>
                 </div>
             </div>
             <div id="dataList" class="data-list">
                 <!-- Data items injected here -->
-                <div style="text-align: center; color: #484f58; margin-top: 50px;">
+                <div style="text-align: center; color: #64748b; margin-top: 50px;">
                     No details yet.
                 </div>
             </div>
 
-            <div style="padding: 20px; border-top: 1px solid #30363d; display: flex; justify-content: center;">
+            <div style="padding: 20px; border-top: 1px solid rgba(148, 163, 184, 0.16); display: flex; justify-content: center;">
                 <button id="clearAllBtn" class="secondary-btn" title="Clear All Data"
-                    style="color: #da3633; border-color: rgba(218, 54, 51, 0.3); display: flex; justify-content: center; align-items: center; width: 44px; height: 44px; border-radius: 50%; padding: 0;">
+                    style="color: #fecaca; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.2); display: flex; justify-content: center; align-items: center; width: 44px; height: 44px; border-radius: 50%; padding: 0;">
                     <span class="material-icons" style="font-size: 24px;">close</span>
                 </button>
             </div>
@@ -1109,13 +1293,15 @@
                 <span class="modal-step-indicator">Step 1 of 3</span>
             </div>
             <div class="modal-body">
-                <p style="color: #8b949e; font-size: 0.9rem;">Choose the sign language you want to train.</p>
+                <p style="color: #94a3b8; font-size: 0.9rem;">Choose the sign language you want to train.</p>
                 <div class="input-group-vertical">
-                    <button class="modal-btn secondary lang-option active" data-value="ISL" style="justify-content: flex-start; border-color: #58a6ff;">
-                        🇮🇳 Indian Sign Language (ISL)
+                    <button class="modal-btn secondary lang-option active" data-value="ISL" style="justify-content: flex-start; border-color: #60a5fa;">
+                        <span class="material-icons">flag</span>
+                        Indian Sign Language (ISL)
                     </button>
                     <button class="modal-btn secondary lang-option" data-value="ASL" style="justify-content: flex-start;">
-                        🇺🇸 American Sign Language (ASL)
+                        <span class="material-icons">outlined_flag</span>
+                        American Sign Language (ASL)
                     </button>
                 </div>
             </div>
@@ -1134,9 +1320,9 @@
                 <span class="modal-step-indicator">Step 2 of 3</span>
             </div>
             <div class="modal-body">
-                <p style="color: #8b949e; font-size: 0.9rem;">Select how the sign is performed.</p>
+                <p style="color: #94a3b8; font-size: 0.9rem;">Select how the sign is performed.</p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <button class="modal-btn secondary mode-option active" data-value="static" style="flex-direction: column; height: 80px; border-color: #58a6ff;">
+                    <button class="modal-btn secondary mode-option active" data-value="static" style="flex-direction: column; height: 80px; border-color: #60a5fa;">
                         <span class="material-icons">front_hand</span>
                         Static
                     </button>
@@ -1145,7 +1331,7 @@
                         Dynamic
                     </button>
                 </div>
-                <p id="modalModeDesc" style="font-size: 0.75rem; color: #8b949e; text-align: center;">Static: Single pose signs (A, B, etc.)</p>
+                <p id="modalModeDesc" style="font-size: 0.75rem; color: #94a3b8; text-align: center;">Static: Single pose signs (A, B, etc.)</p>
             </div>
             <div class="modal-footer">
                 <button class="modal-btn secondary prev-step">Back</button>
@@ -1159,14 +1345,14 @@
                 <span class="modal-step-indicator">Step 3 of 3</span>
             </div>
             <div class="modal-body">
-                <p style="color: #8b949e; font-size: 0.9rem;">Give the sign a name (Required).</p>
+                <p style="color: #94a3b8; font-size: 0.9rem;">Give the sign a name (Required).</p>
                 <input type="text" id="modalLabelInput" class="text-input" placeholder="Sign Name (e.g. Hello)" style="font-size: 1rem; padding: 14px;">
                 
                 <button id="modalSignCardBtn" class="modal-btn secondary" style="margin-top: 4px;">
                     <span class="material-icons">add_photo_alternate</span>
                     Add Sign Card Image
                 </button>
-                <div id="modalSignCardStatus" style="font-size: 0.8rem; color: #2ea043; text-align: center;"></div>
+                <div id="modalSignCardStatus" style="font-size: 0.8rem; color: #86efac; text-align: center;"></div>
             </div>
             <div class="modal-footer">
                 <button class="modal-btn secondary prev-step">Back</button>

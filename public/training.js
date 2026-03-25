@@ -28,7 +28,12 @@ const mobileLabelDisplay = document.getElementById('mobileLabelDisplay');
 const mobileModeDisplay = document.getElementById('mobileModeDisplay');
 
 // Mobile Multi-step Setup Elements
+const mobileAddButtonWrap = document.getElementById('mobileAddButtonWrap');
 const mobileAddSignBtn = document.getElementById('mobileAddSignBtn');
+const mobileRecordingActions = document.getElementById('mobileRecordingActions');
+const mobileTrainSaveBtn = document.getElementById('mobileTrainSaveBtn');
+const mobileRecordingCounter = document.getElementById('mobileRecordingCounter');
+const mobileBackBtn = document.getElementById('mobileBackBtn');
 const mobileClearSignBtn = document.getElementById('mobileClearSignBtn');
 const mobileUploadBtn = document.getElementById('mobileUploadBtn');
 const mobileRevertBtn = document.getElementById('mobileRevertBtn');
@@ -87,6 +92,7 @@ let lastSessionSampleCountAtStart = 0;
 let isInSetupMode = false;
 let lastRecordedBatchCount = 0;
 let sessionHistory = [];
+let lastTrainSaveState = { lang: '', label: '', sampleCount: 0 };
 
 function normalizeLabel(label) {
     const trimmed = (label || '').trim();
@@ -391,14 +397,8 @@ function setupMobileSignSetup() {
             if (drawerBackdrop) drawerBackdrop.classList.remove('active');
 
             // 3. Transitions
-            if (captureBtn) captureBtn.style.display = 'flex';
-            mobileAddSignBtn.style.width = '44px';
-            mobileAddSignBtn.style.padding = '0';
-            mobileAddSignBtn.title = 'Finish';
-            mobileAddSignBtn.innerHTML = '<span class="material-icons" style="font-size: 28px;">check_circle</span>';
             mobileAddSignBtn.dataset.setup = 'true';
-            mobileAddSignBtn.disabled = true; // Enabled after 1st recording
-            mobileClearSignBtn.style.display = 'flex';
+            setMobileBottomBarMode('recording');
         });
     }
 
@@ -452,6 +452,58 @@ function setupMobileSignSetup() {
     mobileClearSignBtn.addEventListener('click', () => {
         resetMobileSignSetup(true); // DISCARD data on clear
     });
+
+    if (mobileBackBtn) {
+        mobileBackBtn.addEventListener('click', () => {
+            resetMobileSignSetup(true);
+        });
+    }
+
+    if (mobileTrainSaveBtn) {
+        mobileTrainSaveBtn.addEventListener('click', async () => {
+            const currentStaticCount = getCurrentLabelStaticSampleCount();
+            if (currentStaticCount < MAX_STATIC_SAMPLES_PER_SESSION) return;
+
+            setTrainSaveButtonBusy(true);
+
+            try {
+                showProcessingModal("Training & Saving...", "Creating your local model for Live Translation and Video Call.");
+                const trainingResult = await runInternalTraining();
+
+                updateProcessingModal("Saving Model...", "Saving the trained model on this device...");
+                const savedAnyModel = await saveTrainedModelsToLocalStorage();
+                if (!savedAnyModel) {
+                    throw new Error("No trained model was available to save.");
+                }
+
+                updateProcessingModal("Saving Samples...", "Syncing training metadata...");
+                await saveToServer();
+
+                hideProcessingModal();
+
+                lastTrainSaveState = {
+                    lang: currentLang,
+                    label: normalizeLabel(labelInput.value),
+                    sampleCount: getCurrentLabelStaticSampleCount()
+                };
+
+                updateMobileTrainSaveVisibility();
+
+                const successMsg = trainingResult?.alreadyTrained
+                    ? "Model already trained and saved for Live Translation & Video Call."
+                    : "Model trained and saved for Live Translation & Video Call.";
+                showToast(successMsg, 'task_alt');
+            } catch (err) {
+                console.error('Train & save failed:', err);
+                hideProcessingModal();
+                showCustomAlert(`Could not train and save the model: ${err.message || 'Unknown error'}`);
+                setTrainSaveButtonBusy(false);
+                return;
+            }
+
+            setTrainSaveButtonBusy(false);
+        });
+    }
 
     // Sign Card Image from Modal
     if (modalSignCardBtn) {
@@ -636,14 +688,16 @@ function resetMobileSignSetup(discard = false) {
     sessionHistory = [];
 
     // Reset UI
-    mobileAddSignBtn.style.width = '44px';
+    mobileAddSignBtn.style.width = '64px';
+    mobileAddSignBtn.style.height = '64px';
     mobileAddSignBtn.style.padding = '0';
     mobileAddSignBtn.title = 'Add New Sign';
-    mobileAddSignBtn.innerHTML = '<span class="material-icons" style="font-size: 28px;">add_circle</span>';
+    mobileAddSignBtn.innerHTML = '<span class="material-icons" style="font-size: 38px;">add_circle</span>';
     mobileAddSignBtn.dataset.setup = 'false';
     mobileAddSignBtn.disabled = false;
     mobileClearSignBtn.style.display = 'none';
-    if (captureBtn) captureBtn.style.display = 'none';
+    setMobileBottomBarMode('idle');
+    setTrainSaveButtonBusy(false);
 
     // Reset status
     updateMobileStatusTags();
@@ -687,6 +741,99 @@ function updateMobileRevertState() {
     mobileRevertBtn.style.display = 'flex';
     mobileRevertBtn.disabled = sessionHistory.length === 0;
     mobileRevertBtn.innerHTML = `<span class="material-icons" style="font-size: 14px;">undo</span>`;
+}
+
+function updateRevertButtonState() {
+    updateMobileRevertState();
+}
+
+function updateMobileRecordingCounter(current = 0, total = MAX_STATIC_SAMPLES_PER_SESSION) {
+    if (!mobileRecordingCounter) return;
+    mobileRecordingCounter.textContent = `${current}/${total}`;
+}
+
+function getCurrentLabelStaticSampleCount() {
+    const currentLabel = normalizeLabel(labelInput.value);
+    if (!currentLabel) return 0;
+    return collectedData.filter(sample => isStaticSample(sample) && normalizeLabel(sample.label) === currentLabel).length;
+}
+
+function setTrainSaveButtonBusy(isBusy) {
+    if (!mobileTrainSaveBtn) return;
+    mobileTrainSaveBtn.disabled = isBusy;
+    mobileTrainSaveBtn.innerHTML = isBusy
+        ? '<span class="material-icons" style="font-size: 22px;">sync</span><span>Training...</span>'
+        : '<span class="material-icons" style="font-size: 22px;">task_alt</span><span>Train &amp; Save</span>';
+}
+
+function updateMobileTrainSaveVisibility() {
+    if (!mobileTrainSaveBtn) return;
+
+    const currentLabel = normalizeLabel(labelInput.value);
+    const currentStaticCount = getCurrentLabelStaticSampleCount();
+    const alreadySaved =
+        lastTrainSaveState.lang === currentLang &&
+        lastTrainSaveState.label === currentLabel &&
+        lastTrainSaveState.sampleCount >= currentStaticCount &&
+        currentStaticCount >= MAX_STATIC_SAMPLES_PER_SESSION;
+
+    const shouldShow =
+        isInSetupMode &&
+        recordingMode === 'static' &&
+        currentStaticCount >= MAX_STATIC_SAMPLES_PER_SESSION;
+
+    mobileTrainSaveBtn.style.display = shouldShow ? 'inline-flex' : 'none';
+
+    if (shouldShow) {
+        if (alreadySaved) {
+            mobileTrainSaveBtn.disabled = true;
+            mobileTrainSaveBtn.innerHTML = '<span class="material-icons" style="font-size: 22px;">check_circle</span><span>Saved</span>';
+        } else {
+            setTrainSaveButtonBusy(false);
+        }
+    }
+}
+
+async function saveTrainedModelsToLocalStorage() {
+    const keys = STORAGE_KEYS[currentLang];
+    let savedAnyModel = false;
+
+    if (model?.static && model.staticLabels) {
+        await model.static.save(`localstorage://${keys.model}-static`);
+        localStorage.setItem(`${keys.labels}-static`, JSON.stringify(model.staticLabels));
+        savedAnyModel = true;
+    }
+
+    if (model?.dynamic && model.dynamicLabels) {
+        await model.dynamic.save(`localstorage://${keys.model}-dynamic`);
+        localStorage.setItem(`${keys.labels}-dynamic`, JSON.stringify(model.dynamicLabels));
+        localStorage.setItem(`${keys.labels}-dynamic-hand-req`, JSON.stringify(model.dynamicHandRequirements || {}));
+        savedAnyModel = true;
+    }
+
+    return savedAnyModel;
+}
+
+function setMobileBottomBarMode(mode) {
+    const isRecordingMode = mode === 'recording';
+
+    if (mobileAddButtonWrap) {
+        mobileAddButtonWrap.style.display = isRecordingMode ? 'none' : 'inline-flex';
+    }
+
+    if (mobileRecordingActions) {
+        mobileRecordingActions.style.display = isRecordingMode ? 'flex' : 'none';
+    }
+
+    if (captureBtn) {
+        captureBtn.style.display = isRecordingMode ? 'flex' : 'none';
+    }
+
+    if (!isRecordingMode) {
+        updateMobileRecordingCounter(0);
+    }
+
+    updateMobileTrainSaveVisibility();
 }
 
 
@@ -781,7 +928,7 @@ function switchMode(mode) {
 
     // Update UI visibility
     if (mode === 'static') {
-        captureBtn.style.display = 'flex';
+        captureBtn.style.display = isInSetupMode ? 'flex' : 'none';
         captureHint.style.display = 'block';
         dynamicControls.style.display = 'none';
         modeDescription.textContent = 'Static: Single pose signs (A, B, Hello, etc.)';
@@ -980,6 +1127,8 @@ function captureStaticSample(label, flatLandmarks) {
     staticSessionSampleCount += 1;
     lastRecordedBatchCount += 1;
     statusMsg.textContent = `Recording static sign: ${staticSessionSampleCount}/${MAX_STATIC_SAMPLES_PER_SESSION}`;
+    updateMobileRecordingCounter(staticSessionSampleCount);
+    updateMobileTrainSaveVisibility();
 
     if (staticSessionSampleCount >= MAX_STATIC_SAMPLES_PER_SESSION) {
         stopStaticCollection('Auto-stopped at 100 samples.');
@@ -1006,6 +1155,8 @@ function startStaticCollection() {
     recIndicator.style.display = 'flex';
     captureBtn.classList.add('active');
     statusMsg.textContent = `Recording static sign: 0/${MAX_STATIC_SAMPLES_PER_SESSION}`;
+    updateMobileRecordingCounter(0);
+    updateMobileTrainSaveVisibility();
 }
 
 function stopStaticCollection(reason = 'Recording stopped.') {
@@ -1019,6 +1170,7 @@ function stopStaticCollection(reason = 'Recording stopped.') {
 
     recIndicator.style.display = 'none';
     captureBtn.classList.remove('active');
+    updateMobileRecordingCounter(0);
 
     const suffix = recordedCount > 0 ? ` Saved ${recordedCount} samples.` : ' No new samples captured.';
     statusMsg.textContent = `${reason}${suffix}`;
@@ -1041,6 +1193,7 @@ function stopStaticCollection(reason = 'Recording stopped.') {
             mobileAddSignBtn.disabled = false;
         }
         updateMobileRevertState();
+        updateMobileTrainSaveVisibility();
     }
 }
 
@@ -1166,7 +1319,8 @@ async function saveToServer() {
 
 function updateUIStats() {
     totalSamplesBadge.innerText = collectedData.length;
-    updateRevertButtonState();
+    updateMobileRevertState();
+    updateMobileTrainSaveVisibility();
     // Throttle rendering the list if data is huge
     if (Math.random() > 0.9) renderDataList();
 }
