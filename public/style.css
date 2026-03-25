@@ -846,8 +846,16 @@ body.stt-active .caption-log-panel.visible {
     gap: 8px;
 }
 
+.caption-log-window.collapsed {
+    min-height: 0;
+    gap: 0;
+}
+
 .caption-section-header,
 .sign-cards-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 0 4px;
     font-size: 0.72rem;
     font-weight: 700;
@@ -871,16 +879,13 @@ body.stt-active .caption-log-panel.visible {
 }
 
 .sign-cards-panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
     padding: 10px 14px 8px 14px;
     color: rgba(191, 219, 254, 0.95);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(15, 23, 42, 0.45);
 }
 
-.sign-cards-toggle-btn {
+.section-toggle-btn {
     width: 32px;
     height: 32px;
     border: 1px solid rgba(148, 163, 184, 0.22);
@@ -894,14 +899,26 @@ body.stt-active .caption-log-panel.visible {
     transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
-.sign-cards-toggle-btn:hover {
+.section-toggle-btn:hover {
     background: rgba(30, 41, 59, 0.95);
     border-color: rgba(191, 219, 254, 0.4);
 }
 
-.sign-cards-toggle-btn .material-icons {
+.section-toggle-btn .material-icons {
     font-size: 20px;
     transition: transform 0.2s ease;
+}
+
+.caption-log-window.collapsed .caption-section-header {
+    padding-bottom: 0;
+}
+
+.caption-log-window.collapsed .section-toggle-btn .material-icons {
+    transform: rotate(-90deg);
+}
+
+.caption-log-window.collapsed .caption-log-list {
+    display: none;
 }
 
 .sign-cards-panel-window.collapsed {
@@ -912,7 +929,7 @@ body.stt-active .caption-log-panel.visible {
     border-bottom-color: transparent;
 }
 
-.sign-cards-panel-window.collapsed .sign-cards-toggle-btn .material-icons {
+.sign-cards-panel-window.collapsed .section-toggle-btn .material-icons {
     transform: rotate(-90deg);
 }
 

@@ -133,6 +133,8 @@ const mobileMeetingCodeDisplay = document.getElementById('mobileMeetingCodeDispl
 const predictionOverlay = document.getElementById('prediction-overlay');
 const predictionDiv = document.getElementById('prediction');
 const predictionSignCardsContainer = document.getElementById('prediction-sign-cards-container');
+const captionLogWindow = document.getElementById('caption-log-window');
+const captionToggleBtn = document.getElementById('captionToggleBtn');
 const signCardsPanelWindow = document.getElementById('sign-cards-panel-window');
 const signCardsToggleBtn = document.getElementById('signCardsToggleBtn');
 const captionPanelViewport = document.getElementById('caption-panel-viewport');
@@ -762,7 +764,16 @@ function setSignCardsPanelCollapsed(collapsed) {
     signCardsToggleBtn.setAttribute('title', collapsed ? 'Show sign cards' : 'Hide sign cards');
 }
 
+function setCaptionLogCollapsed(collapsed) {
+    if (!captionLogWindow || !captionToggleBtn) return;
+
+    captionLogWindow.classList.toggle('collapsed', collapsed);
+    captionToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    captionToggleBtn.setAttribute('title', collapsed ? 'Show captions' : 'Hide captions');
+}
+
 setSignCardsPanelCollapsed(true);
+setCaptionLogCollapsed(false);
 
 function displayVCSignCards(text) {
     const container = document.getElementById('prediction-sign-cards-container');
@@ -3226,6 +3237,20 @@ function snapCaptionLogToLatest() {
 if (predictionSignCardsContainer) {
     predictionSignCardsContainer.addEventListener('mousedown', wakeCaptionPanel);
     predictionSignCardsContainer.addEventListener('touchstart', wakeCaptionPanel, { passive: true });
+}
+if (captionToggleBtn) {
+    captionToggleBtn.addEventListener('click', () => {
+        if (!captionLogWindow) return;
+        const willCollapse = !captionLogWindow.classList.contains('collapsed');
+        setCaptionLogCollapsed(willCollapse);
+        if (willCollapse) {
+            dimCaptionPanel();
+        } else {
+            wakeCaptionPanel();
+            updateCaptionLogViewport();
+            scrollCaptionLogToLatest();
+        }
+    });
 }
 if (signCardsToggleBtn) {
     signCardsToggleBtn.addEventListener('click', () => {
