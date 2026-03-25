@@ -953,45 +953,6 @@ body.stt-active .caption-log-panel.visible {
     margin: 0 10px;
 }
 
-/* Secondary Controls (Vertical Pill Menu) */
-.secondary-controls {
-    display: none !important;
-    position: absolute;
-    bottom: 72px;
-    right: 48px;
-    background: rgba(15, 23, 42, 0.98);
-    backdrop-filter: blur(24px);
-    flex-direction: column;
-    padding: 8px;
-    border-radius: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    gap: 12px;
-    z-index: 1150;
-    box-shadow: 0 15px 45px rgba(0, 0, 0, 0.7);
-    width: 60px;
-    align-items: center;
-}
-
-.secondary-controls::after {
-    content: '';
-    position: absolute;
-    bottom: -8px;
-    left: 50%;
-    transform: translateX(-50%);
-    border-left: 8px solid transparent;
-    border-right: 8px solid transparent;
-    border-top: 8px solid rgba(15, 23, 42, 0.98);
-}
-
-.secondary-controls #ttsBtn .material-icons { color: #ffffff; }
-.secondary-controls #sttToggleBtn .material-icons { color: #ef4444; }
-.secondary-controls #overlayBtn .material-icons { color: #4db6ac; }
-
-.secondary-controls.active {
-    display: flex !important;
-    animation: fadeInSlide 0.3s var(--ease-out);
-}
-
 .control-btn {
     width: clamp(42px, 9vw, 50px);
     height: clamp(42px, 9vw, 50px);

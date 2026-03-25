@@ -162,7 +162,7 @@ let pc;
 let roomName;
 let isMicOn = true;
 let isCamOn = true;
-let isTTSOn = true;
+let isTTSOn = false;
 let isSTTOn = false;
 let lastSpokenTime = 0;
 let lastRemoteSpokenTime = 0;
@@ -631,31 +631,33 @@ function updateTTSUI() {
 }
 updateTTSUI(); // Sync at startup
 
-sttToggleBtn.addEventListener('click', () => {
-    isSTTOn = !isSTTOn;
-    updateSTTUI();
+if (sttToggleBtn) {
+    sttToggleBtn.addEventListener('click', () => {
+        isSTTOn = !isSTTOn;
+        updateSTTUI();
 
-    // Toggle body class for layout adjustments (visible floating panel on mobile)
-    document.body.classList.toggle('stt-active', isSTTOn);
+        // Toggle body class for layout adjustments (visible floating panel on mobile)
+        document.body.classList.toggle('stt-active', isSTTOn);
 
-    if (isSTTOn) {
-        if (!recognition) initSTT();
-        if (!isRecognitionActive) {
-            try {
-                recognition.start();
-                hideVCSignCards();
-            } catch (e) {
-                console.error("Failed to start Recognition:", e);
-                isSTTOn = false;
-                updateSTTUI();
-                document.body.classList.remove('stt-active');
+        if (isSTTOn) {
+            if (!recognition) initSTT();
+            if (!isRecognitionActive) {
+                try {
+                    recognition.start();
+                    hideVCSignCards();
+                } catch (e) {
+                    console.error("Failed to start Recognition:", e);
+                    isSTTOn = false;
+                    updateSTTUI();
+                    document.body.classList.remove('stt-active');
+                }
             }
+        } else {
+            if (recognition && isRecognitionActive) recognition.stop();
+            hideVCSignCards();
         }
-    } else {
-        if (recognition && isRecognitionActive) recognition.stop();
-        hideVCSignCards();
-    }
-});
+    });
+}
 
 
 
@@ -2792,13 +2794,15 @@ camBtn.addEventListener('click', () => {
     }
 });
 
-ttsBtn.addEventListener('click', () => {
-    isTTSOn = !isTTSOn;
-    updateTTSUI();
-    if (!isTTSOn && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-    }
-});
+if (ttsBtn) {
+    ttsBtn.addEventListener('click', () => {
+        isTTSOn = !isTTSOn;
+        updateTTSUI();
+        if (!isTTSOn && window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
+    });
+}
 
 function speak(text) {
     if (!isTTSOn || !window.speechSynthesis) return;
@@ -2980,24 +2984,6 @@ if (uploadBtn && uploadInput) {
 
 // Panel close listeners removed
 hangupBtn.addEventListener('click', () => window.location.reload());
-
-// More Options Toggle (Mobile)
-const moreBtn = document.getElementById('moreBtn');
-const secondaryControls = document.getElementById('secondary-controls');
-
-if (moreBtn && secondaryControls) {
-    moreBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        secondaryControls.classList.toggle('active');
-    });
-
-    // Close dropdown when clicking elsewhere
-    document.addEventListener('click', (e) => {
-        if (!secondaryControls.contains(e.target) && !moreBtn.contains(e.target)) {
-            secondaryControls.classList.remove('active');
-        }
-    });
-}
 
 // Copy Code Logic
 const copyCodeBtn = document.getElementById('copyCodeBtn');
