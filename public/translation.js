@@ -6,10 +6,13 @@ const signView = document.getElementById('sign-view');
 const speechPanel = document.getElementById('speech-panel');
 const speechCaptionLog = document.getElementById('speech-caption-log');
 const signCardsOutput = document.getElementById('sign-cards-output');
+const captionLogWindow = document.getElementById('caption-log-window');
+const captionToggleBtn = document.getElementById('captionToggleBtn');
+const signCardsPanelWindow = document.getElementById('sign-cards-panel-window');
+const signCardsToggleBtn = document.getElementById('signCardsToggleBtn');
 const camBtn = document.getElementById('cam-btn');
 const ttsBtn = document.getElementById('tts-btn');
 const sttResult = document.getElementById('stt-result');
-const listeningText = document.getElementById('listening-text');
 let signVoiceToggle = document.getElementById('sign-voice-toggle');
 
 let isSignMode = true; // true = sign detection, false = voice recognition
@@ -1171,9 +1174,20 @@ function appendSpeechCaption(text) {
     const cleaned = text.trim();
     if (!cleaned) return;
 
+    const emptyMsg = speechCaptionLog.querySelector('.caption-log-empty');
+    if (emptyMsg) {
+        emptyMsg.remove();
+    }
+
     const line = document.createElement('div');
-    line.className = 'speech-caption-line';
-    line.textContent = `You: ${cleaned}`;
+    line.className = 'caption-log-entry';
+
+    const speakerLabel = document.createElement('span');
+    speakerLabel.className = 'caption-log-speaker';
+    speakerLabel.textContent = 'You:';
+
+    line.appendChild(speakerLabel);
+    line.append(document.createTextNode(` ${cleaned}`));
     speechCaptionLog.appendChild(line);
 
     while (speechCaptionLog.children.length > 70) {
@@ -1183,11 +1197,29 @@ function appendSpeechCaption(text) {
     speechCaptionLog.scrollTop = speechCaptionLog.scrollHeight;
 }
 
+function setSignCardsPanelCollapsed(collapsed) {
+    if (!signCardsPanelWindow || !signCardsToggleBtn) return;
+
+    signCardsPanelWindow.classList.toggle('collapsed', collapsed);
+    signCardsToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    signCardsToggleBtn.setAttribute('title', collapsed ? 'Show sign cards' : 'Hide sign cards');
+}
+
+function setCaptionLogCollapsed(collapsed) {
+    if (!captionLogWindow || !captionToggleBtn) return;
+
+    captionLogWindow.classList.toggle('collapsed', collapsed);
+    captionToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    captionToggleBtn.setAttribute('title', collapsed ? 'Show captions' : 'Hide captions');
+}
+
+setCaptionLogCollapsed(false);
+setSignCardsPanelCollapsed(false);
+
 // --- Speech Recognition Logic (Speech to Sign) ---
 function initSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        if (listeningText) listeningText.innerText = "Speech Recognition not supported.";
         return;
     }
 
@@ -1216,28 +1248,13 @@ function initSpeechRecognition() {
 
         if (finalTranscript) {
             const finalized = finalTranscript.trim();
-            if (listeningText) listeningText.innerText = `Heard: "${finalized}"`;
             appendSpeechCaption(finalized);
             displaySignCards(finalized);
-        }
-
-        const displayText = interimTranscript || finalTranscript;
-        if (displayText) {
-            // Write interim transcript to the HUD instead of the separate box
-            if (listeningText) {
-                listeningText.innerText = displayText.trim();
-            }
         }
     };
 
     recognition.onerror = (event) => {
         console.error("Speech recognition error:", event.error);
-        if (event.error === 'network') {
-            if (listeningText) listeningText.innerText = "Network Error. Check connection.";
-        }
-        if (event.error === 'not-allowed') {
-            if (listeningText) listeningText.innerText = "Mic access blocked.";
-        }
     };
 
     recognition.onend = () => {
@@ -1276,7 +1293,7 @@ const translationCardQueue = [];
 const TRANSLATION_MAX_CARD_TOKENS = 260;
 
 function getTranslationCardArea() {
-    return signCardsOutput || document.querySelector('.sign-cards-area-right');
+    return signCardsOutput || document.querySelector('.prediction-sign-cards-container');
 }
 
 async function loadTranslationPhraseMap() {
@@ -1443,6 +1460,7 @@ function renderTranslationCardQueue() {
     if (!cardArea) return;
 
     cardArea.innerHTML = '';
+    cardArea.classList.toggle('active', translationCardQueue.length > 0);
 
     const lineGroups = [];
     let currentLine = [];
@@ -1475,15 +1493,14 @@ function renderTranslationCardQueue() {
 
     lineGroups.forEach((line) => {
         const lineEl = document.createElement('div');
-        lineEl.style.display = 'flex';
+        lineEl.className = 'prediction-sign-line';
         lineEl.style.flexWrap = 'nowrap';
-        lineEl.style.alignItems = 'flex-start';
         lineEl.style.gap = '25px';
         lineEl.style.flexShrink = '0';
 
         line.forEach((group) => {
             const wordGroupEl = document.createElement('div');
-            wordGroupEl.style.display = 'flex';
+            wordGroupEl.className = 'prediction-word-group';
             wordGroupEl.style.flexWrap = 'nowrap';
             wordGroupEl.style.alignItems = 'flex-start';
             wordGroupEl.style.gap = '10px';
@@ -1491,15 +1508,11 @@ function renderTranslationCardQueue() {
 
             group.forEach((token) => {
                 const card = document.createElement('div');
+                card.className = 'prediction-sign-card';
                 card.style.width = '78px';
                 card.style.height = '88px';
                 card.style.border = '1px solid rgba(148,163,184,0.35)';
-                card.style.borderRadius = '10px';
                 card.style.background = 'rgba(15,23,42,0.92)';
-                card.style.display = 'flex';
-                card.style.flexDirection = 'column';
-                card.style.alignItems = 'center';
-                card.style.justifyContent = 'center';
                 card.style.padding = '5px';
                 card.style.flexShrink = '0';
 
@@ -1507,21 +1520,19 @@ function renderTranslationCardQueue() {
                     const img = document.createElement('img');
                     img.src = token.src;
                     img.alt = token.label;
-                    img.style.width = '100%';
                     img.style.height = '50px';
                     img.style.objectFit = 'contain';
-                    img.style.borderRadius = '6px';
                     img.style.background = 'rgba(0,0,0,0.45)';
                     img.onerror = () => img.style.display = 'none';
                     card.appendChild(img);
                 }
 
                 const label = document.createElement('div');
+                label.className = 'prediction-sign-card-label';
                 label.textContent = token.label;
                 label.style.fontSize = '0.64rem';
                 label.style.color = '#fff';
                 label.style.marginTop = '3px';
-                label.style.textAlign = 'center';
                 label.style.width = '100%';
                 label.style.whiteSpace = 'nowrap';
                 label.style.overflow = 'hidden';
@@ -1564,6 +1575,7 @@ async function displaySignCards(text) {
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length === 0) {
         if (translationCardQueue.length === 0) {
+            cardArea.classList.remove('active');
             cardArea.innerHTML = '<div class="placeholder-msg">Sign Cards will appear here.</div>';
         }
         return;
@@ -1661,8 +1673,7 @@ function bindSignVoiceToggle() {
             // Switch to Voice Mode
             toggleBtn.innerHTML = '<span class="material-icons">mic</span>';
             toggleBtn.title = 'Switch to Sign Mode';
-            if (listeningText) listeningText.innerText = "Listening...";
-            
+
             if (isCamOn && !localStream) startCamera();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
@@ -1740,6 +1751,22 @@ if (speechCaptionLog) {
 const cardArea = getTranslationCardArea();
 if (cardArea) {
     enableDragToScroll(cardArea, 'horizontal');
+}
+
+if (captionToggleBtn) {
+    captionToggleBtn.addEventListener('click', () => {
+        if (!captionLogWindow) return;
+        const willCollapse = !captionLogWindow.classList.contains('collapsed');
+        setCaptionLogCollapsed(willCollapse);
+    });
+}
+
+if (signCardsToggleBtn) {
+    signCardsToggleBtn.addEventListener('click', () => {
+        if (!signCardsPanelWindow) return;
+        const willCollapse = !signCardsPanelWindow.classList.contains('collapsed');
+        setSignCardsPanelCollapsed(willCollapse);
+    });
 }
 
 // Initialize (start in sign mode by default)

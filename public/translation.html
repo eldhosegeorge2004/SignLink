@@ -150,74 +150,57 @@
             pointer-events: none;
         }
 
-        /* Speech Container - Integrated Bottom Panel like Mobile */
-        .speech-container {
+        /* Speech Container - Anchored at the top like video call */
+        .speech-container.caption-log-panel {
             position: fixed !important;
-            bottom: 110px !important; /* Above the pill control bar */
-            left: 50% !important;
-            transform: translateX(-50%);
-            width: 92% !important;
-            height: auto;
-            max-height: 52vh;
+            top: calc(env(safe-area-inset-top) + 8px) !important;
+            left: 12px !important;
+            right: 12px !important;
+            bottom: auto !important;
+            transform: none !important;
+            width: auto !important;
+            max-height: min(42vh, calc(100dvh - 180px));
             border-radius: 24px !important;
-            background: rgba(13, 20, 36, 0.7) !important;
+            background: rgba(13, 20, 36, 0.78) !important;
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            display: none;
-            flex-direction: column;
             z-index: 105;
-            overflow: hidden;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            opacity: 1;
+            visibility: hidden;
         }
 
-        body.voice-mode-active .speech-container {
-            display: flex !important;
-        }
-
-        .speech-panel-body {
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-        }
-
-        .speech-section-header {
-            padding: 12px 16px 0 16px;
-            font-size: 0.72rem;
-            font-weight: 700;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: rgba(148, 163, 184, 0.95);
-        }
-
-        .listening-indicator {
-            font-size: 0.85rem !important;
-            color: #58a6ff;
-            font-weight: 600;
-            margin: 12px 16px 4px 16px !important;
-            display: none;
-            align-items: center;
+        .speech-container .caption-panel-content {
+            padding: 12px;
             gap: 10px;
         }
 
-        body.voice-mode-active .listening-indicator {
+        .speech-container .caption-section-header,
+        .speech-container .sign-cards-panel-header {
+            padding: 0 4px;
+        }
+
+        body.voice-mode-active .speech-container.caption-log-panel {
             display: flex !important;
+            visibility: visible !important;
+        }
+
+        body.voice-mode-active .speech-container.caption-log-panel.awake {
+            opacity: 1;
         }
 
         .speech-caption-log {
             max-height: 110px;
             overflow-y: auto;
-            background: transparent !important;
-            padding: 4px 16px 10px 16px !important;
-            margin: 0 !important;
-            border: none !important;
+            padding: 4px 8px;
+            margin: 0;
+            border: none;
             font-size: 0.9rem !important;
             color: #e6edf3;
             line-height: 1.4;
-            display: none;
-            /* Hide scrollbar */
             scrollbar-width: none;
             -ms-overflow-style: none;
+            display: flex !important;
         }
 
         .speech-caption-log::-webkit-scrollbar {
@@ -225,70 +208,11 @@
         }
 
         body.voice-mode-active .speech-caption-log {
-            display: block !important;
-        }
-
-        .speech-caption-line {
-            margin-bottom: 10px;
-            padding-left: 10px;
-            border-left: 2px solid #3b82f6;
-            line-height: 1.4;
-            color: #e2e8f0;
-            word-break: break-word;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-        }
-
-
-
-        /* Sign cards area nested in container */
-        .sign-cards-window {
-            margin: 0 12px 12px 12px;
-            min-height: 156px;
-            border-radius: 18px;
-            background: rgba(2, 6, 23, 0.55);
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .sign-cards-header {
-            padding: 10px 14px 8px 14px;
-            font-size: 0.72rem;
-            font-weight: 700;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: rgba(191, 219, 254, 0.95);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-            background: rgba(15, 23, 42, 0.5);
-        }
-
-        .sign-cards-area-right {
-            flex: 1;
-            min-height: 108px;
-            max-height: 180px;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 10px 14px !important;
-            border-radius: 0 !important;
-            background: rgba(0, 0, 0, 0.15);
-            display: flex;
-            flex-wrap: nowrap;
-            overflow-x: auto;
-            gap: 25px;
-            align-items: center;
-            -webkit-overflow-scrolling: touch;
-            /* Hide scrollbar */
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-        }
-
-        .sign-cards-area-right::-webkit-scrollbar {
-            display: none;
-        }
-
-        body.voice-mode-active .sign-cards-area-right {
             display: flex !important;
+        }
+
+        .caption-log-window.collapsed .speech-caption-log {
+            display: none !important;
         }
 
         .placeholder-msg {
@@ -384,12 +308,6 @@
             grid-row: auto;
         }
 
-        #listening-text {
-            color: #58a6ff;
-            opacity: 1;
-            font-style: normal;
-        }
-
         body:not(.voice-mode-active) .speech-container {
             display: none !important;
         }
@@ -447,25 +365,12 @@
                 font-size: 20px;
             }
 
-            .listening-indicator {
-                margin: 20px 12px 0 12px !important;
-                font-size: 0.8rem !important;
-            }
-
             .speech-caption-log {
-                padding: 6px 12px 10px 12px !important;
                 font-size: 0.75rem !important;
             }
 
-            .sign-cards-window {
+            .speech-container .sign-cards-panel-window {
                 min-height: 144px;
-                margin: 0 10px 10px 10px;
-            }
-
-            .sign-cards-area {
-                grid-template-columns: repeat(4, 1fr);
-                padding: 10px 12px !important;
-                gap: 5px;
             }
         }
 </style>
@@ -539,17 +444,27 @@
 
 
             <!-- Speech HUD (Shown in voice mode) -->
-            <div id="speech-panel" class="speech-container">
-                <div class="speech-panel-body">
-                    <div class="speech-section-header">Captions</div>
-                    <h3 id="listening-text" class="listening-indicator">Listening...</h3>
-                    <div id="speech-caption-log" class="speech-caption-log">
-                        <div class="speech-caption-line">Speech captions will appear here.</div>
+            <div id="speech-panel" class="speech-container caption-log-panel visible awake">
+                <div class="caption-panel-content">
+                    <div id="caption-log-window" class="caption-log-window">
+                        <div class="caption-section-header">
+                            <span>Captions</span>
+                            <button id="captionToggleBtn" class="section-toggle-btn" type="button" aria-expanded="true" aria-controls="speech-caption-log" title="Hide captions">
+                                <span class="material-icons">expand_more</span>
+                            </button>
+                        </div>
+                        <div id="speech-caption-log" class="speech-caption-log caption-log-list">
+                            <div class="caption-log-empty">Speech captions will appear here.</div>
+                        </div>
                     </div>
-                    <div class="sign-cards-window">
-                        <div class="sign-cards-header">Sign Cards Translation</div>
-                        <div id="sign-cards-output" class="sign-cards-area-right">
-                            <!-- JS will inject cards here -->
+                    <div id="sign-cards-panel-window" class="sign-cards-panel-window">
+                        <div class="sign-cards-panel-header">
+                            <span>Sign Cards Translation</span>
+                            <button id="signCardsToggleBtn" class="section-toggle-btn" type="button" aria-expanded="true" aria-controls="sign-cards-output" title="Hide sign cards">
+                                <span class="material-icons">expand_more</span>
+                            </button>
+                        </div>
+                        <div id="sign-cards-output" class="prediction-sign-cards-container active">
                             <div class="placeholder-msg">Sign cards translation will appear here.</div>
                         </div>
                     </div>
