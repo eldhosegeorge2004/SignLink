@@ -116,6 +116,9 @@ const meetingRoom = document.getElementById('meeting-room');
 const newMeetingBtn = document.getElementById('newMeetingBtn');
 const startRoomInput = document.getElementById('startRoomInput');
 const lobbyStatus = document.getElementById('status');
+let meetingStatusToastTimer = null;
+let lastMeetingStatusToast = '';
+let captionPanelDimTimer = null;
 const userNameInput = document.getElementById('userNameInput');
 const joinBtn = document.getElementById('joinBtn');
 const clockElement = document.getElementById('clock');
@@ -664,10 +667,6 @@ if (sttToggleBtn) {
 function appendCaptionLog(speaker, text) {
     if (!captionLogList || !text) return;
 
-    // Show the panel when new speech arrives
-    const panel = document.querySelector('.caption-log-panel');
-    if (panel) panel.classList.add('visible');
-
     // Remove empty placeholder
     const emptyMsg = captionLogList.querySelector('.caption-log-empty');
     if (emptyMsg) emptyMsg.remove();
@@ -690,12 +689,18 @@ function appendCaptionLog(speaker, text) {
     entry.appendChild(speakerLabel);
     entry.appendChild(dialogue);
     captionLogList.appendChild(entry);
-    captionLogList.scrollTop = captionLogList.scrollHeight;
+    wakeCaptionPanel();
+    updateCaptionLogViewport();
+    scrollCaptionLogToLatest();
 }
 
 function resetVCCaptions() {
     hideVCSignCards();
-    if (captionLogList) captionLogList.innerHTML = '';
+    if (captionLogList) {
+        captionLogList.innerHTML = '';
+        updateCaptionLogViewport();
+        scrollCaptionLogToLatest();
+    }
 }
 
 function displayVCSignCards(text) {
@@ -723,8 +728,7 @@ function displayVCSignCards(text) {
         }
 
         // Ensure panel is visible at the start of rendering
-        const panel = document.querySelector('.caption-log-panel');
-        if (panel) panel.classList.add('visible');
+        wakeCaptionPanel();
 
         for (let i = 0; i < units.length; i++) {
             const tokens = await resolveCardUnitTokens(units[i], langFolder);
@@ -752,9 +756,9 @@ function displayVCSignCards(text) {
             }
         }
 
-        // Auto-hide the panel 7 seconds after all cards are displayed
+        // Dim the panel after inactivity instead of hiding it
         vcAutoHideTimeout = setTimeout(() => {
-            if (panel) panel.classList.remove('visible');
+            dimCaptionPanel();
         }, 7000);
     })();
 }
@@ -980,8 +984,7 @@ window.addEventListener('resize', () => {
 
 function hideVCSignCards() {
     const container = document.getElementById('prediction-sign-cards-container');
-    const panel = document.querySelector('.caption-log-panel');
-    if (panel) panel.classList.remove('visible');
+    dimCaptionPanel();
     
     if (container) {
         vcCardRenderSeq++;
@@ -1302,10 +1305,27 @@ joinBtn.addEventListener('click', async (e) => {
         }
     });
 
-    const updateStatus = (text, type = 'info') => {
-        const statusEl = document.getElementById('status');
+    const showMeetingStatusToast = (text, type = 'info') => {
         const meetingStatusText = document.getElementById('meeting-status-text');
         const meetingStatusBar = document.getElementById('meeting-status-bar');
+        if (!meetingStatusText || !meetingStatusBar) return;
+        if (lastMeetingStatusToast === text) return;
+
+        lastMeetingStatusToast = text;
+        meetingStatusText.innerText = text;
+        meetingStatusBar.className = `meeting-status-bar ${type} visible`;
+
+        if (meetingStatusToastTimer) {
+            clearTimeout(meetingStatusToastTimer);
+        }
+
+        meetingStatusToastTimer = setTimeout(() => {
+            meetingStatusBar.classList.remove('visible');
+        }, 2000);
+    };
+
+    const updateStatus = (text, type = 'info') => {
+        const statusEl = document.getElementById('status');
 
         if (text === "Connected to peer") {
             document.querySelector('.main-stage')?.classList.add('is-connected');
@@ -1316,13 +1336,7 @@ joinBtn.addEventListener('click', async (e) => {
             statusEl.style.color = type === 'error' ? '#ef4444' : (type === 'success' ? '#4db6ac' : '#aaa');
         }
 
-        if (meetingStatusText) {
-            meetingStatusText.innerText = text;
-        }
-
-        if (meetingStatusBar) {
-            meetingStatusBar.className = `meeting-status-bar ${type}`;
-        }
+        showMeetingStatusToast(text, type);
         
         console.log(`[Status] ${text}`);
     };
@@ -2440,7 +2454,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
 
                 if (isSTTOn) {
                     const logText = best.isDynamic ? `${outputLabel} 🔄` : outputLabel;
-                    appendCaptionLog(localName, logText);
+                    appendCaptionLog("You", logText);
                     displayVCSignCards(outputLabel);
                 }
 
@@ -2543,12 +2557,18 @@ function finishSpelling(forceSpeak = false) {
     // Speak locally if TTS is on
     if (isTTSOn || forceSpeak) speak(wordToSpeak);
 
+    // Keep finalized spelled words in the local live caption feed too.
+    if (isSTTOn) {
+        appendCaptionLog("You", wordToSpeak);
+        displayVCSignCards(wordToSpeak);
+    }
+
     // Send to remote user
     if (supabaseChannel) {
         supabaseChannel.send({
             type: 'broadcast',
             event: 'sign-message',
-            payload: { text: wordToSpeak }
+            payload: { text: wordToSpeak, name: localName }
         });
     }
 
@@ -2675,23 +2695,16 @@ function createPeerConnection() {
     pc.onconnectionstatechange = () => {
         const state = pc ? pc.connectionState : 'closed';
         console.log("WebRTC Connection State:", state);
-        const statusText = document.getElementById('meeting-status-text');
-        const statusBar = document.getElementById('meeting-status-bar');
         
         if (state === 'disconnected' || state === 'failed') {
             document.querySelector('.main-stage')?.classList.remove('is-connected');
         }
-        if (statusText) {
-            if (state === 'connected') {
-                statusText.innerText = 'Connected';
-                if (statusBar) statusBar.className = 'meeting-status-bar success';
-            } else if (state === 'disconnected' || state === 'failed') {
-                statusText.innerText = 'Peer disconnected';
-                if (statusBar) statusBar.className = 'meeting-status-bar error';
-            } else if (state === 'connecting') {
-                statusText.innerText = 'Connecting...';
-                if (statusBar) statusBar.className = 'meeting-status-bar info';
-            }
+        if (state === 'connected') {
+            showMeetingStatusToast('Connected', 'success');
+        } else if (state === 'disconnected' || state === 'failed') {
+            showMeetingStatusToast('Peer disconnected', 'error');
+        } else if (state === 'connecting') {
+            showMeetingStatusToast('Connecting...', 'info');
         }
     };
 
@@ -3079,12 +3092,97 @@ function enableDragToScroll(el, direction = 'both') {
     });
 }
 
+function updateCaptionLogViewport() {
+    if (!captionLogList) return;
+
+    const entries = Array.from(captionLogList.children);
+    if (entries.length === 0) {
+        captionLogList.style.maxHeight = '0px';
+        return;
+    }
+
+    const visibleEntries = entries.slice(-3);
+    const listStyle = window.getComputedStyle(captionLogList);
+    const gap = parseFloat(listStyle.gap || listStyle.rowGap || '0') || 0;
+    const paddingTop = parseFloat(listStyle.paddingTop || '0') || 0;
+    const paddingBottom = parseFloat(listStyle.paddingBottom || '0') || 0;
+    const visibleHeight = visibleEntries.reduce((total, item) => total + item.offsetHeight, 0)
+        + gap * Math.max(visibleEntries.length - 1, 0)
+        + paddingTop
+        + paddingBottom;
+
+    captionLogList.style.maxHeight = `${Math.ceil(visibleHeight)}px`;
+}
+
+function getCaptionPanel() {
+    return document.querySelector('.caption-log-panel');
+}
+
+function hasCaptionEntries() {
+    return !!(captionLogList && captionLogList.children.length > 0);
+}
+
+function ensureCaptionPanelVisible() {
+    const panel = getCaptionPanel();
+    if (!panel) return null;
+    panel.classList.add('visible');
+    return panel;
+}
+
+function dimCaptionPanel() {
+    const panel = getCaptionPanel();
+    if (!panel) return;
+    if (!hasCaptionEntries()) {
+        panel.classList.remove('visible', 'awake');
+        return;
+    }
+    panel.classList.remove('awake');
+}
+
+function wakeCaptionPanel() {
+    if (!hasCaptionEntries()) return;
+    const panel = ensureCaptionPanelVisible();
+    if (!panel) return;
+    panel.classList.add('awake');
+    if (captionPanelDimTimer) {
+        clearTimeout(captionPanelDimTimer);
+    }
+    captionPanelDimTimer = setTimeout(() => {
+        dimCaptionPanel();
+    }, 7000);
+}
+
+function scrollCaptionLogToLatest() {
+    if (!captionLogList) return;
+    captionLogList.scrollTop = captionLogList.scrollHeight;
+}
+
+function snapCaptionLogToLatest() {
+    if (!captionLogList) return;
+    window.setTimeout(() => {
+        scrollCaptionLogToLatest();
+    }, 0);
+}
+
 // Enable for Video Call Screen elements
 if (predictionSignCardsContainer) {
     enableDragToScroll(predictionSignCardsContainer, 'horizontal');
 }
 if (captionLogList) {
     enableDragToScroll(captionLogList, 'vertical');
+    captionLogList.addEventListener('mouseup', snapCaptionLogToLatest);
+    captionLogList.addEventListener('mouseleave', snapCaptionLogToLatest);
+    captionLogList.addEventListener('touchend', snapCaptionLogToLatest);
+    captionLogList.addEventListener('touchcancel', snapCaptionLogToLatest);
+    captionLogList.addEventListener('mousedown', wakeCaptionPanel);
+    captionLogList.addEventListener('touchstart', wakeCaptionPanel, { passive: true });
+    captionLogList.addEventListener('pointerdown', wakeCaptionPanel);
+    document.addEventListener('mouseup', snapCaptionLogToLatest);
+    document.addEventListener('touchend', snapCaptionLogToLatest);
+    document.addEventListener('touchcancel', snapCaptionLogToLatest);
+    window.addEventListener('resize', updateCaptionLogViewport);
+    updateCaptionLogViewport();
+    scrollCaptionLogToLatest();
 }
 
 if (copyCodeBtn) {

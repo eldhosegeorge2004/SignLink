@@ -394,9 +394,7 @@
             <!-- Left Caption Log -->
             <div id="caption-log-panel" class="caption-log-panel">
                 <div class="caption-panel-content">
-                    <div id="caption-log-list" class="caption-log-list">
-                        <div class="caption-log-empty">Speech captions will appear here.</div>
-                    </div>
+                    <div id="caption-log-list" class="caption-log-list"></div>
                     <div id="prediction-sign-cards-container" class="prediction-sign-cards-container"></div>
                 </div>
             </div>
@@ -424,10 +422,10 @@
             <!-- Particle Container for Emoji Animations -->
             <div id="particles-container"></div>
 
-            <!-- Spelling Overlay (Top Left) -->
+            <!-- Spelling Overlay (Below top captions) -->
             <div id="spelling-overlay" style="
                 position: absolute;
-                top: 20px;
+                top: calc(env(safe-area-inset-top) + 140px);
                 left: 20px;
                 background: rgba(0, 0, 0, 0.8);
                 padding: 10px 20px;
