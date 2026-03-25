@@ -5,6 +5,7 @@ const canvasCtx = canvasElement.getContext('2d');
 const signView = document.getElementById('sign-view');
 const speechPanel = document.getElementById('speech-panel');
 const speechCaptionLog = document.getElementById('speech-caption-log');
+const signCardsOutput = document.getElementById('sign-cards-output');
 const camBtn = document.getElementById('cam-btn');
 const ttsBtn = document.getElementById('tts-btn');
 const sttResult = document.getElementById('stt-result');
@@ -1274,6 +1275,10 @@ const TRANSLATION_DIGIT_WORD_MAP = {
 const translationCardQueue = [];
 const TRANSLATION_MAX_CARD_TOKENS = 260;
 
+function getTranslationCardArea() {
+    return signCardsOutput || document.querySelector('.sign-cards-area-right');
+}
+
 async function loadTranslationPhraseMap() {
     try {
         const response = await fetch('/signs-images/phrase-map.json', { cache: 'no-cache' });
@@ -1434,7 +1439,7 @@ async function resolveTranslationUnitTokens(unit, langFolder) {
  * Scoped here to be called during incremental updates.
  */
 function renderTranslationCardQueue() {
-    const cardArea = document.querySelector('.sign-cards-area-right');
+    const cardArea = getTranslationCardArea();
     if (!cardArea) return;
 
     cardArea.innerHTML = '';
@@ -1553,7 +1558,7 @@ function renderTranslationCardQueue() {
 }
 
 async function displaySignCards(text) {
-    const cardArea = document.querySelector('.sign-cards-area-right');
+    const cardArea = getTranslationCardArea();
     if (!cardArea) return;
 
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
@@ -1732,7 +1737,7 @@ if (speechCaptionLog) {
     enableDragToScroll(speechCaptionLog, 'vertical');
 }
 
-const cardArea = document.querySelector('.sign-cards-area-right');
+const cardArea = getTranslationCardArea();
 if (cardArea) {
     enableDragToScroll(cardArea, 'horizontal');
 }

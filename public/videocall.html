@@ -392,10 +392,23 @@
             </div>
 
             <!-- Left Caption Log -->
-            <div id="caption-log-panel" class="caption-log-panel">
+            <div id="caption-log-panel" class="caption-log-panel visible">
                 <div class="caption-panel-content">
-                    <div id="caption-log-list" class="caption-log-list"></div>
-                    <div id="prediction-sign-cards-container" class="prediction-sign-cards-container"></div>
+                    <div class="caption-log-window">
+                        <div class="caption-section-header">Captions</div>
+                        <div id="caption-log-list" class="caption-log-list">
+                            <div class="caption-log-empty">Captions will appear here during the call.</div>
+                        </div>
+                    </div>
+                    <div id="sign-cards-panel-window" class="sign-cards-panel-window collapsed">
+                        <div class="sign-cards-panel-header">
+                            <span>Sign Cards Translation</span>
+                            <button id="signCardsToggleBtn" class="sign-cards-toggle-btn" type="button" aria-expanded="false" aria-controls="prediction-sign-cards-container" title="Show sign cards">
+                                <span class="material-icons">expand_more</span>
+                            </button>
+                        </div>
+                        <div id="prediction-sign-cards-container" class="prediction-sign-cards-container"></div>
+                    </div>
                 </div>
             </div>
 

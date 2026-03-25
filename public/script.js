@@ -133,6 +133,10 @@ const mobileMeetingCodeDisplay = document.getElementById('mobileMeetingCodeDispl
 const predictionOverlay = document.getElementById('prediction-overlay');
 const predictionDiv = document.getElementById('prediction');
 const predictionSignCardsContainer = document.getElementById('prediction-sign-cards-container');
+const signCardsPanelWindow = document.getElementById('sign-cards-panel-window');
+const signCardsToggleBtn = document.getElementById('signCardsToggleBtn');
+const captionPanelViewport = document.getElementById('caption-panel-viewport');
+const captionPanelTrack = document.getElementById('caption-panel-track');
 const remotePredictionDiv = document.getElementById('remotePrediction');
 const remoteCaptionOverlay = document.getElementById('remote-caption-overlay');
 
@@ -160,6 +164,7 @@ const mobileCopyCodeBtn = document.getElementById('mobileCopyCodeBtn');
 let vcCardQueue = [];
 let vcCardRenderSeq = 0;
 let vcAutoHideTimeout = null;
+let signCardsPanelManuallyCollapsed = false;
 let localStream;
 let pc;
 let roomName;
@@ -180,6 +185,7 @@ let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actuall
 let isCreatingMeeting = false;    // NEW: Track if user is the meeting creator
 let localName = "You";
 let remoteName = "Remote User";
+let activeCaptionPanelView = 'captions';
 
 // Helper to stop all camera/mic tracks
 function stopCamera() {
@@ -304,39 +310,58 @@ function checkImageExists(url) {
     });
 }
 
+function buildSignImageCandidates(basePath, keys) {
+    const extensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+    const uniqueKeys = [...new Set(keys.filter(Boolean))];
+    const urls = [];
+
+    for (const key of uniqueKeys) {
+        for (const ext of extensions) {
+            urls.push(`${basePath}/${key}.${ext}`);
+        }
+    }
+
+    return urls;
+}
+
 async function resolveWordTokens(word, langFolder) {
-    const normalizedWord = word.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const normalizedWord = word.toLowerCase().replace(/[^a-z0-9-\s]/g, '').trim();
     if (!normalizedWord) return [];
 
+    const collapsedWord = normalizedWord.replace(/\s+/g, '-');
+    const joinedWord = normalizedWord.replace(/\s+/g, '');
     const wordCandidates = [
-        `/signs-images/${langFolder}/words/${normalizedWord}.jpg`,
-        `/signs-images/${langFolder}/words/${normalizedWord}.png`,
-        `/signs-images/${langFolder}/${normalizedWord}.jpg`,
-        `/signs-images/${langFolder}/${normalizedWord}.png`
+        ...buildSignImageCandidates(`/signs-images/${langFolder}/words`, [
+            collapsedWord,
+            joinedWord,
+            normalizedWord
+        ]),
+        ...buildSignImageCandidates(`/signs-images/${langFolder}`, [
+            collapsedWord,
+            joinedWord,
+            normalizedWord
+        ])
     ];
 
     for (const src of wordCandidates) {
         if (await checkImageExists(src)) {
-            return [{ type: 'card', src, label: normalizedWord }];
+            return [{ type: 'card', src, label: collapsedWord }];
         }
     }
 
     const charTokens = [];
-    const charsOnly = normalizedWord.replace(/-/g, '');
+    const charsOnly = joinedWord.replace(/-/g, '');
     for (const char of charsOnly.toUpperCase()) {
         if (!/[A-Z0-9]/.test(char)) continue;
 
         const charCandidates = [];
         if (/[A-Z]/.test(char)) {
-            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
-            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
+            charCandidates.push(...buildSignImageCandidates(`/signs-images/${langFolder}/characters`, [char]));
         } else {
-            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
-            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
+            charCandidates.push(...buildSignImageCandidates(`/signs-images/${langFolder}/characters`, [char]));
             const digitWord = DIGIT_WORD_MAP[char];
             if (digitWord) {
-                charCandidates.push(`/signs-images/${langFolder}/characters/${digitWord}.jpg`);
-                charCandidates.push(`/signs-images/${langFolder}/characters/${digitWord}.png`);
+                charCandidates.push(...buildSignImageCandidates(`/signs-images/${langFolder}/characters`, [digitWord]));
             }
         }
 
@@ -634,30 +659,40 @@ function updateTTSUI() {
 }
 updateTTSUI(); // Sync at startup
 
+function startSTTSession() {
+    if (!isSTTSupported) return;
+    isSTTOn = true;
+    updateSTTUI();
+    document.body.classList.add('stt-active');
+
+    if (!recognition) initSTT();
+    if (!isRecognitionActive) {
+        try {
+            recognition.start();
+            hideVCSignCards();
+        } catch (e) {
+            console.error("Failed to start Recognition:", e);
+            isSTTOn = false;
+            updateSTTUI();
+            document.body.classList.remove('stt-active');
+        }
+    }
+}
+
+function stopSTTSession() {
+    isSTTOn = false;
+    updateSTTUI();
+    document.body.classList.remove('stt-active');
+    if (recognition && isRecognitionActive) recognition.stop();
+    hideVCSignCards();
+}
+
 if (sttToggleBtn) {
     sttToggleBtn.addEventListener('click', () => {
-        isSTTOn = !isSTTOn;
-        updateSTTUI();
-
-        // Toggle body class for layout adjustments (visible floating panel on mobile)
-        document.body.classList.toggle('stt-active', isSTTOn);
-
         if (isSTTOn) {
-            if (!recognition) initSTT();
-            if (!isRecognitionActive) {
-                try {
-                    recognition.start();
-                    hideVCSignCards();
-                } catch (e) {
-                    console.error("Failed to start Recognition:", e);
-                    isSTTOn = false;
-                    updateSTTUI();
-                    document.body.classList.remove('stt-active');
-                }
-            }
+            stopSTTSession();
         } else {
-            if (recognition && isRecognitionActive) recognition.stop();
-            hideVCSignCards();
+            startSTTSession();
         }
     });
 }
@@ -694,14 +729,40 @@ function appendCaptionLog(speaker, text) {
     scrollCaptionLogToLatest();
 }
 
+function ensureCaptionPlaceholder() {
+    if (!captionLogList) return;
+    const hasEntries = !!captionLogList.querySelector('.caption-log-entry');
+    const emptyMsg = captionLogList.querySelector('.caption-log-empty');
+
+    if (!hasEntries && !emptyMsg) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'caption-log-empty';
+        placeholder.textContent = 'Captions will appear here during the call.';
+        captionLogList.appendChild(placeholder);
+    } else if (hasEntries && emptyMsg) {
+        emptyMsg.remove();
+    }
+}
+
 function resetVCCaptions() {
     hideVCSignCards();
     if (captionLogList) {
         captionLogList.innerHTML = '';
+        ensureCaptionPlaceholder();
         updateCaptionLogViewport();
         scrollCaptionLogToLatest();
     }
 }
+
+function setSignCardsPanelCollapsed(collapsed) {
+    if (!signCardsPanelWindow || !signCardsToggleBtn) return;
+
+    signCardsPanelWindow.classList.toggle('collapsed', collapsed);
+    signCardsToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    signCardsToggleBtn.setAttribute('title', collapsed ? 'Show sign cards' : 'Hide sign cards');
+}
+
+setSignCardsPanelCollapsed(true);
 
 function displayVCSignCards(text) {
     const container = document.getElementById('prediction-sign-cards-container');
@@ -716,7 +777,7 @@ function displayVCSignCards(text) {
     // Always clear history to only show the most recent utterance
     vcCardQueue = [];
     container.innerHTML = '';
-    container.dataset.lastScrollWidth = "0";
+    container.scrollTop = 0;
 
     (async () => {
         const units = buildCardUnits(words, langFolder);
@@ -725,6 +786,10 @@ function displayVCSignCards(text) {
         if (vcAutoHideTimeout) {
             clearTimeout(vcAutoHideTimeout);
             vcAutoHideTimeout = null;
+        }
+
+        if (!signCardsPanelManuallyCollapsed) {
+            setSignCardsPanelCollapsed(false);
         }
 
         // Ensure panel is visible at the start of rendering
@@ -826,15 +891,7 @@ function appendIncrementalVCCard(token) {
 
     card.appendChild(label);
     lastGroup.appendChild(card);
-
-    // Trigger smooth panning after append
-    const oldScrollWidth = container.dataset.lastScrollWidth ? parseInt(container.dataset.lastScrollWidth) : 0;
-    const newScrollWidth = container.scrollWidth;
-    container.scrollLeft = oldScrollWidth;
-    setTimeout(() => {
-        container.scrollTo({ left: newScrollWidth, behavior: 'smooth' });
-        container.dataset.lastScrollWidth = newScrollWidth.toString();
-    }, 10);
+    container.scrollTop = container.scrollHeight;
 }
 
 function reRenderVCSignCards() {
@@ -957,23 +1014,7 @@ function reRenderVCSignCards() {
     });
 
     container.classList.add('active');
-
-    // Smooth Panning Logic (inherited from live translation mode)
-    const oldScrollWidth = container.dataset.lastScrollWidth ? parseInt(container.dataset.lastScrollWidth) : 0;
-    const newScrollWidth = container.scrollWidth;
-
-    // 1. Instantly jump back to the previous end position so we can pan from there
-    container.scrollLeft = oldScrollWidth;
-
-    // 2. Perform smooth scroll to the new end position
-    setTimeout(() => {
-        container.scrollTo({
-            left: newScrollWidth,
-            behavior: 'smooth'
-        });
-        // Store current width for the next word
-        container.dataset.lastScrollWidth = newScrollWidth.toString();
-    }, 10);
+    container.scrollTop = container.scrollHeight;
 }
 
 window.addEventListener('resize', () => {
@@ -992,6 +1033,8 @@ function hideVCSignCards() {
         container.classList.remove('active');
         container.innerHTML = '';
     }
+
+    setSignCardsPanelCollapsed(true);
 }
 
 // 2. Visual Audio Feedback (Volume Meter)
@@ -3118,8 +3161,27 @@ function getCaptionPanel() {
     return document.querySelector('.caption-log-panel');
 }
 
-function hasCaptionEntries() {
-    return !!(captionLogList && captionLogList.children.length > 0);
+function hasCaptionContent() {
+    const hasEntries = !!(captionLogList && captionLogList.querySelector('.caption-log-entry'));
+    const hasCards = !!(
+        predictionSignCardsContainer &&
+        predictionSignCardsContainer.classList.contains('active') &&
+        vcCardQueue.length > 0 &&
+        signCardsPanelWindow &&
+        !signCardsPanelWindow.classList.contains('collapsed')
+    );
+    return hasEntries || hasCards;
+}
+
+function getLatestCaptionText() {
+    if (!captionLogList) return '';
+    const lastEntry = captionLogList.querySelector('.caption-log-entry:last-child');
+    if (!lastEntry) return '';
+
+    const speakerLabel = lastEntry.querySelector('.caption-log-speaker');
+    const speakerText = speakerLabel ? speakerLabel.textContent : '';
+    const fullText = lastEntry.textContent || '';
+    return fullText.replace(speakerText, '').replace(/\s*🔄\s*/g, ' ').trim();
 }
 
 function ensureCaptionPanelVisible() {
@@ -3132,15 +3194,11 @@ function ensureCaptionPanelVisible() {
 function dimCaptionPanel() {
     const panel = getCaptionPanel();
     if (!panel) return;
-    if (!hasCaptionEntries()) {
-        panel.classList.remove('visible', 'awake');
-        return;
-    }
     panel.classList.remove('awake');
 }
 
 function wakeCaptionPanel() {
-    if (!hasCaptionEntries()) return;
+    if (!hasCaptionContent()) return;
     const panel = ensureCaptionPanelVisible();
     if (!panel) return;
     panel.classList.add('awake');
@@ -3166,9 +3224,24 @@ function snapCaptionLogToLatest() {
 
 // Enable for Video Call Screen elements
 if (predictionSignCardsContainer) {
-    enableDragToScroll(predictionSignCardsContainer, 'horizontal');
+    predictionSignCardsContainer.addEventListener('mousedown', wakeCaptionPanel);
+    predictionSignCardsContainer.addEventListener('touchstart', wakeCaptionPanel, { passive: true });
+}
+if (signCardsToggleBtn) {
+    signCardsToggleBtn.addEventListener('click', () => {
+        if (!signCardsPanelWindow) return;
+        const willCollapse = !signCardsPanelWindow.classList.contains('collapsed');
+        signCardsPanelManuallyCollapsed = willCollapse;
+        setSignCardsPanelCollapsed(willCollapse);
+        if (willCollapse) {
+            dimCaptionPanel();
+        } else {
+            wakeCaptionPanel();
+        }
+    });
 }
 if (captionLogList) {
+    ensureCaptionPlaceholder();
     enableDragToScroll(captionLogList, 'vertical');
     captionLogList.addEventListener('mouseup', snapCaptionLogToLatest);
     captionLogList.addEventListener('mouseleave', snapCaptionLogToLatest);
