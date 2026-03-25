@@ -333,7 +333,7 @@ async function fetchCloudModel(type, lang) {
         // 2. Load Labels
         const labelsRes = await fetch(labelsUrlData.publicUrl);
         if (!labelsRes.ok) return null;
-        const labels = await labelsRes.json();
+        const labels = normalizeLabelList(await labelsRes.json()).labels;
         
         // 3. Load Model
         const model = await tf.loadLayersModel(modelUrlData.publicUrl);
@@ -344,7 +344,9 @@ async function fetchCloudModel(type, lang) {
                 .from('models')
                 .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
             const reqRes = await fetch(handReqsUrlData.publicUrl);
-            if (reqRes.ok) handReqs = await reqRes.json();
+            if (reqRes.ok) {
+                handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
+            }
         }
         
         return { model, labels, handReqs };

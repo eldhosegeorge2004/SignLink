@@ -114,6 +114,33 @@ function normalizeDatasetLabels(samples) {
     return { normalized, changed };
 }
 
+function normalizeLabelList(labels) {
+    let changed = false;
+    const normalized = (labels || []).map((label) => {
+        const nextLabel = normalizeLabel(label);
+        if (nextLabel !== label) {
+            changed = true;
+        }
+        return nextLabel;
+    });
+    return { normalized, changed };
+}
+
+function normalizeHandRequirementMap(map) {
+    let changed = false;
+    const normalized = {};
+
+    Object.entries(map || {}).forEach(([label, requirement]) => {
+        const normalizedLabel = normalizeLabel(label);
+        if (normalizedLabel !== label) {
+            changed = true;
+        }
+        normalized[normalizedLabel] = requirement;
+    });
+
+    return { normalized, changed };
+}
+
 function getUntrainedSampleCount() {
     return collectedData.filter(sample => sample.isTrained === false).length;
 }
@@ -533,6 +560,12 @@ function setupMobileSignSetup() {
                 showProcessingModal("Training Locally...", "Your device is learning the signs from your recordings. Please keep the app open.");
                 
                 const trainingResult = await runInternalTraining();
+
+                updateProcessingModal("Saving On Device...", "Saving the trained model on this device for Live Translation.");
+                const savedAnyModel = await saveTrainedModelsToLocalStorage();
+                if (!savedAnyModel) {
+                    throw new Error("Training finished, but no model was available to save.");
+                }
                 
                 // 2. IMAGE SYNC
                 updateProcessingModal("Uploading Details...", "Uploading sign cards and reference images...");
@@ -562,6 +595,17 @@ function setupMobileSignSetup() {
     async function uploadTrainedModelsToCloud() {
         if (!model) return;
 
+        const buildModelJson = (artifacts, weightFileName) => ({
+            modelTopology: artifacts.modelTopology,
+            format: artifacts.format || 'layers-model',
+            generatedBy: artifacts.generatedBy,
+            convertedBy: artifacts.convertedBy,
+            weightsManifest: [{
+                paths: [weightFileName],
+                weights: artifacts.weightSpecs || []
+            }]
+        });
+
         const uploadComponent = async (type, fileName, fileDataB64, contentType) => {
             const path = `${currentLang.toLowerCase()}/${type}/${fileName}`;
             
@@ -590,15 +634,9 @@ function setupMobileSignSetup() {
             await uploadComponent('static', 'labels.json', btoa(labelsJson), 'application/json');
 
             // 2. Export Model (JSON and Binary)
-            const saveResult = await model.static.save(tf.io.withSaveHandler(async (artifacts) => {
+            await model.static.save(tf.io.withSaveHandler(async (artifacts) => {
                 // Upload model.json
-                const modelJson = JSON.stringify({
-                    modelTopology: artifacts.modelTopology,
-                    weightsManifest: artifacts.weightsManifest,
-                    format: artifacts.format,
-                    generatedBy: artifacts.generatedBy,
-                    convertedBy: artifacts.convertedBy
-                });
+                const modelJson = JSON.stringify(buildModelJson(artifacts, 'model.weights.bin'));
                 await uploadComponent('static', 'model.json', btoa(modelJson), 'application/json');
 
                 // Upload weights.bin
@@ -627,10 +665,8 @@ function setupMobileSignSetup() {
 
             // 3. Model Files
             await model.dynamic.save(tf.io.withSaveHandler(async (artifacts) => {
-                await uploadComponent('dynamic', 'model.json', btoa(JSON.stringify({
-                    modelTopology: artifacts.modelTopology,
-                    weightsManifest: artifacts.weightsManifest
-                })), 'application/json');
+                const modelJson = JSON.stringify(buildModelJson(artifacts, 'model.weights.bin'));
+                await uploadComponent('dynamic', 'model.json', btoa(modelJson), 'application/json');
 
                 const weightsB64 = await new Promise(resolve => {
                     const reader = new FileReader();
@@ -1580,7 +1616,7 @@ async function fetchCloudModel(type, lang) {
         // 2. Load Labels
         const labelsRes = await fetch(labelsUrlData.publicUrl);
         if (!labelsRes.ok) return null;
-        const labels = await labelsRes.json();
+        const labels = normalizeLabelList(await labelsRes.json()).normalized;
         
         // 3. Load Model
         const cloudModel = await tf.loadLayersModel(modelUrlData.publicUrl);
@@ -1591,7 +1627,9 @@ async function fetchCloudModel(type, lang) {
                 .from('models')
                 .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
             const reqRes = await fetch(handReqsUrlData.publicUrl);
-            if (reqRes.ok) handReqs = await reqRes.json();
+            if (reqRes.ok) {
+                handReqs = normalizeHandRequirementMap(await reqRes.json()).normalized;
+            }
         }
         
         return { model: cloudModel, labels, handReqs };
