@@ -154,6 +154,21 @@
             transform: translateY(-1px);
         }
 
+        .secondary-btn:disabled {
+            background: rgba(15, 23, 42, 0.42);
+            color: var(--studio-text-muted);
+            border-color: rgba(148, 163, 184, 0.12);
+            cursor: not-allowed;
+            transform: none;
+            opacity: 0.6;
+        }
+
+        .secondary-btn:disabled:hover {
+            background: rgba(15, 23, 42, 0.42);
+            border-color: rgba(148, 163, 184, 0.12);
+            transform: none;
+        }
+
         /* CENTER PANEL: Canvas/Video */
         .workspace {
             position: relative;
@@ -1149,7 +1164,7 @@
 
         <!-- MOBILE APP HEADER - just back button floating above camera -->
         <div class="mobile-app-header">
-            <a href="index.html" class="header-icon-btn" aria-label="Back to home">
+            <a href="index.html?mode=training" class="header-icon-btn" aria-label="Back to home">
                 <span class="material-icons" style="font-size: 28px; margin-right: 2px;">chevron_left</span>
             </a>
             <div class="header-title-pill">
@@ -1274,16 +1289,23 @@
                 </div>
             </div>
 
-            <div style="padding: 20px; border-top: 1px solid rgba(148, 163, 184, 0.16); display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
-                <button id="mobileUploadBtn" class="primary-btn" type="button" title="Train locally and upload data to the cloud"
-                    style="min-width: 0; flex: 1 1 220px; max-width: 320px; justify-content: center;">
-                    <span class="material-icons" style="font-size: 20px;">cloud_upload</span>
-                    Upload to Cloud
+            <div style="padding: 20px; border-top: 1px solid rgba(148, 163, 184, 0.16); display: flex; flex-direction: column; align-items: stretch; gap: 12px;">
+                <button id="revertLatestBtn" class="secondary-btn" type="button" title="Revert the last untrained recording batch" disabled
+                    style="width: 100%; justify-content: center; display: flex; align-items: center; gap: 8px;">
+                    <span class="material-icons" style="font-size: 20px;">undo</span>
+                    Revert Latest Change
                 </button>
-                <button id="clearAllBtn" class="secondary-btn" title="Clear All Data"
-                    style="color: #fecaca; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.2); display: flex; justify-content: center; align-items: center; width: 44px; height: 44px; border-radius: 50%; padding: 0;">
-                    <span class="material-icons" style="font-size: 24px;">close</span>
-                </button>
+                <div style="display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
+                    <button id="mobileUploadBtn" class="primary-btn" type="button" title="Train locally and upload data to the cloud"
+                        style="min-width: 0; flex: 1 1 220px; max-width: 320px; justify-content: center;">
+                        <span class="material-icons" style="font-size: 20px;">cloud_upload</span>
+                        Upload to Cloud
+                    </button>
+                    <button id="clearAllBtn" class="secondary-btn" title="Clear All Data"
+                        style="color: #fecaca; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.2); display: flex; justify-content: center; align-items: center; width: 44px; height: 44px; border-radius: 50%; padding: 0;">
+                        <span class="material-icons" style="font-size: 24px;">close</span>
+                    </button>
+                </div>
             </div>
         </div>
 

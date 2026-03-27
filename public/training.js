@@ -36,6 +36,7 @@ const mobileRecordingCounter = document.getElementById('mobileRecordingCounter')
 const mobileBackBtn = document.getElementById('mobileBackBtn');
 const mobileClearSignBtn = document.getElementById('mobileClearSignBtn');
 const mobileUploadBtn = document.getElementById('mobileUploadBtn');
+const revertLatestBtn = document.getElementById('revertLatestBtn');
 const cloudSyncBtn = document.getElementById('cloudSyncBtn');
 const mobileRevertBtn = document.getElementById('mobileRevertBtn');
 const signSetupModal = document.getElementById('signSetupModal');
@@ -477,6 +478,8 @@ function setupMobileSignSetup() {
                     extension: pendingSignCard.extension
                 }));
             }
+            sessionHistory = [];
+            updateMobileRevertState();
             console.log(`Data for ${label} saved to localStorage.`);
         } catch (err) {
             console.error('Error in saveToLocalStorage:', err);
@@ -692,29 +695,13 @@ function setupMobileSignSetup() {
     // Mobile Revert button
     if (mobileRevertBtn) {
         mobileRevertBtn.addEventListener('click', () => {
-            if (sessionHistory.length > 0) {
-                const count = sessionHistory.pop();
-                if (collectedData.length >= count) {
-                    // Ensure we only revert samples of the current label to be safe
-                    const label = labelInput.value.trim();
-                    const lastSamples = collectedData.slice(-count);
-                    const allMatch = lastSamples.every(s => s.label === label);
-                    
-                    if (allMatch) {
-                        collectedData.splice(-count);
-                        showToast(`${count} samples reverted`, 'undo');
-                        updateUIStats();
-                        renderDataList();
-                        updateMobileRevertState();
-                        
-                        // If no samples left for this setup, disable Finish
-                        const currentSamples = collectedData.filter(d => d.label === label);
-                        if (currentSamples.length === 0 && mobileAddSignBtn) {
-                            mobileAddSignBtn.disabled = true;
-                        }
-                    }
-                }
-            }
+            revertLatestBatch();
+        });
+    }
+
+    if (revertLatestBtn) {
+        revertLatestBtn.addEventListener('click', () => {
+            revertLatestBatch();
         });
     }
 }
@@ -781,11 +768,76 @@ function updateMobileStatusTags() {
     updateMobileRevertState();
 }
 
+function getLastRevertableBatch() {
+    if (!Array.isArray(sessionHistory) || sessionHistory.length === 0) return null;
+
+    for (let i = sessionHistory.length - 1; i >= 0; i -= 1) {
+        const batch = sessionHistory[i];
+        const normalizedLabel = normalizeLabel(batch?.label);
+        const count = Number(batch?.count || 0);
+
+        if (!normalizedLabel || count <= 0 || collectedData.length < count) {
+            continue;
+        }
+
+        const recentSamples = collectedData.slice(-count);
+        const matchesBatch = recentSamples.length === count && recentSamples.every((sample) =>
+            normalizeLabel(sample.label) === normalizedLabel &&
+            (sample.type || 'static') === (batch.type || 'static') &&
+            sample.isTrained === false
+        );
+
+        if (matchesBatch) {
+            return { batch, index: i };
+        }
+    }
+
+    return null;
+}
+
+function revertLatestBatch() {
+    const revertTarget = getLastRevertableBatch();
+    if (!revertTarget) return false;
+
+    const { batch, index } = revertTarget;
+    const count = Number(batch.count || 0);
+    const normalizedLabel = normalizeLabel(batch.label);
+    if (!count || !normalizedLabel) return false;
+
+    collectedData.splice(-count, count);
+    sessionHistory.splice(index, 1);
+    lastRecordedBatchCount = 0;
+
+    const labelSummary = count === 1 ? '1 sample' : `${count} samples`;
+    showToast(`Reverted ${labelSummary} from "${normalizedLabel}"`, 'undo');
+
+    updateUIStats();
+    renderDataList();
+
+    if (mobileAddSignBtn && mobileAddSignBtn.dataset.setup === 'true' && normalizeLabel(labelInput.value) === normalizedLabel) {
+        const remainingSamples = collectedData.filter((sample) =>
+            sample.isTrained === false && normalizeLabel(sample.label) === normalizedLabel
+        ).length;
+        if (remainingSamples === 0) {
+            mobileAddSignBtn.disabled = true;
+        }
+    }
+
+    return true;
+}
+
 function updateMobileRevertState() {
-    if (!mobileRevertBtn) return;
-    mobileRevertBtn.style.display = 'flex';
-    mobileRevertBtn.disabled = sessionHistory.length === 0;
-    mobileRevertBtn.innerHTML = `<span class="material-icons" style="font-size: 14px;">undo</span>`;
+    const hasRevertableBatch = Boolean(getLastRevertableBatch());
+
+    if (mobileRevertBtn) {
+        mobileRevertBtn.style.display = 'flex';
+        mobileRevertBtn.disabled = !hasRevertableBatch;
+        mobileRevertBtn.innerHTML = `<span class="material-icons" style="font-size: 14px;">undo</span>`;
+    }
+
+    if (revertLatestBtn) {
+        revertLatestBtn.disabled = !hasRevertableBatch;
+    }
 }
 
 function updateRevertButtonState() {
@@ -1231,7 +1283,11 @@ function stopStaticCollection(reason = 'Recording stopped.') {
         // Just refresh the list and enable Finish button if we have ANY data now
         renderDataList();
         if (recordedCount > 0) {
-            sessionHistory.push(recordedCount);
+            sessionHistory.push({
+                label: labelInput.value,
+                count: recordedCount,
+                type: 'static'
+            });
             lastRecordedBatchCount = 0;
         }
         if (recordedCount > 0 && mobileAddSignBtn && mobileAddSignBtn.dataset.setup === 'true') {
@@ -1255,7 +1311,11 @@ async function saveDynamicSign(label, frames) {
         recordedAt: Date.now(),
         isTrained: false
     });
-    sessionHistory.push(1); // Dynamic is 1 sample per session
+    sessionHistory.push({
+        label: normalizedLabel,
+        count: 1,
+        type: 'dynamic'
+    });
     updateUIStats();
     
     // Auto-save ONLY if not in a mobile setup session
@@ -1309,6 +1369,7 @@ async function loadDataFromServer() {
         const loadedData = allData[currentLang] || [];
         const normalizedData = normalizeDatasetLabels(loadedData);
         collectedData = normalizedData.normalized;
+        sessionHistory = [];
 
         if (normalizedData.changed) {
             await saveToServer();
@@ -1334,7 +1395,11 @@ async function saveToServer() {
 
         if (deleteErr) throw deleteErr;
 
-        if (samples.length === 0) return;
+        if (samples.length === 0) {
+            sessionHistory = [];
+            updateMobileRevertState();
+            return;
+        }
 
         // Insert in batches of 500
         const BATCH = 500;
@@ -1357,6 +1422,9 @@ async function saveToServer() {
 
             if (insertErr) throw insertErr;
         }
+
+        sessionHistory = [];
+        updateMobileRevertState();
     } catch (err) {
         console.error('Failed to save training data to Supabase:', err);
     }
@@ -1385,6 +1453,8 @@ function renderDataList() {
     if (typeof mobileUploadBtn !== 'undefined' && mobileUploadBtn) {
         mobileUploadBtn.disabled = collectedData.length === 0;
     }
+
+    updateMobileRevertState();
 
     if (Object.keys(counts).length === 0) {
         dataList.innerHTML = `<div style="text-align: center; color: #484f58; margin-top: 50px;">No data collected.</div>`;
@@ -1417,6 +1487,7 @@ window.deleteLabel = async (label) => {
 
         // 2. Filter data and update local training set
         collectedData = collectedData.filter(d => d.label !== label);
+        sessionHistory = sessionHistory.filter(batch => normalizeLabel(batch?.label) !== normalizeLabel(label));
         
         const keys = STORAGE_KEYS[currentLang];
         localStorage.setItem(keys.data, JSON.stringify(collectedData));
@@ -1441,6 +1512,7 @@ clearAllBtn.addEventListener('click', async () => {
         });
 
         collectedData = [];
+        sessionHistory = [];
         renderDataList();
         showToast(`All ${currentLang} data cleared locally`, 'delete_forever');
     }

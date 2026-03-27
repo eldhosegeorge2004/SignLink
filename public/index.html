@@ -711,6 +711,11 @@
         let baseX = 0;
 
         const names = ['Video Call', 'Translation', 'AI Training'];
+        const modeToIndex = {
+            videocall: 0,
+            translation: 1,
+            training: 2
+        };
 
         function setGlow(x, y) {
             bgGlow.style.setProperty('--x', `${x}px`);
@@ -779,6 +784,12 @@
             if (event.key === 'ArrowLeft') go(index - 1);
             if (event.key === 'ArrowRight') go(index + 1);
         });
+
+        const params = new URLSearchParams(window.location.search);
+        const requestedMode = (params.get('mode') || '').toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(modeToIndex, requestedMode)) {
+            index = modeToIndex[requestedMode];
+        }
 
         setGlow(window.innerWidth * 0.5, window.innerHeight * 0.3);
         render(false);
