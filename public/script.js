@@ -85,6 +85,42 @@ function normalizeHandRequirementMap(map) {
     return { map: normalized, changed };
 }
 
+async function fetchCloudModel(type, lang) {
+    try {
+        const langLower = lang.toLowerCase();
+
+        const { data: labelsUrlData } = window.supabaseClient.storage
+            .from('models')
+            .getPublicUrl(`${langLower}/${type}/labels.json`);
+
+        const { data: modelUrlData } = window.supabaseClient.storage
+            .from('models')
+            .getPublicUrl(`${langLower}/${type}/model.json`);
+
+        const labelsRes = await fetch(labelsUrlData.publicUrl);
+        if (!labelsRes.ok) return null;
+        const labels = normalizeLabelList(await labelsRes.json()).labels;
+
+        const model = await tf.loadLayersModel(modelUrlData.publicUrl);
+
+        let handReqs = null;
+        if (type === 'dynamic') {
+            const { data: handReqsUrlData } = window.supabaseClient.storage
+                .from('models')
+                .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
+            const reqRes = await fetch(handReqsUrlData.publicUrl);
+            if (reqRes.ok) {
+                handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
+            }
+        }
+
+        return { model, labels, handReqs };
+    } catch (err) {
+        console.warn(`Cloud model fetch failed for ${type}:`, err);
+        return null;
+    }
+}
+
 async function updateModeVariables() {
     if (currentMode === 'ISL') {
         dbCollection = 'gestures';
@@ -1825,14 +1861,15 @@ async function loadModelsAndLabels() {
 
     // load server model for selected language
     const serverModelPath = currentMode === 'ASL' ? 'model/asl/model.json' : 'model/model.json';
+    const serverLabelsPath = currentMode === 'ASL' ? 'model/asl/labels.json' : 'labels.json';
     try {
-        const response = await fetch('labels.json');
+        const response = await fetch(serverLabelsPath);
         if (response.ok) {
             serverLabels = normalizeLabelList(await response.json()).labels;
             serverModel = await tf.loadLayersModel(serverModelPath);
             console.log(`Server model loaded (${serverLabels.length} labels)`);
         } else {
-            console.warn('labels.json not found for server model.');
+            console.warn(`${serverLabelsPath} not found for server model.`);
         }
     } catch (e) {
         console.warn('Server model load failed:', e);
@@ -1841,7 +1878,14 @@ async function loadModelsAndLabels() {
     // load local static model if available
     try {
         const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
-        if (localLabelData) {
+        if (!localLabelData) {
+            const cloudData = await fetchCloudModel('static', currentMode);
+            if (cloudData) {
+                uniqueLabels = cloudData.labels;
+                model = cloudData.model;
+                console.log(`Cloud static model loaded (${uniqueLabels.length} labels)`);
+            }
+        } else {
             const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
             uniqueLabels = normalizedLocalLabels.labels;
             if (normalizedLocalLabels.changed) {
@@ -1851,8 +1895,15 @@ async function loadModelsAndLabels() {
                 model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
                 console.log(`Local static model loaded (${uniqueLabels.length} labels)`);
             } catch (e) {
-                console.warn('Local static model weights not found in localStorage.');
-                model = null;
+                console.warn('Local static model weights not found in localStorage. Checking cloud...');
+                const cloudData = await fetchCloudModel('static', currentMode);
+                if (cloudData) {
+                    uniqueLabels = cloudData.labels;
+                    model = cloudData.model;
+                    console.log(`Cloud static model loaded (${uniqueLabels.length} labels)`);
+                } else {
+                    model = null;
+                }
             }
         }
     } catch (e) {
@@ -1862,7 +1913,15 @@ async function loadModelsAndLabels() {
     // load local dynamic model if available
     try {
         const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
-        if (dynamicLabelData) {
+        if (!dynamicLabelData) {
+            const cloudData = await fetchCloudModel('dynamic', currentMode);
+            if (cloudData) {
+                uniqueLabelsDynamic = cloudData.labels;
+                modelDynamic = cloudData.model;
+                dynamicLabelHandRequirements = cloudData.handReqs || {};
+                console.log(`Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
+            }
+        } else {
             const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
             uniqueLabelsDynamic = normalizedDynamicLabels.labels;
             if (normalizedDynamicLabels.changed) {
@@ -1878,8 +1937,16 @@ async function loadModelsAndLabels() {
                 modelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
                 console.log(`Local dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
             } catch (e) {
-                console.warn('Local dynamic model weights not found in localStorage.');
-                modelDynamic = null;
+                console.warn('Local dynamic model weights not found in localStorage. Checking cloud...');
+                const cloudData = await fetchCloudModel('dynamic', currentMode);
+                if (cloudData) {
+                    uniqueLabelsDynamic = cloudData.labels;
+                    modelDynamic = cloudData.model;
+                    dynamicLabelHandRequirements = cloudData.handReqs || {};
+                    console.log(`Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
+                } else {
+                    modelDynamic = null;
+                }
             }
         }
     } catch (e) {

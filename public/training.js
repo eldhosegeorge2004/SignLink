@@ -10,6 +10,7 @@ const statusMsg = document.getElementById('statusMsg');
 const dataList = document.getElementById('dataList');
 const totalSamplesBadge = document.getElementById('totalSamples');
 const recIndicator = document.getElementById('recIndicator');
+const saveBtn = document.getElementById('saveBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const dataPanel = document.querySelector('.data-panel');
 const openDataPanelBtn = document.getElementById('openDataPanelBtn');
@@ -153,6 +154,144 @@ function normalizeHandRequirementMap(map) {
     });
 
     return { normalized, changed };
+}
+
+function getSignCardStorageKey(lang, label) {
+    return `sign_card_${lang}_${normalizeLabel(label)}`;
+}
+
+function getSignCardStoragePrefix(lang) {
+    return `sign_card_${lang}_`;
+}
+
+function getStoredSignCardKeys(lang) {
+    const prefix = getSignCardStoragePrefix(lang);
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(prefix)) {
+            keys.push(key);
+        }
+    }
+    return keys;
+}
+
+function persistCurrentTrainingDataLocally(lang = currentLang) {
+    const keys = STORAGE_KEYS[lang];
+    if (!keys) return;
+
+    if (collectedData.length === 0) {
+        localStorage.removeItem(keys.data);
+        return;
+    }
+
+    localStorage.setItem(keys.data, JSON.stringify(collectedData));
+}
+
+function clearLocalDraftDataForLanguage(lang = currentLang) {
+    const keys = STORAGE_KEYS[lang];
+    if (keys) {
+        localStorage.removeItem(keys.data);
+    }
+
+    const signCardKeys = getStoredSignCardKeys(lang);
+    signCardKeys.forEach((key) => localStorage.removeItem(key));
+}
+
+async function deleteSignCardsFromCloud(labels = [], lang = currentLang) {
+    const normalizedLabels = (labels || []).map((label) => normalizeLabel(label)).filter(Boolean);
+    const langLower = lang.toLowerCase();
+
+    try {
+        let query = window.supabaseClient
+            .from('sign_cards')
+            .select('label, extension')
+            .eq('lang', langLower);
+
+        if (normalizedLabels.length > 0) {
+            query = query.in('label', normalizedLabels);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const rows = data || [];
+        if (rows.length > 0) {
+            const paths = rows.map((row) => `${langLower}/${row.label}.${row.extension}`).filter(Boolean);
+            if (paths.length > 0) {
+                const { error: removeErr } = await window.supabaseClient.storage
+                    .from('sign-cards')
+                    .remove(paths);
+                if (removeErr) {
+                    console.warn('Failed to remove one or more sign card files from storage:', removeErr);
+                }
+            }
+        }
+
+        let deleteQuery = window.supabaseClient
+            .from('sign_cards')
+            .delete()
+            .eq('lang', langLower);
+
+        if (normalizedLabels.length > 0) {
+            deleteQuery = deleteQuery.in('label', normalizedLabels);
+        }
+
+        const { error: deleteErr } = await deleteQuery;
+        if (deleteErr) throw deleteErr;
+    } catch (err) {
+        console.warn('Failed to delete sign cards from cloud:', err);
+    }
+}
+
+async function uploadSignCardRecord(label, cardRecord, lang = currentLang) {
+    if (!cardRecord?.imageBase64 || !cardRecord?.extension) return;
+
+    const normalizedLabel = normalizeLabel(label);
+    if (!normalizedLabel) return;
+
+    const base64Response = await fetch(cardRecord.imageBase64);
+    const blob = await base64Response.blob();
+    const langLower = lang.toLowerCase();
+    const filePath = `${langLower}/${normalizedLabel}.${cardRecord.extension}`;
+
+    const { error: uploadErr } = await window.supabaseClient.storage
+        .from('sign-cards')
+        .upload(filePath, blob, { contentType: blob.type, upsert: true });
+    if (uploadErr) throw uploadErr;
+
+    const { data: urlData } = window.supabaseClient.storage
+        .from('sign-cards')
+        .getPublicUrl(filePath);
+
+    const { error: upsertErr } = await window.supabaseClient
+        .from('sign_cards')
+        .upsert({
+            lang: langLower,
+            label: normalizedLabel,
+            url: urlData.publicUrl,
+            extension: cardRecord.extension,
+            updated_at: new Date().toISOString()
+        }, { onConflict: 'lang,label' });
+    if (upsertErr) throw upsertErr;
+}
+
+async function uploadAllPendingSignCards(lang = currentLang) {
+    const signCardKeys = getStoredSignCardKeys(lang);
+    for (const key of signCardKeys) {
+        const label = key.slice(getSignCardStoragePrefix(lang).length);
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const cardRecord = JSON.parse(raw);
+        await uploadSignCardRecord(label, cardRecord, lang);
+    }
+
+    if (pendingSignCard && normalizeLabel(labelInput.value)) {
+        await uploadSignCardRecord(labelInput.value, {
+            imageBase64: pendingSignCard.base64Data,
+            extension: pendingSignCard.extension
+        }, lang);
+    }
 }
 
 function getUntrainedSampleCount() {
@@ -464,15 +603,14 @@ function setupMobileSignSetup() {
 
     function saveToLocalStorage() {
         try {
-            const keys = STORAGE_KEYS[currentLang];
             const label = labelInput.value.trim();
             
             // Save training data
-            localStorage.setItem(keys.data, JSON.stringify(collectedData));
+            persistCurrentTrainingDataLocally(currentLang);
             
             // Save sign card if pending
             if (pendingSignCard) {
-                const cardKey = `sign_card_${currentLang}_${label}`;
+                const cardKey = getSignCardStorageKey(currentLang, label);
                 localStorage.setItem(cardKey, JSON.stringify({
                     imageBase64: pendingSignCard.base64Data,
                     extension: pendingSignCard.extension
@@ -590,6 +728,11 @@ function setupMobileSignSetup() {
                 // 4. CLOUD MODEL BACKUP
                 updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
                 await uploadTrainedModelsToCloud();
+
+                clearLocalDraftDataForLanguage(currentLang);
+                pendingSignCard = null;
+                signCardInput.value = '';
+                await loadDataFromServer();
 
                 hideProcessingModal();
                 showToast('✅ On-device training & cloud sync complete!', 'auto_awesome');
@@ -807,6 +950,7 @@ function revertLatestBatch() {
     collectedData.splice(-count, count);
     sessionHistory.splice(index, 1);
     lastRecordedBatchCount = 0;
+    persistCurrentTrainingDataLocally(currentLang);
 
     const labelSummary = count === 1 ? '1 sample' : `${count} samples`;
     showToast(`Reverted ${labelSummary} from "${normalizedLabel}"`, 'undo');
@@ -1003,7 +1147,7 @@ async function checkForSavedModels() {
         if (staticLabels) modelInfo += "Static ✋ ";
         if (dynamicLabels) modelInfo += "Dynamic 🔄";
         statusMsg.innerText = `✅ ${modelInfo}. You can use these in Live Translation!`;
-        saveBtn.disabled = true; // Models already saved
+        if (saveBtn) saveBtn.disabled = true;
         if (cloudSyncBtn) {
             cloudSyncBtn.disabled = false;
             cloudSyncBtn.title = "Upload these models to Supabase Cloud";
@@ -1095,7 +1239,7 @@ langSelect.addEventListener('change', async (e) => {
     currentLang = e.target.value;
     model = null; // Reset model context
     collectedData = []; // Clear current view
-    saveBtn.disabled = false; // Re-enable to allow checking for saved models
+    if (saveBtn) saveBtn.disabled = false;
     statusMsg.innerText = `Switched to ${currentLang}`;
     await loadDataFromServer();
     checkForSavedModels(); // Check if models exist for this language
@@ -1427,6 +1571,7 @@ async function saveToServer() {
         updateMobileRevertState();
     } catch (err) {
         console.error('Failed to save training data to Supabase:', err);
+        throw err;
     }
 }
 
@@ -1481,40 +1626,48 @@ function renderDataList() {
 window.deleteLabel = async (label) => {
     const confirmed = await showCustomConfirm(`Delete all samples for "${label}"?`);
     if (confirmed) {
+        const normalizedLabel = normalizeLabel(label);
+
         // 1. Delete sign card from local storage
-        const cardKey = `sign_card_${currentLang}_${label}`;
-        localStorage.removeItem(cardKey);
+        localStorage.removeItem(getSignCardStorageKey(currentLang, normalizedLabel));
 
         // 2. Filter data and update local training set
-        collectedData = collectedData.filter(d => d.label !== label);
-        sessionHistory = sessionHistory.filter(batch => normalizeLabel(batch?.label) !== normalizeLabel(label));
-        
-        const keys = STORAGE_KEYS[currentLang];
-        localStorage.setItem(keys.data, JSON.stringify(collectedData));
-        
-        renderDataList();
-        showToast(`Deleted "${label}" from local storage`, 'delete');
+        collectedData = collectedData.filter(d => normalizeLabel(d.label) !== normalizedLabel);
+        sessionHistory = sessionHistory.filter(batch => normalizeLabel(batch?.label) !== normalizedLabel);
+        persistCurrentTrainingDataLocally(currentLang);
+
+        try {
+            await saveToServer();
+            await deleteSignCardsFromCloud([normalizedLabel], currentLang);
+            renderDataList();
+            showToast(`Deleted "${normalizedLabel}" from local and cloud storage`, 'delete');
+        } catch (err) {
+            renderDataList();
+            showToast(`Deleted "${normalizedLabel}" locally, but cloud sync failed`, 'warning');
+        }
     }
 };
 
 clearAllBtn.addEventListener('click', async () => {
     const confirmed = await showCustomConfirm("Delete ALL collected data locally? This cannot be undone.");
     if (confirmed) {
-        const keys = STORAGE_KEYS[currentLang];
-        
-        // 1. Clear training data from localStorage
-        localStorage.removeItem(keys.data);
-        
-        // 2. Clear known sign cards (Best effort based on current list)
         const currentLabels = [...new Set(collectedData.map(d => d.label))];
-        currentLabels.forEach(label => {
-            localStorage.removeItem(`sign_card_${currentLang}_${label}`);
-        });
 
+        // 1. Clear training data from localStorage
+        clearLocalDraftDataForLanguage(currentLang);
+        
         collectedData = [];
         sessionHistory = [];
-        renderDataList();
-        showToast(`All ${currentLang} data cleared locally`, 'delete_forever');
+
+        try {
+            await saveToServer();
+            await deleteSignCardsFromCloud(currentLabels, currentLang);
+            renderDataList();
+            showToast(`All ${currentLang} data cleared locally and in Supabase`, 'delete_forever');
+        } catch (err) {
+            renderDataList();
+            showToast(`Cleared local ${currentLang} data, but cloud sync failed`, 'warning');
+        }
     }
 });
 
