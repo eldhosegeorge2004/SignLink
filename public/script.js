@@ -243,6 +243,20 @@ function disableSTTWithStatus(message) {
 
 // Helper to stop all camera/mic tracks
 function stopCamera() {
+    if (localCameraController) {
+        try {
+            localCameraController.stop();
+        } catch (e) {
+            console.warn('Unable to stop camera controller cleanly:', e);
+        }
+        localCameraController = null;
+    }
+
+    isCameraStarted = false;
+    isHandInferencePending = false;
+    lastHandInferenceAt = 0;
+    overlayHadRenderedContent = false;
+
     if (localStream) {
         localStream.getTracks().forEach(track => {
             track.stop();
@@ -252,6 +266,9 @@ function stopCamera() {
     }
     if (localVideo) localVideo.srcObject = null;
     if (remoteVideo) remoteVideo.srcObject = null;
+    if (localCanvas.width && localCanvas.height) {
+        ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
+    }
     console.log("Camera and tracks stopped.");
 }
 
@@ -510,10 +527,17 @@ let audioContext;
 let analyser;
 let micSource;
 let volumeInterval;
+let localCameraController = null;
+let isHandInferencePending = false;
+let lastHandInferenceAt = 0;
+let overlayHadRenderedContent = false;
+let lastPredictionText = null;
+const HAND_INFERENCE_INTERVAL_MS = 80;
 
 function setPredictionText(text) {
-    if (predictionDiv) {
+    if (predictionDiv && text !== lastPredictionText) {
         predictionDiv.innerText = text;
+        lastPredictionText = text;
     }
 }
 
@@ -1832,10 +1856,8 @@ hands.onResults(onResults);
 let isCollecting = false;
 // Initial Load
 if (modeSelect) modeSelect.value = currentMode;
-// updateModeVariables is async now, so wait for it and then load models
-updateModeVariables().then(() => {
-    loadModelsAndLabels();
-});
+// updateModeVariables already reloads models for the active mode.
+updateModeVariables();
 loadSavedLabels();
 // loadFromFirestore removed to prevent reference errors to deleted UI components
 
@@ -1985,17 +2007,15 @@ async function loadModelsAndLabels() {
     });
 }
 
-// initial load
-loadModelsAndLabels();
-
 // --- Camera & Hand Tracking ---
 let isCameraStarted = false;
 async function startCamera() {
-    if (isCameraStarted) return;
+    if (isCameraStarted && localStream) return;
     isCameraStarted = true;
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert("Browser API navigator.mediaDevices.getUserMedia not available. Please ensure you are using a modern browser and running on localhost or HTTPS.");
+        isCameraStarted = false;
         return;
     }
 
@@ -2070,24 +2090,31 @@ async function startCamera() {
         if (localContainer) localContainer.classList.add('video-muted');
         setPredictionText('Camera Off');
 
-        let frameCount = 0;
-        const camera = new Camera(localVideo, {
+        localCameraController = new Camera(localVideo, {
             onFrame: async () => {
-                if (isCamOn) {
-                    // CPU Optimization: Only run AI tracking every 3rd frame (roughly 10-15 FPS)
-                    // This keeps the video call smooth while still detecting signs effectively.
-                    frameCount++;
-                    if (frameCount % 3 === 0) {
-                        await hands.send({ image: localVideo });
-                    }
-                } else {
-                    console.debug('onFrame: camera disabled');
+                if (!isCamOn || !localVideo.videoWidth || !localVideo.videoHeight) {
+                    return;
+                }
+
+                const now = performance.now();
+                if (isHandInferencePending || (now - lastHandInferenceAt) < HAND_INFERENCE_INTERVAL_MS) {
+                    return;
+                }
+
+                isHandInferencePending = true;
+                lastHandInferenceAt = now;
+
+                try {
+                    await hands.send({ image: localVideo });
+                } finally {
+                    isHandInferencePending = false;
                 }
             },
         });
-        await camera.start();
+        await localCameraController.start();
         initAudioAnalysis(localStream);
     } catch (err) {
+        isCameraStarted = false;
         console.error("Camera error:", err);
         let msg = "Could not access camera/microphone.";
         if (err.name === 'NotAllowedError') {
@@ -2105,29 +2132,23 @@ async function startCamera() {
 
 function preprocessLandmarks(landmarks) {
     const wrist = landmarks[0];
+    const indexMCP = landmarks[5];
+    const distance = Math.hypot(
+        indexMCP.x - wrist.x,
+        indexMCP.y - wrist.y,
+        indexMCP.z - wrist.z
+    ) || 1e-6;
+    const normalized = new Array(landmarks.length * 3);
 
-    // 1. Translation Invariance: Shift all points relative to the wrist (0,0,0)
-    let shifted = landmarks.map(p => ({
-        x: p.x - wrist.x,
-        y: p.y - wrist.y,
-        z: p.z - wrist.z
-    }));
+    for (let index = 0; index < landmarks.length; index += 1) {
+        const point = landmarks[index];
+        const base = index * 3;
+        normalized[base] = (point.x - wrist.x) / distance;
+        normalized[base + 1] = (point.y - wrist.y) / distance;
+        normalized[base + 2] = (point.z - wrist.z) / distance;
+    }
 
-    // 2. Scale Invariance: Calculate "hand size" (distance from wrist to index finger MCP)
-    // Index MCP is landmark 5
-    const indexMCP = shifted[5];
-    const distance = Math.sqrt(
-        Math.pow(indexMCP.x, 2) +
-        Math.pow(indexMCP.y, 2) +
-        Math.pow(indexMCP.z, 2)
-    ) || 1e-6; // Avoid division by zero
-
-    // 3. Normalize all coordinates by this distance
-    return shifted.flatMap(p => [
-        p.x / distance,
-        p.y / distance,
-        p.z / distance
-    ]);
+    return normalized;
 }
 
 function getSmoothedPrediction(predLabel) {
@@ -2142,7 +2163,7 @@ function updateMotionState(currentFrame) {
     const now = Date.now();
 
     if (!previousMotionFrame) {
-        previousMotionFrame = [...currentFrame];
+        previousMotionFrame = currentFrame.slice();
         staticStillStartTime = now;
         return { isStillFrame: false, stillForMs: 0 };
     }
@@ -2161,7 +2182,7 @@ function updateMotionState(currentFrame) {
         staticStillStartTime = 0;
     }
 
-    previousMotionFrame = [...currentFrame];
+    previousMotionFrame = currentFrame.slice();
     const stillForMs = staticStillStartTime ? (now - staticStillStartTime) : 0;
     return { isStillFrame, stillForMs };
 }
@@ -2183,7 +2204,7 @@ function getFrameDifference(frameA, frameB) {
 
 function updateDisplayedPrediction(label, conf, isDynamic, currentFrame) {
     lastDisplayedPrediction = { label, conf, isDynamic };
-    lastDisplayedFrame = [...currentFrame];
+    lastDisplayedFrame = currentFrame.slice();
 }
 
 function shouldKeepLastPrediction(currentFrame) {
@@ -2193,18 +2214,20 @@ function shouldKeepLastPrediction(currentFrame) {
 }
 
 function onResults(results) {
-    console.debug('onResults invoked', {
-        hands: results.multiHandLandmarks ? results.multiHandLandmarks.length : 0
-    });
-    if (localCanvas.width !== localVideo.videoWidth || localCanvas.height !== localVideo.videoHeight) {
-        localCanvas.width = localVideo.videoWidth;
-        localCanvas.height = localVideo.videoHeight;
+    const handLandmarks = results.multiHandLandmarks || [];
+    const shouldDrawOverlay = isOverlayOn && handLandmarks.length > 0 && typeof drawConnectors !== 'undefined';
+    const shouldTouchCanvas = (shouldDrawOverlay || overlayHadRenderedContent) && localVideo.videoWidth && localVideo.videoHeight;
+
+    if (shouldTouchCanvas) {
+        if (localCanvas.width !== localVideo.videoWidth || localCanvas.height !== localVideo.videoHeight) {
+            localCanvas.width = localVideo.videoWidth;
+            localCanvas.height = localVideo.videoHeight;
+        }
+        ctx.save();
+        ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
     }
 
-    ctx.save();
-    ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
-
-    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    if (handLandmarks.length > 0) {
         // Hands detected - clear the timeout
         lastHandDetectedTime = Date.now();
         if (accumulatedWord.length > 0) {
@@ -2217,20 +2240,21 @@ function onResults(results) {
         }
 
         // ALWAYS use the first hand for prediction to avoid "Double Speak" from two hands
-        const landmarks = results.multiHandLandmarks[0];
+        const landmarks = handLandmarks[0];
 
         // Handle Hand Overlay Drawing
-        if (isOverlayOn && typeof drawConnectors !== 'undefined') {
-            for (const hand of results.multiHandLandmarks) {
+        if (shouldDrawOverlay) {
+            for (const hand of handLandmarks) {
                 drawConnectors(ctx, hand, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
                 drawLandmarks(ctx, hand, { color: '#FF0000', lineWidth: 2 });
             }
+            overlayHadRenderedContent = true;
         }
 
         // Preprocess for AI (Normalization is Scale/Translation invariant)
         const flatLandmarks = preprocessLandmarks(landmarks);
 
-        const detectedHandCount = Math.min(2, results.multiHandLandmarks.length);
+        const detectedHandCount = Math.min(2, handLandmarks.length);
 
         // Handle Collection or Prediction
         if (isCollecting) {
@@ -2260,14 +2284,17 @@ function onResults(results) {
         // Reset the last added letter so user can sign the same letter again if they lift their hand
         // e.g. "Apple" requires P -> lift -> P
         if (lastAddedLetter !== null) {
-            console.log("Hands removed, resetting lastAddedLetter");
             lastAddedLetter = null;
         }
         // also clear hold tracking
         heldLetter = null;
         holdStartTime = 0;
+        overlayHadRenderedContent = false;
     }
-    ctx.restore();
+
+    if (shouldTouchCanvas) {
+        ctx.restore();
+    }
 }
 
 function normalizeHandRequirement(rawValue) {
@@ -2416,6 +2443,24 @@ function shouldSkipStaticLabel(label) {
     return typeof label === 'string' && label.toLowerCase() === 'hello';
 }
 
+function getPredictionPeak(predictionTensor, labels) {
+    const values = predictionTensor.dataSync();
+    let maxIndex = 0;
+    let maxConfidence = values[0] ?? 0;
+
+    for (let index = 1; index < values.length; index += 1) {
+        if (values[index] > maxConfidence) {
+            maxConfidence = values[index];
+            maxIndex = index;
+        }
+    }
+
+    return {
+        conf: maxConfidence,
+        label: normalizeAlphabetLabel(labels[maxIndex])
+    };
+}
+
 function chooseBestCandidateWithLocalPriority(candidates) {
     const serverCandidates = candidates.filter(c => c.source === 'server');
     const localCandidates = candidates.filter(c => c.source === 'local' || c.source === 'dynamic');
@@ -2470,9 +2515,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
         // server predictions (ISL only, only when hand is still)
         if (staticAllowed && serverModel && serverLabels.length) {
             const pred = serverModel.predict(input);
-            const conf = pred.max().dataSync()[0];
-            const idx = pred.argMax(-1).dataSync()[0];
-            const label = normalizeAlphabetLabel(serverLabels[idx]);
+            const { conf, label } = getPredictionPeak(pred, serverLabels);
             if (!shouldSkipStaticLabel(label)) {
                 candidates.push({ label, conf, source: 'server' });
             }
@@ -2481,9 +2524,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
         // local static predictions (only when hand is still)
         if (staticAllowed && model && uniqueLabels.length) {
             const pred = model.predict(input);
-            const conf = pred.max().dataSync()[0];
-            const idx = pred.argMax(-1).dataSync()[0];
-            const label = normalizeAlphabetLabel(uniqueLabels[idx]);
+            const { conf, label } = getPredictionPeak(pred, uniqueLabels);
             if (!shouldSkipStaticLabel(label)) {
                 candidates.push({ label, conf, source: 'local' });
             }
@@ -2512,9 +2553,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
 
                 const tensorDynamic = tf.tensor3d([paddedFrames]);
                 const predDynamic = modelDynamic.predict(tensorDynamic);
-                const conf = predDynamic.max().dataSync()[0];
-                const idx = predDynamic.argMax(-1).dataSync()[0];
-                const predictedDynamicLabel = normalizeAlphabetLabel(uniqueLabelsDynamic[idx]);
+                const { conf, label: predictedDynamicLabel } = getPredictionPeak(predDynamic, uniqueLabelsDynamic);
 
                 // Boost confidence for dynamic signs to compete with static scores
                 const boostedConf = Math.min(conf * 1.2, 1.0);
