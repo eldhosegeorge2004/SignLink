@@ -231,7 +231,14 @@ function disableSTTWithStatus(message) {
     isRecognitionActive = false;
     updateSTTUI();
     document.body.classList.remove('stt-active');
-    if (message) updateStatus(message, 'error');
+    if (message) {
+        const statusEl = document.getElementById('status');
+        if (statusEl) {
+            statusEl.innerText = message;
+            statusEl.style.color = '#ef4444';
+        }
+        console.log(`[Status] ${message}`);
+    }
 }
 
 // Helper to stop all camera/mic tracks
