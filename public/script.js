@@ -224,6 +224,15 @@ let isCreatingMeeting = false;    // NEW: Track if user is the meeting creator
 let localName = "You";
 let remoteName = "Remote User";
 let activeCaptionPanelView = 'captions';
+let lastSTTStartAt = 0;
+
+function disableSTTWithStatus(message) {
+    isSTTOn = false;
+    isRecognitionActive = false;
+    updateSTTUI();
+    document.body.classList.remove('stt-active');
+    if (message) updateStatus(message, 'error');
+}
 
 // Helper to stop all camera/mic tracks
 function stopCamera() {
@@ -589,6 +598,7 @@ function initSTT() {
 
     recognition.onstart = () => {
         isRecognitionActive = true;
+        lastSTTStartAt = Date.now();
         console.log("STT: Recognition started.");
     };
 
@@ -617,27 +627,16 @@ function initSTT() {
             }
 
             const capitalized = finalTranscript.trim();
-            
-            // --- STT Speaker Attribution ---
-            // If the remote participant has been loud in the last 1.5 seconds, 
-            // the local STT microphone likely picked up their acoustic echo.
-            let speakerName = localName;
-            let isRemoteEcho = false;
-            
-            if (Date.now() - lastRemoteVolumeActiveTime < 1500) {
-                speakerName = remoteName;
-                isRemoteEcho = true;
-            }
 
-            // NEW: Always show the speech locally in the caption log and cards if STT is ON
-            // Use 'You' for own speech and speakerName (remoteName) for echo
-            const displayName = isRemoteEcho ? remoteName : "You";
-            appendCaptionLog(displayName, capitalized);
+            // Treat finalized local transcripts as the local speaker's speech unless
+            // they are an exact recent duplicate of the remote transcript above.
+            appendCaptionLog("You", capitalized);
             displayVCSignCards(capitalized);
             
-            // Send finalized text to remote peer ONLY if it's our own speech
-            // to avoid an infinite loop of echoing transcripts.
-            if (!isRemoteEcho && supabaseChannel) {
+            // Send finalized text to the remote peer. Exact remote duplicates were
+            // already filtered above, which avoids transcript echo loops without
+            // blocking legitimate speech when both participants enable STT.
+            if (supabaseChannel) {
                 supabaseChannel.send({
                     type: 'broadcast',
                     event: 'speech-message',
@@ -651,8 +650,17 @@ function initSTT() {
         console.error("STT Error:", event.error);
         if (event.error === 'not-allowed') {
             alert("Speech recognition permission denied.");
-            isSTTOn = false;
-            updateSTTUI();
+            disableSTTWithStatus("Speech-to-text permission denied.");
+        } else if (event.error === 'audio-capture') {
+            disableSTTWithStatus("Speech-to-text could not access the microphone in this tab.");
+        } else if (event.error === 'service-not-allowed') {
+            disableSTTWithStatus("Speech-to-text is not available in this browser tab.");
+        } else if (event.error === 'aborted') {
+            const startedRecently = lastSTTStartAt && (Date.now() - lastSTTStartAt < 5000);
+            const hiddenTab = document.hidden;
+            if (hiddenTab || startedRecently) {
+                disableSTTWithStatus("Speech-to-text stopped in this tab. For local testing, use two different browsers or two devices.");
+            }
         } else if (event.error === 'network') {
             console.warn("STT Network error. Will attempt restart.");
         }
