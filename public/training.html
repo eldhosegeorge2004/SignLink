@@ -654,6 +654,37 @@
                 filter: none;
             }
 
+            .mobile-session-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                min-width: 188px;
+                padding: 11px 18px;
+                border-radius: 999px;
+                border: 1px solid rgba(96, 165, 250, 0.28);
+                background: rgba(15, 23, 42, 0.92);
+                color: #dbeafe;
+                font-size: 0.95rem;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+                box-shadow: 0 14px 32px rgba(15, 23, 42, 0.24);
+                cursor: pointer;
+                transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
+            }
+
+            .mobile-session-btn:hover {
+                filter: brightness(1.04);
+                transform: translateY(-1px);
+            }
+
+            .mobile-session-btn:disabled {
+                cursor: not-allowed;
+                opacity: 0.6;
+                transform: none;
+                filter: none;
+            }
+
             .mobile-recording-counter {
                 min-width: 88px;
                 padding: 6px 12px;
@@ -1056,7 +1087,7 @@
         /* Toast Notifications */
         .toast-container {
             position: fixed;
-            bottom: 120px;
+            top: calc(18px + env(safe-area-inset-top));
             left: 50%;
             transform: translateX(-50%);
             z-index: 2000;
@@ -1084,7 +1115,7 @@
         }
 
         @keyframes toast-in {
-            from { transform: translateY(20px); opacity: 0; }
+            from { transform: translateY(-20px); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
         }
 
@@ -1256,6 +1287,10 @@
                         <span class="material-icons" style="font-size: 22px;">task_alt</span>
                         <span>Train &amp; Save</span>
                     </button>
+                    <button id="mobileSaveNextBtn" class="mobile-session-btn" type="button" disabled>
+                        <span class="material-icons" style="font-size: 20px;">playlist_add</span>
+                        <span>Save &amp; Next Sign</span>
+                    </button>
                     <div id="mobileRecordingCounter" class="mobile-recording-counter">0/100</div>
                     <div class="mobile-recording-buttons">
                         <div id="captureBtnPortal" class="capture-btn-portal"></div>
@@ -1295,8 +1330,13 @@
                     <span class="material-icons" style="font-size: 20px;">undo</span>
                     Revert Latest Change
                 </button>
+                <button id="trainCollectedDataBtn" class="secondary-btn" type="button" title="Train all collected data locally before uploading"
+                    style="width: 100%; justify-content: center; display: flex; align-items: center; gap: 8px;">
+                    <span class="material-icons" style="font-size: 20px;">model_training</span>
+                    Train Collected Data
+                </button>
                 <div style="display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
-                    <button id="mobileUploadBtn" class="primary-btn" type="button" title="Train locally and upload data to the cloud"
+                    <button id="mobileUploadBtn" class="primary-btn" type="button" title="Upload trained data, models, and sign cards to Supabase"
                         style="min-width: 0; flex: 1 1 220px; max-width: 320px; justify-content: center;">
                         <span class="material-icons" style="font-size: 20px;">cloud_upload</span>
                         Upload to Cloud

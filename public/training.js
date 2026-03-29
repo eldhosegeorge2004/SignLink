@@ -33,10 +33,12 @@ const mobileAddButtonWrap = document.getElementById('mobileAddButtonWrap');
 const mobileAddSignBtn = document.getElementById('mobileAddSignBtn');
 const mobileRecordingActions = document.getElementById('mobileRecordingActions');
 const mobileTrainSaveBtn = document.getElementById('mobileTrainSaveBtn');
+const mobileSaveNextBtn = document.getElementById('mobileSaveNextBtn');
 const mobileRecordingCounter = document.getElementById('mobileRecordingCounter');
 const mobileBackBtn = document.getElementById('mobileBackBtn');
 const mobileClearSignBtn = document.getElementById('mobileClearSignBtn');
 const mobileUploadBtn = document.getElementById('mobileUploadBtn');
+const trainCollectedDataBtn = document.getElementById('trainCollectedDataBtn');
 const revertLatestBtn = document.getElementById('revertLatestBtn');
 const cloudSyncBtn = document.getElementById('cloudSyncBtn');
 const mobileRevertBtn = document.getElementById('mobileRevertBtn');
@@ -298,6 +300,14 @@ function getUntrainedSampleCount() {
     return collectedData.filter(sample => sample.isTrained === false).length;
 }
 
+function hasCollectedData() {
+    return collectedData.length > 0;
+}
+
+function hasAllDataTrained() {
+    return hasCollectedData() && getUntrainedSampleCount() === 0;
+}
+
 // Storage Keys
 const STORAGE_KEYS = {
     'ISL': { model: 'my-isl-model', labels: 'isl_labels', data: 'isl_data' },
@@ -468,6 +478,27 @@ function setupMobileSignSetup() {
 
     let currentStep = 1;
 
+    const syncSetupSelections = () => {
+        langOptions.forEach((option) => {
+            const isActive = option.dataset.value === currentLang;
+            option.classList.toggle('active', isActive);
+            option.style.borderColor = isActive ? '#58a6ff' : '#30363d';
+        });
+
+        modeOptions.forEach((option) => {
+            const isActive = option.dataset.value === recordingMode;
+            option.classList.toggle('active', isActive);
+            option.style.borderColor = isActive ? '#58a6ff' : '#30363d';
+        });
+
+        const desc = document.getElementById('modalModeDesc');
+        if (desc) {
+            desc.textContent = recordingMode === 'static'
+                ? 'Static: Single pose signs (A, B, etc.)'
+                : 'Dynamic: Movement signs (Thank You, etc.)';
+        }
+    };
+
     const updateModalSteps = () => {
         modalSteps.forEach(step => {
             step.classList.remove('active');
@@ -477,12 +508,69 @@ function setupMobileSignSetup() {
         });
     };
 
-    mobileAddSignBtn.addEventListener('click', () => {
-        if (mobileAddSignBtn.dataset.setup === 'true') return; // Don't open modal if we are in "Finish" mode
-        currentStep = 1;
+    const openSetupModal = (step = 1) => {
+        currentStep = step;
+        syncSetupSelections();
         updateModalSteps();
         signSetupModal.classList.add('active');
         if (drawerBackdrop) drawerBackdrop.classList.add('active');
+    };
+
+    const closeSetupModal = () => {
+        signSetupModal.classList.remove('active');
+        if (drawerBackdrop) drawerBackdrop.classList.remove('active');
+    };
+
+    const saveCurrentSetupToLocalStorage = () => {
+        const label = normalizeLabel(labelInput.value);
+        if (!label) {
+            throw new Error('Sign name is missing.');
+        }
+
+        if (getCurrentSetupSampleCount() === 0) {
+            throw new Error('Record at least one sample before saving this sign.');
+        }
+
+        labelInput.value = label;
+
+        persistCurrentTrainingDataLocally(currentLang);
+
+        if (pendingSignCard) {
+            const cardKey = getSignCardStorageKey(currentLang, label);
+            localStorage.setItem(cardKey, JSON.stringify({
+                imageBase64: pendingSignCard.base64Data,
+                extension: pendingSignCard.extension
+            }));
+        }
+
+        sessionHistory = [];
+        updateMobileRevertState();
+    };
+
+    const finishCurrentSetup = ({ openNext = false } = {}) => {
+        const label = normalizeLabel(labelInput.value);
+        saveCurrentSetupToLocalStorage();
+
+        const message = openNext
+            ? `Saved "${label}". Add the next sign, then train the collected data before uploading.`
+            : `Saved "${label}" locally!`;
+
+        showToast(message, openNext ? 'playlist_add_check' : 'storage');
+        resetMobileSignSetup(false);
+        renderDataList();
+
+        if (openNext) {
+            modalLabelInput.value = '';
+            const modalStatus = document.getElementById('modalSignCardStatus');
+            if (modalStatus) modalStatus.textContent = '';
+            openSetupModal(3);
+            modalLabelInput.focus();
+        }
+    };
+
+    mobileAddSignBtn.addEventListener('click', () => {
+        if (mobileAddSignBtn.dataset.setup === 'true') return; // Don't open modal if we are in "Finish" mode
+        openSetupModal(1);
     });
 
     nextStepBtns.forEach(btn => {
@@ -506,8 +594,7 @@ function setupMobileSignSetup() {
     // Cancel Setup
     document.querySelectorAll('.cancel-setup').forEach(btn => {
         btn.addEventListener('click', () => {
-            signSetupModal.classList.remove('active');
-            if (drawerBackdrop) drawerBackdrop.classList.remove('active');
+            closeSetupModal();
             // Don't reset everything, just close the modal. 
             // The main bar still says "Add New Sign"
         });
@@ -569,8 +656,7 @@ function setupMobileSignSetup() {
             updateMobileStatusTags();
 
             // 2. Close Modal
-            signSetupModal.classList.remove('active');
-            if (drawerBackdrop) drawerBackdrop.classList.remove('active');
+            closeSetupModal();
 
             // 3. Transitions
             mobileAddSignBtn.dataset.setup = 'true';
@@ -582,47 +668,28 @@ function setupMobileSignSetup() {
     mobileAddSignBtn.addEventListener('click', async () => {
         if (mobileAddSignBtn.dataset.setup !== 'true') return;
 
-        const label = labelInput.value.trim();
         mobileAddSignBtn.disabled = true;
         mobileAddSignBtn.innerHTML = '<span class="material-icons" style="font-size: 28px;">save</span>';
 
         try {
-            // 1. Save to Local Storage instead of server
-            saveToLocalStorage();
-            
-            showToast(`✅ Sign "${label}" saved locally!`, 'storage');
-            resetMobileSignSetup(false); // DO NOT discard data on finish
-            renderDataList();
+            finishCurrentSetup();
         } catch (err) {
             console.error('Local save error:', err);
-            showCustomAlert('Failed to save to local storage. Storage might be full.');
+            showCustomAlert(err.message || 'Failed to save to local storage. Storage might be full.');
             mobileAddSignBtn.disabled = false;
             mobileAddSignBtn.innerHTML = '<span class="material-icons" style="font-size: 28px;">check_circle</span>';
         }
     });
 
-    function saveToLocalStorage() {
-        try {
-            const label = labelInput.value.trim();
-            
-            // Save training data
-            persistCurrentTrainingDataLocally(currentLang);
-            
-            // Save sign card if pending
-            if (pendingSignCard) {
-                const cardKey = getSignCardStorageKey(currentLang, label);
-                localStorage.setItem(cardKey, JSON.stringify({
-                    imageBase64: pendingSignCard.base64Data,
-                    extension: pendingSignCard.extension
-                }));
+    if (mobileSaveNextBtn) {
+        mobileSaveNextBtn.addEventListener('click', () => {
+            try {
+                finishCurrentSetup({ openNext: true });
+            } catch (err) {
+                console.error('Save and continue error:', err);
+                showCustomAlert(err.message || 'Failed to save this sign.');
             }
-            sessionHistory = [];
-            updateMobileRevertState();
-            console.log(`Data for ${label} saved to localStorage.`);
-        } catch (err) {
-            console.error('Error in saveToLocalStorage:', err);
-            throw err;
-        }
+        });
     }
 
     // Clear Sign Button (X)
@@ -698,44 +765,37 @@ function setupMobileSignSetup() {
     // Connect Mobile Action Buttons
     if (mobileUploadBtn) {
         mobileUploadBtn.addEventListener('click', async () => {
-            if (collectedData.length === 0) {
+            if (!hasCollectedData()) {
                 showToast("No data to upload!", "warning");
+                return;
+            }
+
+            if (!hasAllDataTrained()) {
+                showToast("Train all collected data before uploading.", "warning");
                 return;
             }
 
             mobileUploadBtn.disabled = true;
             
             try {
-                // 1. DATA PREP & LOCAL TRAINING (ON DEVICE)
-                showProcessingModal("Training Locally...", "Your device is learning the signs from your recordings. Please keep the app open.");
-                
-                const trainingResult = await runInternalTraining();
+                showProcessingModal("Preparing Upload...", "Checking for trained local models to sync to Supabase.");
 
-                updateProcessingModal("Saving On Device...", "Saving the trained model on this device for Live Translation.");
-                const savedAnyModel = await saveTrainedModelsToLocalStorage();
-                if (!savedAnyModel) {
-                    throw new Error("Training finished, but no model was available to save.");
+                await ensureTrainingModelsLoaded();
+                if (!model?.static && !model?.dynamic) {
+                    throw new Error("Train locally first, then upload the trained data to Supabase.");
                 }
                 
-                // 2. IMAGE SYNC
                 updateProcessingModal("Uploading Details...", "Uploading sign cards and reference images...");
                 await uploadAllPendingSignCards();
 
-                // 3. LANDMARK SYNC
                 updateProcessingModal("Syncing Data...", "Saving hand landmarks to the cloud database...");
                 await saveToServer();
                 
-                // 4. CLOUD MODEL BACKUP
                 updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
                 await uploadTrainedModelsToCloud();
 
-                clearLocalDraftDataForLanguage(currentLang);
-                pendingSignCard = null;
-                signCardInput.value = '';
-                await loadDataFromServer();
-
                 hideProcessingModal();
-                showToast('✅ On-device training & cloud sync complete!', 'auto_awesome');
+                showToast('Uploaded trained data to Supabase.', 'cloud_done');
                 
             } catch (err) {
                 console.error('Mobile process failed:', err);
@@ -743,6 +803,50 @@ function setupMobileSignSetup() {
                 showCustomAlert(`Encountered an issue: ${err.message || 'Check connection'}`);
             } finally {
                 mobileUploadBtn.disabled = false;
+            }
+        });
+    }
+
+    if (trainCollectedDataBtn) {
+        trainCollectedDataBtn.addEventListener('click', async () => {
+            if (!hasCollectedData()) {
+                showToast("No collected data to train.", "warning");
+                return;
+            }
+
+            if (hasAllDataTrained()) {
+                showToast("All collected data is already trained.", "task_alt");
+                return;
+            }
+
+            trainCollectedDataBtn.disabled = true;
+
+            try {
+                showProcessingModal("Training Collected Data...", "Creating your local model for Live Translation and Video Call.");
+                const trainingResult = await runInternalTraining();
+
+                updateProcessingModal("Saving Model...", "Saving the trained model on this device...");
+                const savedAnyModel = await saveTrainedModelsToLocalStorage();
+                if (!savedAnyModel) {
+                    throw new Error("No trained model was available to save.");
+                }
+
+                updateProcessingModal("Saving Samples...", "Syncing training metadata...");
+                await saveToServer();
+
+                hideProcessingModal();
+
+                const successMsg = trainingResult?.alreadyTrained
+                    ? "Collected data was already trained locally."
+                    : "Collected data trained and saved locally.";
+                showToast(successMsg, 'task_alt');
+            } catch (err) {
+                console.error('Collected data training failed:', err);
+                hideProcessingModal();
+                showCustomAlert(`Could not train the collected data: ${err.message || 'Unknown error'}`);
+            } finally {
+                setTrainCollectedDataButtonState();
+                setUploadButtonState();
             }
         });
     }
@@ -876,6 +980,7 @@ function resetMobileSignSetup(discard = false) {
 
     // Reset status
     updateMobileStatusTags();
+    updateMobileSessionActionState();
 
     if (discard) {
         // Discard any untrained samples recorded during this setup session
@@ -909,6 +1014,7 @@ function updateMobileStatusTags() {
         mobileModeDisplay.textContent = recordingMode === 'static' ? 'Static Mode' : 'Dynamic Mode';
     }
     updateMobileRevertState();
+    updateMobileSessionActionState();
 }
 
 function getLastRevertableBatch() {
@@ -993,6 +1099,16 @@ function updateMobileRecordingCounter(current = 0, total = MAX_STATIC_SAMPLES_PE
     mobileRecordingCounter.textContent = `${current}/${total}`;
 }
 
+function getCurrentSetupSampleCount() {
+    const currentLabel = normalizeLabel(labelInput.value);
+    if (!currentLabel) return 0;
+
+    return collectedData.filter((sample) => {
+        if (normalizeLabel(sample.label) !== currentLabel) return false;
+        return recordingMode === 'dynamic' ? isDynamicSample(sample) : isStaticSample(sample);
+    }).length;
+}
+
 function getCurrentLabelStaticSampleCount() {
     const currentLabel = normalizeLabel(labelInput.value);
     if (!currentLabel) return 0;
@@ -1005,6 +1121,36 @@ function setTrainSaveButtonBusy(isBusy) {
     mobileTrainSaveBtn.innerHTML = isBusy
         ? '<span class="material-icons" style="font-size: 22px;">sync</span><span>Training...</span>'
         : '<span class="material-icons" style="font-size: 22px;">task_alt</span><span>Train &amp; Save</span>';
+}
+
+function setTrainCollectedDataButtonState() {
+    if (!trainCollectedDataBtn) return;
+
+    const hasData = hasCollectedData();
+    const untrainedCount = getUntrainedSampleCount();
+    const allTrained = hasData && untrainedCount === 0;
+
+    trainCollectedDataBtn.disabled = !hasData || allTrained;
+    trainCollectedDataBtn.title = !hasData
+        ? 'Record some signs first'
+        : allTrained
+            ? 'All collected data is already trained'
+            : 'Train all collected data locally';
+    trainCollectedDataBtn.innerHTML = allTrained
+        ? '<span class="material-icons" style="font-size: 20px;">check_circle</span>All Data Trained'
+        : '<span class="material-icons" style="font-size: 20px;">model_training</span>Train Collected Data';
+}
+
+function setUploadButtonState() {
+    if (!mobileUploadBtn) return;
+
+    const canUpload = hasAllDataTrained();
+    mobileUploadBtn.disabled = !canUpload;
+    mobileUploadBtn.title = !hasCollectedData()
+        ? 'Record some signs first'
+        : canUpload
+            ? 'Upload trained data, models, and sign cards to Supabase'
+            : 'Train all collected data locally before uploading to Supabase';
 }
 
 function updateMobileTrainSaveVisibility() {
@@ -1033,6 +1179,19 @@ function updateMobileTrainSaveVisibility() {
             setTrainSaveButtonBusy(false);
         }
     }
+
+    setTrainCollectedDataButtonState();
+    setUploadButtonState();
+}
+
+function updateMobileSessionActionState() {
+    if (!mobileSaveNextBtn) return;
+
+    const shouldShow = isInSetupMode;
+    const sampleCount = getCurrentSetupSampleCount();
+
+    mobileSaveNextBtn.style.display = shouldShow ? 'inline-flex' : 'none';
+    mobileSaveNextBtn.disabled = !shouldShow || sampleCount === 0;
 }
 
 async function saveTrainedModelsToLocalStorage() {
@@ -1075,6 +1234,7 @@ function setMobileBottomBarMode(mode) {
     }
 
     updateMobileTrainSaveVisibility();
+    updateMobileSessionActionState();
 }
 
 
@@ -1579,6 +1739,9 @@ function updateUIStats() {
     totalSamplesBadge.innerText = collectedData.length;
     updateMobileRevertState();
     updateMobileTrainSaveVisibility();
+    updateMobileSessionActionState();
+    setTrainCollectedDataButtonState();
+    setUploadButtonState();
     // Throttle rendering the list if data is huge
     if (Math.random() > 0.9) renderDataList();
 }
@@ -1594,12 +1757,10 @@ function renderDataList() {
     // Always update total counts even if list is empty
     totalSamplesBadge.innerText = collectedData.length;
     
-    // Sync mobile upload button state (disabled if there is no data)
-    if (typeof mobileUploadBtn !== 'undefined' && mobileUploadBtn) {
-        mobileUploadBtn.disabled = collectedData.length === 0;
-    }
-
     updateMobileRevertState();
+    updateMobileSessionActionState();
+    setTrainCollectedDataButtonState();
+    setUploadButtonState();
 
     if (Object.keys(counts).length === 0) {
         dataList.innerHTML = `<div style="text-align: center; color: #484f58; margin-top: 50px;">No data collected.</div>`;
