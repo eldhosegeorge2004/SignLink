@@ -470,13 +470,6 @@
 
         <!-- Bottom Control Bar -->
         <div class="control-bar">
-            <div class="control-left" id="meetingCodeContainer">
-                <div class="meeting-code-bubble" id="copyCodeBtn" title="Click to copy code">
-                    <span id="meetingCodeDisplay">abc-def-ghi</span>
-                    <span class="material-icons small-icon">content_copy</span>
-                </div>
-            </div>
-
             <div class="control-center">
                 <button class="control-btn" id="micBtn" title="Turn off microphone">
                     <span class="material-icons">mic</span>
@@ -497,6 +490,30 @@
                 <button class="control-btn small-btn" id="chatToggleBtn" title="Chat">
                     <span class="material-icons">chat</span>
                 </button>
+
+                <div class="more-options">
+                    <button class="control-btn small-btn" id="moreOptionsBtn" type="button" title="More options" aria-haspopup="true" aria-expanded="false" aria-controls="moreOptionsMenu">
+                        <span class="material-icons">more_vert</span>
+                    </button>
+
+                    <div class="more-options-menu" id="moreOptionsMenu" hidden>
+                        <button class="more-option-item" id="speakerToggleBtn" type="button" aria-pressed="true">
+                            <span class="more-option-copy">
+                                <span class="more-option-label">Speaker sound</span>
+                                <span class="more-option-hint">Mute the other person's audio</span>
+                            </span>
+                            <span class="more-option-state">On</span>
+                        </button>
+
+                        <button class="more-option-item" id="skeletonToggleBtn" type="button" aria-pressed="true">
+                            <span class="more-option-copy">
+                                <span class="more-option-label">Hand skeleton</span>
+                                <span class="more-option-hint">Hide the hand guide overlay</span>
+                            </span>
+                            <span class="more-option-state">On</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 

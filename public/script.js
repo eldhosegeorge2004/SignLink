@@ -187,6 +187,10 @@ const sttToggleBtn = document.getElementById('sttToggleBtn');
 const captionLogList = document.getElementById('caption-log-list');
 const localVolumeMeter = document.getElementById('localVolume');
 const remoteVolumeMeter = document.getElementById('remoteVolume');
+const moreOptionsBtn = document.getElementById('moreOptionsBtn');
+const moreOptionsMenu = document.getElementById('moreOptionsMenu');
+const speakerToggleBtn = document.getElementById('speakerToggleBtn');
+const skeletonToggleBtn = document.getElementById('skeletonToggleBtn');
 
 // Panels & Controls
 const chatToggleBtn = document.getElementById('chatToggleBtn');
@@ -225,6 +229,59 @@ let localName = "You";
 let remoteName = "Remote User";
 let activeCaptionPanelView = 'captions';
 let lastSTTStartAt = 0;
+let isRemoteAudioEnabled = JSON.parse(localStorage.getItem('vc-remote-audio-enabled') ?? 'true');
+let isOverlayOn = JSON.parse(localStorage.getItem('vc-hand-overlay-enabled') ?? 'true');
+
+function applyRemoteAudioPreference() {
+    if (!remoteVideo) return;
+    remoteVideo.muted = !isRemoteAudioEnabled;
+    remoteVideo.volume = isRemoteAudioEnabled ? 1.0 : 0;
+}
+
+function updateOptionsMenuUI() {
+    if (speakerToggleBtn) {
+        speakerToggleBtn.classList.toggle('off', !isRemoteAudioEnabled);
+        speakerToggleBtn.setAttribute('aria-pressed', String(isRemoteAudioEnabled));
+        const state = speakerToggleBtn.querySelector('.more-option-state');
+        if (state) state.textContent = isRemoteAudioEnabled ? 'On' : 'Off';
+    }
+
+    if (skeletonToggleBtn) {
+        skeletonToggleBtn.classList.toggle('off', !isOverlayOn);
+        skeletonToggleBtn.setAttribute('aria-pressed', String(isOverlayOn));
+        const state = skeletonToggleBtn.querySelector('.more-option-state');
+        if (state) state.textContent = isOverlayOn ? 'On' : 'Off';
+    }
+
+    if (moreOptionsBtn && moreOptionsMenu) {
+        const isOpen = !moreOptionsMenu.hasAttribute('hidden');
+        moreOptionsBtn.setAttribute('aria-expanded', String(isOpen));
+    }
+}
+
+function closeMoreOptionsMenu() {
+    if (!moreOptionsMenu) return;
+    moreOptionsMenu.setAttribute('hidden', '');
+    updateOptionsMenuUI();
+}
+
+function toggleMoreOptionsMenu(forceOpen) {
+    if (!moreOptionsMenu) return;
+    const shouldOpen = typeof forceOpen === 'boolean'
+        ? forceOpen
+        : moreOptionsMenu.hasAttribute('hidden');
+
+    if (shouldOpen) {
+        moreOptionsMenu.removeAttribute('hidden');
+    } else {
+        moreOptionsMenu.setAttribute('hidden', '');
+    }
+
+    updateOptionsMenuUI();
+}
+
+applyRemoteAudioPreference();
+updateOptionsMenuUI();
 
 function disableSTTWithStatus(message) {
     isSTTOn = false;
@@ -549,6 +606,13 @@ document.addEventListener('click', () => {
         audioContext.resume().then(() => console.log("AudioContext manually resumed."));
     }
 }, { once: true });
+
+document.addEventListener('click', (event) => {
+    if (!moreOptionsMenu || !moreOptionsBtn) return;
+    if (moreOptionsMenu.hasAttribute('hidden')) return;
+    if (moreOptionsMenu.contains(event.target) || moreOptionsBtn.contains(event.target)) return;
+    closeMoreOptionsMenu();
+});
 
 // Supabase connection handled during join-room
 
@@ -1394,7 +1458,7 @@ joinBtn.addEventListener('click', async (e) => {
         joiningLoader.classList.add('active');
     }
 
-    meetingCodeDisplay.innerText = roomName;
+    if (meetingCodeDisplay) meetingCodeDisplay.innerText = roomName;
     if (mobileMeetingCodeDisplay) mobileMeetingCodeDisplay.innerText = roomName;
 
     // Capture Local Name
@@ -2842,8 +2906,7 @@ function createPeerConnection() {
         }
 
         // Ensure remote audio plays (browsers may block autoplay)
-        remoteVideo.muted = false;
-        remoteVideo.volume = 1.0;
+        applyRemoteAudioPreference();
         const playPromise = remoteVideo.play();
         if (playPromise !== undefined) {
             playPromise.catch(err => {
@@ -3037,6 +3100,7 @@ function closeAllPanels() {
     if (chatPanel) {
         chatPanel.classList.remove('open');
     }
+    closeMoreOptionsMenu();
 }
 
 // Toggle Chat Panel
@@ -3057,6 +3121,40 @@ if (chatToggleBtn) {
 }
 
 if (closeChatBtn) closeChatBtn.addEventListener('click', () => chatPanel.classList.remove('open'));
+
+if (moreOptionsBtn) {
+    moreOptionsBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleMoreOptionsMenu();
+    });
+}
+
+if (moreOptionsMenu) {
+    moreOptionsMenu.addEventListener('click', (event) => {
+        event.stopPropagation();
+    });
+}
+
+if (speakerToggleBtn) {
+    speakerToggleBtn.addEventListener('click', () => {
+        isRemoteAudioEnabled = !isRemoteAudioEnabled;
+        localStorage.setItem('vc-remote-audio-enabled', JSON.stringify(isRemoteAudioEnabled));
+        applyRemoteAudioPreference();
+        updateOptionsMenuUI();
+    });
+}
+
+if (skeletonToggleBtn) {
+    skeletonToggleBtn.addEventListener('click', () => {
+        isOverlayOn = !isOverlayOn;
+        localStorage.setItem('vc-hand-overlay-enabled', JSON.stringify(isOverlayOn));
+        if (!isOverlayOn && localCanvas.width && localCanvas.height) {
+            ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
+            overlayHadRenderedContent = false;
+        }
+        updateOptionsMenuUI();
+    });
+}
 
 // Chat Input Logic
 chatInput.addEventListener('input', (e) => {
@@ -3113,22 +3211,6 @@ function appendMessage(data, type) {
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight; // Auto scroll
 }
-
-// --- UI Toggles ---
-const overlayBtn = document.getElementById('overlayBtn');
-let isOverlayOn = true;
-
-// Overlay Toggle
-if (overlayBtn) {
-    overlayBtn.addEventListener('click', () => {
-        isOverlayOn = !isOverlayOn;
-        overlayBtn.innerHTML = `<span class="material-icons" style="color: ${isOverlayOn ? '#4db6ac' : '#8b949e'};">${isOverlayOn ? 'layers' : 'layers_clear'}</span>`;
-        overlayBtn.title = isOverlayOn ? "Hide Hand Overlay" : "Show Hand Overlay";
-    });
-}
-
-// Toggles are already wired up above to isOverlayOn variable
-
 
 // Training Toggle removed
 

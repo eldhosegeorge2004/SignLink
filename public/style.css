@@ -1084,8 +1084,92 @@ body.stt-active .caption-log-panel.visible {
     flex-wrap: nowrap;
 }
 
+.more-options {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.more-options-menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 12px);
+    width: min(280px, calc(100vw - 24px));
+    padding: 8px;
+    border-radius: 18px;
+    background: rgba(11, 15, 27, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(18px);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 1200;
+}
+
+.more-options-menu[hidden] {
+    display: none;
+}
+
+.more-option-item {
+    width: 100%;
+    border: 0;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-main);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.more-option-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
+}
+
+.more-option-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.more-option-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.more-option-hint {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.more-option-state {
+    min-width: 42px;
+    text-align: center;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(77, 182, 172, 0.18);
+    color: #8ef0e3;
+    font-size: 0.8rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.more-option-item.off .more-option-state {
+    background: rgba(239, 68, 68, 0.18);
+    color: #ff9b9b;
+}
+
 .control-center {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     display: flex;
     gap: clamp(10px, 3vw, 20px);
     justify-content: center;
@@ -1139,36 +1223,6 @@ body.stt-active .caption-log-panel.visible {
 
 .control-btn.small-btn:hover {
     background: rgba(255, 255, 255, 0.1);
-}
-
-#meetingCodeContainer {
-    z-index: 101;
-    display: flex;
-    align-items: center;
-}
-
-.meeting-code-bubble {
-    color: var(--text-muted);
-    font-weight: 500;
-    background: rgba(255, 255, 255, 0.05);
-    padding: clamp(6px, 1.2vw, 10px) clamp(10px, 2vw, 18px);
-    border-radius: 12px;
-    font-size: clamp(0.75rem, 1.5vw, 0.9rem);
-    cursor: pointer;
-    border: 1px solid var(--glass-border);
-    transition: all 0.2s;
-    font-family: var(--font-body);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    backdrop-filter: blur(10px);
-    white-space: nowrap;
-}
-
-.meeting-code-bubble:hover {
-    border-color: var(--primary-color);
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-main);
 }
 
 .small-icon {
@@ -1323,8 +1377,20 @@ body.stt-active .caption-log-panel.visible {
     border: 1px solid var(--glass-border);
 }
 
+.chat-intro {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
 .mobile-meeting-code {
-    display: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
 }
 
 .mobile-meeting-code-label {
@@ -1757,6 +1823,11 @@ body.stt-active .caption-log-panel.visible {
    MOBILE JOIN SCREEN — Native App Style
    ════════════════════════════════════════════ */
 @media (max-width: 600px) {
+    .more-options-menu {
+        right: -6px;
+        bottom: calc(100% + 10px);
+        width: min(260px, calc(100vw - 20px));
+    }
 
     /* Lock body to screen — no scroll on join screen */
     .main-stage.is-connected .local-view-container {
