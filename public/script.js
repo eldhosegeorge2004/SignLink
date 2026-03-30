@@ -233,6 +233,7 @@ let lastRemoteSpokenText = "";
 let speakTimeout = null;           // NEW: Track pending speech to avoid race conditions
 let iceCandidatesBuffer = []; // Buffer for ICE candidates
 let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actually running
+const nativeSpeechBridge = window.SignLinkCapacitorSpeech || null;
 let isCreatingMeeting = false;    // NEW: Track if user is the meeting creator
 let localName = "You";
 let remoteName = "Remote User";
@@ -688,11 +689,106 @@ updateClock();
 // --- Accessibility & Communication Boost Features ---
 
 // 1. Speech to Text (Bi-Directional)
-function initSTT() {
+async function initSTT() {
     if (!isSTTSupported) {
         console.warn("Speech Recognition not supported in this browser.");
         if (sttToggleBtn) sttToggleBtn.style.display = 'none';
-        return;
+        return null;
+    }
+
+    if (recognition) return recognition;
+
+    const handleFinalTranscript = (finalTranscript) => {
+        if (!finalTranscript) return;
+
+        const trimmed = finalTranscript.trim().toLowerCase();
+
+        // --- STT Echo Suppression Logic ---
+        // If the local STT picks up the other participant's voice from the speakers,
+        // the text will match what was just broadcast. We ignore recent duplicates.
+        if (trimmed === lastRemoteSpokenText.toLowerCase() && (Date.now() - lastRemoteSpokenTime < 3000)) {
+            console.log("[STT Diagnostic] Suppressing local transcript echo matching remote speech.");
+            return;
+        }
+
+        const capitalized = finalTranscript.trim();
+
+        appendCaptionLog("You", capitalized);
+        displayVCSignCards(capitalized);
+
+        if (supabaseChannel) {
+            supabaseChannel.send({
+                type: 'broadcast',
+                event: 'speech-message',
+                payload: { text: capitalized, name: localName }
+            });
+        }
+    };
+
+    const restartSTT = async () => {
+        if (!isSTTOn || !recognition) return;
+
+        console.log("STT: Attempting auto-restart...");
+        try {
+            await recognition.start();
+        } catch (e) {
+            console.error("STT Restart Error:", e);
+        }
+    };
+
+    if (nativeSpeechBridge && nativeSpeechBridge.isSupportedCandidate()) {
+        const nativeAvailable = await nativeSpeechBridge.isAvailable();
+        if (nativeAvailable) {
+            const session = await nativeSpeechBridge.createSession({
+                lang: 'en-US',
+                partialResults: true,
+                onStart: () => {
+                    isRecognitionActive = true;
+                    lastSTTStartAt = Date.now();
+                    console.log("STT: Recognition started.");
+                },
+                onFinal: (data) => {
+                    handleFinalTranscript(data && data.transcript);
+                },
+                onError: (data) => {
+                    const errorCode = data && data.error;
+                    console.error("STT Error:", errorCode || (data && data.message));
+
+                    if (errorCode === 'not-allowed') {
+                        alert("Speech recognition permission denied.");
+                        disableSTTWithStatus("Speech-to-text permission denied.");
+                    } else if (errorCode === 'audio-capture') {
+                        disableSTTWithStatus("Speech-to-text could not access the microphone on this device.");
+                    } else if (errorCode === 'service-not-allowed') {
+                        disableSTTWithStatus("Speech-to-text is not available on this device.");
+                    } else if (errorCode === 'aborted') {
+                        const startedRecently = lastSTTStartAt && (Date.now() - lastSTTStartAt < 5000);
+                        const hiddenTab = document.hidden;
+                        if (hiddenTab || startedRecently) {
+                            disableSTTWithStatus("Speech-to-text stopped in this tab. For local testing, use two different browsers or two devices.");
+                        }
+                    } else if (errorCode === 'network') {
+                        console.warn("STT Network error. Will attempt restart.");
+                    }
+                },
+                onEnd: () => {
+                    isRecognitionActive = false;
+                    console.log("STT: Recognition ended.");
+                    restartSTT();
+                }
+            });
+
+            recognition = {
+                async start() {
+                    return session.start({ lang: 'en-US', partialResults: true });
+                },
+                async stop() {
+                    return session.stop();
+                }
+            };
+
+            return recognition;
+        }
     }
 
     recognition = new SpeechRecognition();
@@ -707,47 +803,16 @@ function initSTT() {
     };
 
     recognition.onresult = (event) => {
-        let interimTranscript = '';
         let finalTranscript = '';
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             const t = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
                 finalTranscript += t;
-            } else {
-                interimTranscript += t;
             }
         }
 
-        if (finalTranscript) {
-            const trimmed = finalTranscript.trim().toLowerCase();
-            
-            // --- STT Echo Suppression Logic ---
-            // If the local STT picks up the other participant's voice from the speakers, 
-            // the text will match what was just broadcast. We ignore recent duplicates.
-            if (trimmed === lastRemoteSpokenText.toLowerCase() && (Date.now() - lastRemoteSpokenTime < 3000)) {
-                console.log("[STT Diagnostic] Suppressing local transcript echo matching remote speech.");
-                return;
-            }
-
-            const capitalized = finalTranscript.trim();
-
-            // Treat finalized local transcripts as the local speaker's speech unless
-            // they are an exact recent duplicate of the remote transcript above.
-            appendCaptionLog("You", capitalized);
-            displayVCSignCards(capitalized);
-            
-            // Send finalized text to the remote peer. Exact remote duplicates were
-            // already filtered above, which avoids transcript echo loops without
-            // blocking legitimate speech when both participants enable STT.
-            if (supabaseChannel) {
-                supabaseChannel.send({
-                    type: 'broadcast',
-                    event: 'speech-message',
-                    payload: { text: capitalized, name: localName }
-                });
-            }
-        }
+        handleFinalTranscript(finalTranscript);
     };
 
     recognition.onerror = (event) => {
@@ -773,21 +838,15 @@ function initSTT() {
     recognition.onend = () => {
         isRecognitionActive = false;
         console.log("STT: Recognition ended.");
-        // Auto-restart only if user still wants it on and it wasn't a hard error
-        if (isSTTOn) {
-            console.log("STT: Attempting auto-restart...");
-            try {
-                recognition.start();
-            } catch (e) {
-                console.error("STT Restart Error:", e);
-            }
-        }
+        restartSTT();
     };
+
+    return recognition;
 }
 
 // --- Speech Recognition Support Check ---
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const isSTTSupported = !!SpeechRecognition;
+let isSTTSupported = !!SpeechRecognition || Boolean(nativeSpeechBridge && nativeSpeechBridge.isSupportedCandidate());
 
 function updateSTTUI() {
     if (!sttToggleBtn) return;
@@ -833,10 +892,14 @@ function startSTTSession() {
     updateSTTUI();
     document.body.classList.add('stt-active');
 
-    if (!recognition) initSTT();
-    if (!isRecognitionActive) {
+    (async () => {
+        if (!recognition) {
+            await initSTT();
+        }
+        if (!recognition || isRecognitionActive) return;
+
         try {
-            recognition.start();
+            await recognition.start();
             hideVCSignCards();
         } catch (e) {
             console.error("Failed to start Recognition:", e);
@@ -844,14 +907,18 @@ function startSTTSession() {
             updateSTTUI();
             document.body.classList.remove('stt-active');
         }
-    }
+    })();
 }
 
 function stopSTTSession() {
     isSTTOn = false;
     updateSTTUI();
     document.body.classList.remove('stt-active');
-    if (recognition && isRecognitionActive) recognition.stop();
+    if (recognition && isRecognitionActive) {
+        Promise.resolve(recognition.stop()).catch((error) => {
+            console.error("Failed to stop Recognition:", error);
+        });
+    }
     hideVCSignCards();
 }
 

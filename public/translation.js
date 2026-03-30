@@ -23,6 +23,7 @@ let lastSpokenTime = 0;
 let localStream = null;
 let cameraLoopId = null;
 let recognition = null; // For Speech to Text
+const nativeSpeechBridge = window.SignLinkCapacitorSpeech || null;
 let isHandInferencePending = false;
 let lastHandInferenceAt = 0;
 let lastResultText = null;
@@ -1354,10 +1355,73 @@ setCaptionLogCollapsed(false);
 setSignCardsPanelCollapsed(false);
 
 // --- Speech Recognition Logic (Speech to Sign) ---
-function initSpeechRecognition() {
+async function initSpeechRecognition() {
+    if (recognition) return recognition;
+
+    const handleFinalTranscript = (text) => {
+        if (isSignMode) return;
+
+        const finalized = String(text || '').trim();
+        if (!finalized) return;
+
+        appendSpeechCaption(finalized);
+        displaySignCards(finalized);
+    };
+
+    const restartRecognition = async () => {
+        if (isSignMode || !recognition) return;
+
+        console.log("Restarting speech recognition...");
+        try {
+            await recognition.start();
+        } catch (e) {
+            console.error("Error restarting recognition:", e);
+            setTimeout(async () => {
+                if (isSignMode || !recognition) return;
+
+                try {
+                    await recognition.start();
+                } catch (retryError) {
+                    console.error("Error retrying recognition restart:", retryError);
+                }
+            }, 1000);
+        }
+    };
+
+    if (nativeSpeechBridge && nativeSpeechBridge.isSupportedCandidate()) {
+        const nativeAvailable = await nativeSpeechBridge.isAvailable();
+        if (nativeAvailable) {
+            const session = await nativeSpeechBridge.createSession({
+                lang: 'en-US',
+                partialResults: true,
+                onFinal: (data) => {
+                    handleFinalTranscript(data && data.transcript);
+                },
+                onError: (data) => {
+                    console.error("Speech recognition error:", data && (data.error || data.message));
+                },
+                onEnd: () => {
+                    console.log("Speech recognition ended.");
+                    restartRecognition();
+                }
+            });
+
+            recognition = {
+                async start() {
+                    return session.start({ lang: 'en-US', partialResults: true });
+                },
+                async stop() {
+                    return session.stop();
+                }
+            };
+
+            return recognition;
+        }
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        return;
+        return null;
     }
 
     recognition = new SpeechRecognition();
@@ -1367,27 +1431,16 @@ function initSpeechRecognition() {
 
     recognition.onresult = (event) => {
         let finalTranscript = '';
-        let interimTranscript = '';
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             const transcript = event.results[i][0].transcript;
 
             if (event.results[i].isFinal) {
                 finalTranscript += transcript + ' ';
-            } else {
-                interimTranscript += transcript;
             }
         }
 
-        if (isSignMode) {
-            return;
-        }
-
-        if (finalTranscript) {
-            const finalized = finalTranscript.trim();
-            appendSpeechCaption(finalized);
-            displaySignCards(finalized);
-        }
+        handleFinalTranscript(finalTranscript);
     };
 
     recognition.onerror = (event) => {
@@ -1396,20 +1449,10 @@ function initSpeechRecognition() {
 
     recognition.onend = () => {
         console.log("Speech recognition ended.");
-        // Auto-restart if we are still in voice mode
-        if (!isSignMode) {
-            console.log("Restarting speech recognition...");
-            try {
-                recognition.start();
-            } catch (e) {
-                console.error("Error restarting recognition:", e);
-                // If it fails immediately, try again after a short delay
-                setTimeout(() => {
-                    if (!isSignMode) recognition.start();
-                }, 1000);
-            }
-        }
+        restartRecognition();
     };
+
+    return recognition;
 }
 
 const translationImageExistsCache = new Map();
@@ -1797,7 +1840,7 @@ function bindSignVoiceToggle() {
     if (toggleBtn.dataset.bound === 'true') return;
     toggleBtn.dataset.bound = 'true';
 
-    toggleBtn.addEventListener('click', () => {
+    toggleBtn.addEventListener('click', async () => {
         isSignMode = !isSignMode;
         
         // Use body class for robust CSS-based UI toggling
@@ -1809,7 +1852,13 @@ function bindSignVoiceToggle() {
             toggleBtn.title = 'Switch to Voice Mode';
 
             if (isCamOn && !localStream) startCamera();
-            if (recognition) recognition.stop();
+            if (recognition) {
+                try {
+                    await recognition.stop();
+                } catch (error) {
+                    console.error("Error stopping recognition:", error);
+                }
+            }
         } else {
             // Switch to Voice Mode
             toggleBtn.innerHTML = '<span class="material-icons">mic</span>';
@@ -1818,11 +1867,14 @@ function bindSignVoiceToggle() {
             if (isCamOn && !localStream) startCamera();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-            if (!recognition) initSpeechRecognition();
-            setTimeout(() => {
+            if (!recognition) {
+                await initSpeechRecognition();
+            }
+
+            setTimeout(async () => {
                 if (recognition) {
                     try {
-                        recognition.start();
+                        await recognition.start();
                     } catch (e) {
                         console.error("Error starting recognition:", e);
                     }
