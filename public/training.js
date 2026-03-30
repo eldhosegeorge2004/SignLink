@@ -79,6 +79,7 @@ let collectedData = [];
 let currentLang = 'ISL';
 let model = null;
 let recordingMode = 'static'; // 'static' or 'dynamic'
+let hasRecordedSignInSession = false;
 const MAX_STATIC_SAMPLES_PER_SESSION = 100;
 let staticSessionSampleCount = 0;
 let isStaticPausedNoHands = false;
@@ -561,7 +562,7 @@ function setupMobileSignSetup() {
 
     mobileAddSignBtn.addEventListener('click', () => {
         if (mobileAddSignBtn.dataset.setup === 'true') return; // Don't open modal if we are in "Finish" mode
-        openSetupModal(1);
+        openSetupModal(hasRecordedSignInSession ? 3 : 1);
     });
 
     nextStepBtns.forEach(btn => {
@@ -1578,6 +1579,7 @@ function stopStaticCollection(reason = 'Recording stopped.') {
         // Just refresh the list and enable Finish button if we have ANY data now
         renderDataList();
         if (recordedCount > 0) {
+            hasRecordedSignInSession = true;
             sessionHistory.push({
                 label: labelInput.value,
                 count: recordedCount,
@@ -1622,6 +1624,7 @@ async function saveDynamicSign(label, frames) {
             resetMobileSignSetup();
         }
     } else {
+        hasRecordedSignInSession = true;
         renderDataList();
         if (mobileAddSignBtn && mobileAddSignBtn.dataset.setup === 'true') {
             mobileAddSignBtn.disabled = false;
