@@ -32,7 +32,7 @@
 
         html, body {
             width: 100%;
-            min-height: 100%;
+            height: 100%;
             overflow: hidden;
             background: var(--bg);
         }
@@ -49,7 +49,7 @@
 
         .screen {
             position: relative;
-            min-height: 100dvh;
+            height: 100dvh;
             padding: 18px 16px 22px;
             display: flex;
             flex-direction: column;
@@ -123,7 +123,8 @@
             align-items: center;
             justify-content: center;
             gap: 12px;
-            margin-bottom: clamp(16px, 3.8vh, 34px);
+            flex-shrink: 0;
+            margin-bottom: clamp(10px, 2.4vh, 26px);
             animation: revealUp 700ms var(--ease);
         }
 
@@ -135,7 +136,7 @@
 
         .brand strong {
             font-family: var(--font-heading);
-            font-size: clamp(2.35rem, 7vw, 3.5rem);
+            font-size: clamp(2rem, min(7vw, 5.8vh), 3.5rem);
             letter-spacing: -0.05em;
             line-height: 0.95;
             color: #ffffff;
@@ -143,7 +144,7 @@
         }
 
         .brand .app-logo {
-            height: clamp(2.3rem, 5.5vw, 3.2rem);
+            height: clamp(2rem, min(5.5vw, 4.8vh), 3.2rem);
             width: auto;
             object-fit: contain;
         }
@@ -166,9 +167,10 @@
             flex-direction: column;
             align-items: center;
             text-align: center;
-            gap: clamp(8px, 1.6vh, 14px);
-            padding-top: clamp(10px, 4vh, 40px);
-            margin-bottom: clamp(16px, 3.4vh, 30px);
+            flex-shrink: 0;
+            gap: clamp(6px, 1.2vh, 12px);
+            padding-top: clamp(4px, 1.8vh, 18px);
+            margin-bottom: clamp(10px, 2vh, 24px);
             animation: revealUp 820ms 70ms var(--ease) both;
         }
 
@@ -198,13 +200,14 @@
 
         h1 {
             font-family: var(--font-heading);
-            font-size: clamp(2rem, min(9vw, 7.8vh), 4.9rem);
-            line-height: 0.95;
+            font-size: clamp(1.8rem, min(8.4vw, 6.8vh), 4.9rem);
+            line-height: 1.02;
             letter-spacing: -0.06em;
             max-width: 7ch;
         }
 
         h1 span {
+            display: inline-block;
             background: linear-gradient(135deg, #ffffff 12%, #99d6ff 55%, #9d87ff 100%);
             -webkit-background-clip: text;
             background-clip: text;
@@ -213,20 +216,30 @@
 
         .hero-subtitle {
             color: var(--muted);
-            font-size: clamp(0.82rem, 1.8vh, 0.98rem);
-            line-height: 1.45;
+            font-size: clamp(0.76rem, 1.5vh, 0.98rem);
+            line-height: 1.35;
             max-width: 20rem;
         }
 
         .deck-section {
             display: flex;
             flex-direction: column;
-            gap: clamp(10px, 2vh, 18px);
+            flex: 1;
+            min-height: 0;
+            justify-content: flex-start;
+            margin-top: clamp(14px, 2.4vh, 26px);
+            gap: clamp(14px, 2.4vh, 26px);
             animation: revealUp 920ms 140ms var(--ease) both;
         }
 
         .deck-shell {
             position: relative;
+            display: flex;
+            flex-direction: column;
+            flex: 0 1 auto;
+            max-height: 100%;
+            min-height: 0;
+            gap: clamp(6px, 1vh, 12px);
             overflow: hidden;
             border-radius: 30px;
             padding: 1px;
@@ -245,10 +258,14 @@
         .deck-track {
             display: flex;
             width: 300%;
+            flex: 1;
+            min-height: 0;
             transform: translate3d(calc(var(--index, 0) * -33.3333%), 0, 0);
             transition: transform 700ms var(--ease);
             touch-action: pan-y;
             will-change: transform;
+            position: relative;
+            z-index: 1;
         }
 
         .deck-shell.dragging .deck-track {
@@ -260,8 +277,9 @@
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
-            gap: clamp(12px, 2vh, 20px);
-            padding: clamp(14px, 2vh, 20px);
+            min-height: 100%;
+            gap: clamp(8px, 1.3vh, 16px);
+            padding: clamp(10px, 1.4vh, 18px);
             position: relative;
             background: linear-gradient(180deg, rgba(8, 14, 26, 0.98), rgba(7, 12, 22, 0.99));
             overflow: hidden;
@@ -274,6 +292,7 @@
             flex-direction: column;
             gap: inherit;
             min-height: 100%;
+            flex: 1;
             position: relative;
             z-index: 1;
         }
@@ -322,30 +341,31 @@
         .mode-tag {
             display: inline-flex;
             align-items: center;
-            gap: 10px;
-            padding: 10px 13px;
+            gap: clamp(6px, 0.9vh, 10px);
+            padding: clamp(7px, 0.95vh, 10px) clamp(10px, 1.2vh, 13px);
             border-radius: 999px;
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            font-size: 0.78rem;
+            font-size: clamp(0.68rem, 1.15vh, 0.78rem);
             font-weight: 600;
             letter-spacing: 0.08em;
             text-transform: uppercase;
         }
 
         .mode-tag .material-icons {
-            font-size: 18px;
+            font-size: clamp(15px, 1.8vh, 18px);
         }
 
         .mode-top strong {
             color: rgba(255, 255, 255, 0.46);
-            font-size: 0.8rem;
+            font-size: clamp(0.7rem, 1.15vh, 0.8rem);
             letter-spacing: 0.14em;
         }
 
         .visual {
             position: relative;
-            min-height: clamp(120px, 28vh, 220px);
+            flex: 1;
+            min-height: clamp(104px, 23vh, 220px);
             border-radius: 24px;
             background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
             border: 1px solid rgba(255, 255, 255, 0.08);
@@ -353,6 +373,9 @@
         }
 
         .visual.visual-fill {
+            flex: 0 0 auto;
+            aspect-ratio: 16 / 9;
+            min-height: 0;
             background: rgba(7, 12, 22, 0.92);
         }
 
@@ -447,21 +470,21 @@
 
         .mode-copy h2 {
             font-family: var(--font-heading);
-            font-size: clamp(1.35rem, min(6vw, 3.8vh), 2rem);
+            font-size: clamp(1.2rem, min(5.8vw, 3.1vh), 2rem);
             line-height: 0.96;
             letter-spacing: -0.05em;
-            margin-bottom: 8px;
+            margin-bottom: clamp(2px, 0.5vh, 8px);
         }
 
         .mode-copy p {
             color: var(--muted);
-            font-size: clamp(0.8rem, 1.75vh, 0.92rem);
-            line-height: 1.45;
+            font-size: clamp(0.74rem, 1.28vh, 0.92rem);
+            line-height: 1.3;
         }
 
         .enter {
             margin-top: auto;
-            min-height: clamp(46px, 7vh, 56px);
+            min-height: clamp(40px, 5.6vh, 56px);
             border-radius: 18px;
             display: inline-flex;
             align-items: center;
@@ -469,7 +492,7 @@
             gap: 10px;
             text-decoration: none;
             color: white;
-            font-size: clamp(0.9rem, 1.9vh, 0.98rem);
+            font-size: clamp(0.84rem, 1.45vh, 0.98rem);
             font-weight: 700;
             background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
             box-shadow: 0 18px 30px color-mix(in srgb, var(--accent-a) 34%, transparent);
@@ -484,15 +507,14 @@
         }
 
         .bottom-row {
-            position: absolute;
-            bottom: 14px;
-            left: 0;
-            right: 0;
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 12px;
+            flex-shrink: 0;
             z-index: 10;
+            padding: 0 0 clamp(8px, 1.1vh, 16px);
             pointer-events: none;
         }
 
@@ -552,20 +574,20 @@
             .screen {
                 max-width: 1180px;
                 margin: 0 auto;
-                padding: 24px 22px 26px;
+                padding: 18px 22px 18px;
             }
 
             .hero {
-                padding-top: 32px;
-                margin-bottom: 36px;
+                padding-top: clamp(6px, 1.4vh, 20px);
+                margin-bottom: clamp(12px, 2vh, 28px);
             }
 
             .mode-card {
-                padding: 24px;
+                padding: clamp(14px, 1.6vh, 24px);
             }
 
             .visual {
-                min-height: 250px;
+                min-height: clamp(180px, 28vh, 250px);
             }
 
             .visual img {
@@ -586,16 +608,16 @@
 
         @media (max-width: 899px) {
             .screen {
-                padding: 16px 14px 18px;
+                padding: 14px 14px 14px;
             }
 
             .topbar {
-                margin-bottom: 24px;
+                margin-bottom: clamp(10px, 1.8vh, 18px);
             }
 
             .hero {
-                padding-top: 24px;
-                margin-bottom: 24px;
+                padding-top: clamp(2px, 0.8vh, 10px);
+                margin-bottom: clamp(8px, 1.4vh, 16px);
             }
 
             .hero-subtitle {
@@ -603,11 +625,11 @@
             }
 
             .mode-card {
-                padding: 18px;
+                padding: clamp(10px, 1.3vh, 16px);
             }
 
-            .visual {
-                min-height: 190px;
+            .visual:not(.visual-fill) {
+                min-height: clamp(130px, 24vh, 220px);
             }
 
             .visual-panel {
@@ -619,44 +641,25 @@
             }
         }
 
-        @media (max-width: 899px) and (max-height: 760px) {
+        @media (max-height: 760px) {
             .screen {
-                padding: 14px 12px 14px;
-            }
-
-            .deck-section {
-                flex: 1;
-                min-height: 0;
-            }
-
-            .deck-shell {
-                flex: 1;
-                min-height: 0;
+                padding: 12px 12px 12px;
             }
 
             .deck-track {
                 height: 100%;
             }
 
-            .mode-card {
-                min-height: 100%;
-            }
-
-            .visual {
-                flex: 1;
+            .visual:not(.visual-fill) {
+                min-height: clamp(118px, 22vh, 190px);
             }
 
             .brand strong {
-                font-size: clamp(2rem, 7vw, 2.6rem);
+                font-size: clamp(1.8rem, min(6.8vw, 5vh), 2.8rem);
             }
 
             .brand .app-logo {
-                height: clamp(1.8rem, 5vw, 2.4rem);
-            }
-
-            .mode-top strong,
-            .mode-tag {
-                font-size: 0.72rem;
+                height: clamp(1.7rem, min(4.6vw, 4vh), 2.5rem);
             }
 
             .visual-panel {
@@ -669,13 +672,13 @@
             }
         }
 
-        @media (max-width: 899px) and (max-height: 620px) {
+        @media (max-height: 620px) {
             .screen {
-                padding: 12px 10px;
+                padding: 10px 10px 10px;
             }
 
             .hero-subtitle {
-                max-width: 15.5rem;
+                max-width: 15rem;
             }
 
             .deck-shell {
@@ -683,63 +686,163 @@
             }
 
             .mode-card {
-                gap: 10px;
-                padding: 12px;
+                gap: 7px;
+                padding: 10px;
             }
 
             .mode-tag {
-                gap: 8px;
-                padding: 8px 11px;
+                gap: 6px;
+                padding: 7px 10px;
             }
 
             .mode-tag .material-icons {
-                font-size: 16px;
+                font-size: 14px;
             }
 
-            .visual {
+            .visual:not(.visual-fill) {
                 border-radius: 20px;
-                min-height: 108px;
+                min-height: clamp(96px, 20vh, 150px);
+            }
+
+            .visual.visual-fill {
+                border-radius: 20px;
             }
 
             .mode-copy h2 {
-                margin-bottom: 4px;
+                font-size: clamp(1.05rem, 2.7vh, 1.45rem);
+                margin-bottom: 2px;
+            }
+
+            .mode-copy p {
+                font-size: clamp(0.68rem, 1.1vh, 0.8rem);
             }
 
             .enter {
                 border-radius: 16px;
+                min-height: 38px;
             }
         }
 
-        @media (max-width: 899px) and (max-height: 560px) {
+        @media (max-height: 560px) {
+            .screen {
+                padding: 8px 8px 8px;
+            }
+
             .topbar {
-                margin-bottom: 12px;
+                margin-bottom: 8px;
             }
 
             .hero {
-                padding-top: 4px;
-                margin-bottom: 12px;
+                gap: 4px;
+                padding-top: 0;
+                margin-bottom: 8px;
             }
 
-            .eyebrow {
-                padding: 7px 10px;
+            .hero-subtitle {
                 font-size: 0.7rem;
+                line-height: 1.2;
+                max-width: 13rem;
+            }
+
+            .mode-card {
+                gap: 6px;
+                padding: 8px;
+            }
+
+            .visual:not(.visual-fill) {
+                min-height: 82px;
+            }
+
+            .mode-copy h2 {
+                font-size: clamp(0.98rem, 2.4vh, 1.2rem);
+                margin-bottom: 2px;
+            }
+
+            .mode-copy p {
+                font-size: 0.66rem;
+                line-height: 1.15;
+            }
+
+            .enter {
+                min-height: 34px;
+                font-size: 0.76rem;
             }
 
             .bottom-row {
-                gap: 10px;
-            }
-
-            .dots {
                 gap: 8px;
             }
 
+            .dots {
+                gap: 6px;
+            }
+
             .dot-btn {
-                width: 9px;
-                height: 9px;
+                width: 8px;
+                height: 8px;
             }
 
             .dot-btn.active {
-                width: 28px;
+                width: 24px;
+            }
+        }
+
+        @media (max-height: 480px) {
+            .screen {
+                padding: 6px;
+            }
+
+            .brand strong {
+                font-size: clamp(1.4rem, 4.8vh, 2rem);
+            }
+
+            .brand .app-logo {
+                height: clamp(1.4rem, 3.9vh, 2rem);
+            }
+
+            .hero {
+                margin-bottom: 6px;
+            }
+
+            h1 {
+                font-size: clamp(1.3rem, 5.6vh, 1.8rem);
+            }
+
+            .hero-subtitle {
+                font-size: 0.62rem;
+                max-width: 12rem;
+            }
+
+            .mode-card {
+                gap: 5px;
+                padding: 7px;
+            }
+
+            .mode-tag {
+                padding: 6px 8px;
+                font-size: 0.58rem;
+            }
+
+            .mode-top strong {
+                font-size: 0.58rem;
+            }
+
+            .visual {
+                min-height: 70px;
+                border-radius: 16px;
+            }
+
+            .mode-copy h2 {
+                font-size: 0.9rem;
+            }
+
+            .mode-copy p {
+                font-size: 0.6rem;
+            }
+
+            .enter {
+                min-height: 30px;
+                font-size: 0.7rem;
+                border-radius: 14px;
             }
         }
     </style>
