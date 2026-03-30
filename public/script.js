@@ -2755,6 +2755,10 @@ function handleSpelling(letter) {
     lastAddedLetter = letter;
     accumulatedWord += letter;
 
+    if (isTTSOn) {
+        speak(letter);
+    }
+
     updateSpellingDisplay();
 }
 

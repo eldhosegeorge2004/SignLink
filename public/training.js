@@ -200,6 +200,29 @@ function clearLocalDraftDataForLanguage(lang = currentLang) {
     signCardKeys.forEach((key) => localStorage.removeItem(key));
 }
 
+async function clearSavedModelsForLanguage(lang = currentLang) {
+    const keys = STORAGE_KEYS[lang];
+    if (!keys) return;
+
+    const localModelUrls = [
+        `localstorage://${keys.model}-static`,
+        `localstorage://${keys.model}-dynamic`
+    ];
+
+    for (const modelUrl of localModelUrls) {
+        try {
+            await tf.io.removeModel(modelUrl);
+        } catch (err) {
+            // Ignore missing models; we still clear companion metadata below.
+            console.debug(`No local model found at ${modelUrl}`, err);
+        }
+    }
+
+    localStorage.removeItem(`${keys.labels}-static`);
+    localStorage.removeItem(`${keys.labels}-dynamic`);
+    localStorage.removeItem(`${keys.labels}-dynamic-hand-req`);
+}
+
 async function deleteSignCardsFromCloud(labels = [], lang = currentLang) {
     const normalizedLabels = (labels || []).map((label) => normalizeLabel(label)).filter(Boolean);
     const langLower = lang.toLowerCase();
@@ -1299,18 +1322,28 @@ function arrayBufferToBase64(buffer) {
 
 // Check if models are already saved in localStorage
 async function checkForSavedModels() {
-    const staticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
-    const dynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
+    const keys = STORAGE_KEYS[currentLang];
+    const savedModels = await tf.io.listModels();
+    const hasStaticModel = Boolean(savedModels[`localstorage://${keys.model}-static`]);
+    const hasDynamicModel = Boolean(savedModels[`localstorage://${keys.model}-dynamic`]);
+    const staticLabels = localStorage.getItem(`${keys.labels}-static`);
+    const dynamicLabels = localStorage.getItem(`${keys.labels}-dynamic`);
 
-    if (staticLabels || dynamicLabels) {
+    if ((hasStaticModel && staticLabels) || (hasDynamicModel && dynamicLabels)) {
         let modelInfo = "Saved models found: ";
-        if (staticLabels) modelInfo += "Static ✋ ";
-        if (dynamicLabels) modelInfo += "Dynamic 🔄";
+        if (hasStaticModel && staticLabels) modelInfo += "Static ✋ ";
+        if (hasDynamicModel && dynamicLabels) modelInfo += "Dynamic 🔄";
         statusMsg.innerText = `✅ ${modelInfo}. You can use these in Live Translation!`;
         if (saveBtn) saveBtn.disabled = true;
         if (cloudSyncBtn) {
             cloudSyncBtn.disabled = false;
             cloudSyncBtn.title = "Upload these models to Supabase Cloud";
+        }
+    } else {
+        if (saveBtn) saveBtn.disabled = false;
+        if (cloudSyncBtn) {
+            cloudSyncBtn.disabled = true;
+            cloudSyncBtn.title = "Train and save a model locally before uploading";
         }
     }
 }
@@ -1810,24 +1843,28 @@ window.deleteLabel = async (label) => {
 };
 
 clearAllBtn.addEventListener('click', async () => {
-    const confirmed = await showCustomConfirm("Delete ALL collected data locally? This cannot be undone.");
+    const confirmed = await showCustomConfirm("Delete ALL collected data and saved local models? This cannot be undone.");
     if (confirmed) {
         const currentLabels = [...new Set(collectedData.map(d => d.label))];
 
-        // 1. Clear training data from localStorage
+        // 1. Clear training data and saved models from local storage
         clearLocalDraftDataForLanguage(currentLang);
+        await clearSavedModelsForLanguage(currentLang);
         
         collectedData = [];
         sessionHistory = [];
+        model = null;
+        lastTrainSaveState = { lang: '', label: '', sampleCount: 0 };
+        statusMsg.innerText = `${currentLang} local training data and saved models cleared`;
 
         try {
             await saveToServer();
             await deleteSignCardsFromCloud(currentLabels, currentLang);
             renderDataList();
-            showToast(`All ${currentLang} data cleared locally and in Supabase`, 'delete_forever');
+            showToast(`All ${currentLang} data and local models cleared`, 'delete_forever');
         } catch (err) {
             renderDataList();
-            showToast(`Cleared local ${currentLang} data, but cloud sync failed`, 'warning');
+            showToast(`Cleared local ${currentLang} data and models, but cloud sync failed`, 'warning');
         }
     }
 });

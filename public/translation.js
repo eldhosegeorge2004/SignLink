@@ -1016,6 +1016,10 @@ function handleSpelling(letter) {
     dynamicFrameBuffer = [];
     dynamicBufferStartTime = 0;
 
+    if (isTTSOn) {
+        speakText(letter);
+    }
+
     updateSpellingDisplay();
 }
 
