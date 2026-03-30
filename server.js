@@ -17,7 +17,58 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const TRAINING_DATA_FILE = path.join(__dirname, 'public', 'training_data.json');
-const STORAGE_BUCKET = 'sign-cards';
+const STORAGE_BUCKETS = {
+    signCards: process.env.SUPABASE_SIGN_CARDS_BUCKET || 'sign-cards',
+    models: process.env.SUPABASE_MODELS_BUCKET || 'models'
+};
+
+async function ensureBucketExists(bucketName) {
+    const { data: buckets, error } = await supabase.storage.listBuckets();
+    if (error) {
+        throw new Error(`Cannot list storage buckets: ${error.message}`);
+    }
+
+    const bucket = buckets.find((entry) => entry.name === bucketName);
+    if (!bucket) {
+        throw new Error(`Storage bucket "${bucketName}" not found. Create it in Supabase Storage or set the matching SUPABASE_*_BUCKET env var.`);
+    }
+
+    return bucket;
+}
+
+async function getModelBucketCandidates() {
+    const candidates = [STORAGE_BUCKETS.models];
+    if (STORAGE_BUCKETS.signCards !== STORAGE_BUCKETS.models) {
+        candidates.push(STORAGE_BUCKETS.signCards);
+    }
+    return candidates;
+}
+
+async function uploadToAvailableBucket(bucketCandidates, filePath, buffer, options) {
+    let lastError = null;
+
+    for (let index = 0; index < bucketCandidates.length; index += 1) {
+        const bucketName = bucketCandidates[index];
+        try {
+            await ensureBucketExists(bucketName);
+            const { error } = await supabase.storage
+                .from(bucketName)
+                .upload(filePath, buffer, options);
+
+            if (error) throw error;
+            return { bucketName };
+        } catch (error) {
+            lastError = error;
+            const isBucketMissing = /bucket.*not found/i.test(error.message || '');
+            const hasAnotherCandidate = index < bucketCandidates.length - 1;
+            if (!isBucketMissing || !hasAnotherCandidate) {
+                throw error;
+            }
+        }
+    }
+
+    throw lastError;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ONE-TIME MIGRATION: If Supabase training_data table is empty, seed from local file
@@ -182,6 +233,8 @@ app.post('/api/training-data', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/upload-sign-card', async (req, res) => {
     try {
+        await ensureBucketExists(STORAGE_BUCKETS.signCards);
+
         const { lang, label, imageBase64, extension } = req.body;
 
         if (!lang || !label || !imageBase64 || !extension) {
@@ -203,7 +256,7 @@ app.post('/api/upload-sign-card', async (req, res) => {
 
         // Upload to Supabase Storage (upsert = overwrite if exists)
         const { error: uploadErr } = await supabase.storage
-            .from(STORAGE_BUCKET)
+            .from(STORAGE_BUCKETS.signCards)
             .upload(filePath, imageBuffer, {
                 contentType,
                 upsert: true
@@ -213,7 +266,7 @@ app.post('/api/upload-sign-card', async (req, res) => {
 
         // Get public URL
         const { data: urlData } = supabase.storage
-            .from(STORAGE_BUCKET)
+            .from(STORAGE_BUCKETS.signCards)
             .getPublicUrl(filePath);
 
         const publicUrl = urlData.publicUrl;
@@ -241,7 +294,7 @@ app.post('/api/upload-sign-card', async (req, res) => {
 
     } catch (err) {
         console.error('Error uploading sign card:', err.message);
-        res.status(500).json({ error: 'Failed to upload sign card' });
+        res.status(500).json({ error: err.message || 'Failed to upload sign card' });
     }
 });
 
@@ -266,7 +319,7 @@ app.post('/api/delete-sign-card', async (req, res) => {
 
         if (cardData) {
             const filePath = `${langFolder}/${safeLabel}.${cardData.extension}`;
-            await supabase.storage.from(STORAGE_BUCKET).remove([filePath]);
+            await supabase.storage.from(STORAGE_BUCKETS.signCards).remove([filePath]);
         }
 
         // Delete from sign_cards table
@@ -301,20 +354,16 @@ app.post('/api/upload-model-component', async (req, res) => {
 
         const filePath = `models/${lang.toLowerCase()}/${type}/${fileName}`;
         const buffer = Buffer.from(fileDataB64, 'base64');
+        const bucketCandidates = await getModelBucketCandidates();
+        const { bucketName } = await uploadToAvailableBucket(bucketCandidates, filePath, buffer, {
+            contentType: contentType || 'application/octet-stream',
+            upsert: true
+        });
 
-        const { error: uploadErr } = await supabase.storage
-            .from(STORAGE_BUCKET)
-            .upload(filePath, buffer, {
-                contentType: contentType || 'application/octet-stream',
-                upsert: true
-            });
-
-        if (uploadErr) throw uploadErr;
-
-        res.json({ success: true, path: filePath });
+        res.json({ success: true, path: filePath, bucket: bucketName });
     } catch (err) {
         console.error('Error uploading model component:', err.message);
-        res.status(500).json({ error: 'Failed to upload model component' });
+        res.status(500).json({ error: err.message || 'Failed to upload model component' });
     }
 });
 
@@ -380,15 +429,35 @@ app.post('/api/trigger-cloud-training', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/list-models', async (req, res) => {
     try {
-        const { data, error } = await supabase.storage
-            .from(STORAGE_BUCKET)
-            .list('models', { recursive: true });
+        const bucketCandidates = await getModelBucketCandidates();
+        let data = null;
+        let lastError = null;
 
-        if (error) throw error;
-        res.json(data);
+        for (let index = 0; index < bucketCandidates.length; index += 1) {
+            const bucketName = bucketCandidates[index];
+            try {
+                await ensureBucketExists(bucketName);
+                const result = await supabase.storage
+                    .from(bucketName)
+                    .list('', { recursive: true });
+                if (result.error) throw result.error;
+                data = result.data;
+                break;
+            } catch (error) {
+                lastError = error;
+                const isBucketMissing = /bucket.*not found/i.test(error.message || '');
+                const hasAnotherCandidate = index < bucketCandidates.length - 1;
+                if (!isBucketMissing || !hasAnotherCandidate) {
+                    throw error;
+                }
+            }
+        }
+
+        if (!data && lastError) throw lastError;
+        res.json(data || []);
     } catch (err) {
         console.error('Error listing cloud models:', err.message);
-        res.status(500).json({ error: 'Failed to list models' });
+        res.status(500).json({ error: err.message || 'Failed to list models' });
     }
 });
 
@@ -416,6 +485,10 @@ app.get('/api/sign-cards', async (req, res) => {
         console.error('Error listing sign cards from Supabase:', err.message);
         res.status(500).json({ error: 'Failed to list sign cards' });
     }
+});
+
+app.get('/api/storage-config', (req, res) => {
+    res.json(STORAGE_BUCKETS);
 });
 
 // Socket.io signaling removed. Using Supabase Realtime Channels on the client side.

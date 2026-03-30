@@ -88,33 +88,41 @@ function normalizeHandRequirementMap(map) {
 async function fetchCloudModel(type, lang) {
     try {
         const langLower = lang.toLowerCase();
+        const candidates = await window.getStorageBucketCandidates('models');
 
-        const { data: labelsUrlData } = window.supabaseClient.storage
-            .from('models')
-            .getPublicUrl(`${langLower}/${type}/labels.json`);
+        for (const modelsBucket of candidates) {
+            const { data: labelsUrlData } = window.supabaseClient.storage
+                .from(modelsBucket)
+                .getPublicUrl(`${langLower}/${type}/labels.json`);
 
-        const { data: modelUrlData } = window.supabaseClient.storage
-            .from('models')
-            .getPublicUrl(`${langLower}/${type}/model.json`);
+            const { data: modelUrlData } = window.supabaseClient.storage
+                .from(modelsBucket)
+                .getPublicUrl(`${langLower}/${type}/model.json`);
 
-        const labelsRes = await fetch(labelsUrlData.publicUrl);
-        if (!labelsRes.ok) return null;
-        const labels = normalizeLabelList(await labelsRes.json()).labels;
-
-        const model = await tf.loadLayersModel(modelUrlData.publicUrl);
-
-        let handReqs = null;
-        if (type === 'dynamic') {
-            const { data: handReqsUrlData } = window.supabaseClient.storage
-                .from('models')
-                .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
-            const reqRes = await fetch(handReqsUrlData.publicUrl);
-            if (reqRes.ok) {
-                handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
+            const labelsRes = await fetch(labelsUrlData.publicUrl);
+            if (!labelsRes.ok) {
+                continue;
             }
+
+            const labels = normalizeLabelList(await labelsRes.json()).labels;
+
+            const model = await tf.loadLayersModel(modelUrlData.publicUrl);
+
+            let handReqs = null;
+            if (type === 'dynamic') {
+                const { data: handReqsUrlData } = window.supabaseClient.storage
+                    .from(modelsBucket)
+                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
+                const reqRes = await fetch(handReqsUrlData.publicUrl);
+                if (reqRes.ok) {
+                    handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
+                }
+            }
+
+            return { model, labels, handReqs };
         }
 
-        return { model, labels, handReqs };
+        return null;
     } catch (err) {
         console.warn(`Cloud model fetch failed for ${type}:`, err);
         return null;
