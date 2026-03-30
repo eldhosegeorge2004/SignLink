@@ -3,9 +3,11 @@ package com.signlink.app;
 import android.Manifest;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Build;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
+import android.content.pm.ResolveInfo;
 
 import androidx.annotation.Nullable;
 
@@ -20,6 +22,7 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 @CapacitorPlugin(
@@ -41,6 +44,41 @@ public class NativeSpeechRecognitionPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("available", SpeechRecognizer.isRecognitionAvailable(getContext()));
         result.put("listening", isListening);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void getDiagnostics(PluginCall call) {
+        JSObject result = new JSObject();
+        boolean available = SpeechRecognizer.isRecognitionAvailable(getContext());
+
+        result.put("available", available);
+        result.put("listening", isListening);
+        result.put("sdkInt", Build.VERSION.SDK_INT);
+        result.put("defaultLanguage", Locale.getDefault().toLanguageTag());
+
+        JSArray servicesArray = new JSArray();
+        try {
+            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            List<ResolveInfo> services = getContext().getPackageManager().queryIntentServices(intent, 0);
+            if (services != null) {
+                for (ResolveInfo info : services) {
+                    if (info == null || info.serviceInfo == null) continue;
+                    JSObject service = new JSObject();
+                    service.put("package", info.serviceInfo.packageName);
+                    service.put("name", info.serviceInfo.name);
+                    servicesArray.put(service);
+                }
+                result.put("serviceCount", services.size());
+            } else {
+                result.put("serviceCount", 0);
+            }
+        } catch (Exception error) {
+            result.put("serviceCount", 0);
+            result.put("diagnosticsError", error.getMessage());
+        }
+
+        result.put("services", servicesArray);
         call.resolve(result);
     }
 

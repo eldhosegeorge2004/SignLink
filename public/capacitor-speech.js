@@ -21,6 +21,29 @@
         }
     }
 
+    async function getDiagnostics() {
+        if (!nativePlugin) {
+            return {
+                available: false,
+                reason: 'native-plugin-missing',
+                serviceCount: 0,
+                services: []
+            };
+        }
+
+        try {
+            return await nativePlugin.getDiagnostics();
+        } catch (error) {
+            console.warn('Native speech recognition diagnostics failed:', error);
+            return {
+                available: false,
+                reason: 'diagnostics-failed',
+                serviceCount: 0,
+                services: []
+            };
+        }
+    }
+
     async function createSession(options = {}) {
         if (!nativePlugin) {
             throw new Error('Native speech recognition is not available on this platform.');
@@ -64,6 +87,7 @@
             return Boolean(nativePlugin);
         },
         isAvailable,
+        getDiagnostics,
         createSession
     };
 })(window);
