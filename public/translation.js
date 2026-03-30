@@ -1242,13 +1242,24 @@ ttsBtn.addEventListener('click', () => {
         ttsBtn.innerHTML = '<span class="material-icons">volume_up</span>';
         ttsBtn.classList.remove('red-btn');
 
-        if (window.speechSynthesis) {
-            window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+        if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+             window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+        } else if (window.speechSynthesis) {
+            // Cancel any stuck queues on Android WebView before initializing
+            window.speechSynthesis.cancel();
+            // Use a silent space instead of an empty string, which crashes some TTS engines
+            const initUtterance = new SpeechSynthesisUtterance(" ");
+            initUtterance.lang = 'en-US';
+            window.speechSynthesis.speak(initUtterance);
         }
     } else {
         ttsBtn.innerHTML = '<span class="material-icons">volume_off</span>';
         ttsBtn.classList.add('red-btn');
-        window.speechSynthesis.cancel();
+        if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+            window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+        } else if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
     }
 });
 
@@ -1264,9 +1275,25 @@ function speakText(text, forceSpeak = false) {
         }
         localStorage.setItem('lastGlobalSpeakTime', now.toString());
 
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 1.0;
-        window.speechSynthesis.speak(utterance);
+        if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+            window.capacitorTextToSpeech.TextToSpeech.speak({
+                text: text,
+                lang: 'en-US',
+                rate: 1.0,
+                pitch: 1.0,
+                volume: 1.0,
+            }).catch(e => console.error("Native TTS Error:", e));
+        } else if (window.speechSynthesis) {
+            // Crucial for Android WebView: clear the queue before adding a new utterance
+            window.speechSynthesis.cancel();
+            
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            // Explicitly setting the language is required for many mobile TTS engines
+            utterance.lang = 'en-US';
+            
+            window.speechSynthesis.speak(utterance);
+        }
     }
 }
 

@@ -1915,8 +1915,12 @@ joinBtn.addEventListener('click', async (e) => {
         
         supabaseChannel.subscribe(handleSubscription, 30000);
 
-    if (window.speechSynthesis) {
-        const primingUtterance = new SpeechSynthesisUtterance("");
+    if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+        window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+    } else if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const primingUtterance = new SpeechSynthesisUtterance(" ");
+        primingUtterance.lang = 'en-US';
         window.speechSynthesis.speak(primingUtterance);
     }
 });
@@ -3063,8 +3067,12 @@ if (ttsBtn) {
     ttsBtn.addEventListener('click', () => {
         isTTSOn = !isTTSOn;
         updateTTSUI();
-        if (!isTTSOn && window.speechSynthesis) {
-            window.speechSynthesis.cancel();
+        if (!isTTSOn) {
+            if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+                window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+            } else if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
         }
     });
 }
@@ -3073,14 +3081,18 @@ if (ttsToggleBtn) {
     ttsToggleBtn.addEventListener('click', () => {
         isTTSOn = !isTTSOn;
         updateTTSUI();
-        if (!isTTSOn && window.speechSynthesis) {
-            window.speechSynthesis.cancel();
+        if (!isTTSOn) {
+            if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+                window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+            } else if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
         }
     });
 }
 
 function speak(text) {
-    if (!isTTSOn || !window.speechSynthesis) return;
+    if (!isTTSOn) return;
 
     // 1. Hardware-level safety: Unified temporal debounce (500ms)
     // We use localStorage to coordinate across multiple tabs (e.g. if user has translation.html AND videocall.html open)
@@ -3102,20 +3114,29 @@ function speak(text) {
         speakTimeout = null;
     }
 
-    // 3. Cancel current speech and queue the new one
-    // We use a small delay because window.speechSynthesis.cancel() is often asynchronous 
-    // on the OS level and needs a moment to clear hardware buffers.
-    window.speechSynthesis.cancel();
+    if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+        window.capacitorTextToSpeech.TextToSpeech.speak({
+            text: text,
+            lang: 'en-US',
+            rate: 1.0,
+            pitch: 1.0,
+            volume: 1.0,
+        }).catch(e => console.error("Native TTS Error:", e));
+    } else if (window.speechSynthesis) {
+        // 3. Cancel current speech and queue the new one
+        window.speechSynthesis.cancel();
 
-    speakTimeout = setTimeout(() => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
+        speakTimeout = setTimeout(() => {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            utterance.lang = 'en-US';
 
-        window.speechSynthesis.speak(utterance);
-        speakTimeout = null;
-    }, 50);
+            window.speechSynthesis.speak(utterance);
+            speakTimeout = null;
+        }, 50);
+    }
 }
 
 // --- Chat Logic ---
