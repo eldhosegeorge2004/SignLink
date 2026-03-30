@@ -3067,7 +3067,16 @@ if (ttsBtn) {
     ttsBtn.addEventListener('click', () => {
         isTTSOn = !isTTSOn;
         updateTTSUI();
-        if (!isTTSOn) {
+        if (isTTSOn) {
+            if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+                 window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+            } else if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+                const initUtterance = new SpeechSynthesisUtterance(" ");
+                initUtterance.lang = 'en-US';
+                window.speechSynthesis.speak(initUtterance);
+            }
+        } else {
             if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
                 window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
             } else if (window.speechSynthesis) {
@@ -3081,7 +3090,16 @@ if (ttsToggleBtn) {
     ttsToggleBtn.addEventListener('click', () => {
         isTTSOn = !isTTSOn;
         updateTTSUI();
-        if (!isTTSOn) {
+        if (isTTSOn) {
+            if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+                 window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+            } else if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+                const initUtterance = new SpeechSynthesisUtterance(" ");
+                initUtterance.lang = 'en-US';
+                window.speechSynthesis.speak(initUtterance);
+            }
+        } else {
             if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
                 window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
             } else if (window.speechSynthesis) {
