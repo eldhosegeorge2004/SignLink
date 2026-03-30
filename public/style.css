@@ -1895,6 +1895,83 @@ body.stt-active .caption-log-panel.visible {
         width: min(260px, calc(100vw - 20px));
     }
 
+    .control-bar {
+        display: grid;
+        grid-template-columns: 1.35fr repeat(5, minmax(0, 1fr));
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        min-height: 64px;
+    }
+
+    .control-left {
+        display: flex;
+        justify-content: stretch;
+        min-width: 0;
+    }
+
+    .control-center {
+        grid-column: 2 / span 3;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0;
+        min-width: 0;
+    }
+
+    .control-right {
+        grid-column: 5 / span 2;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .meeting-code-display {
+        width: 100%;
+        min-width: 0;
+        padding: 8px 10px;
+        justify-content: center;
+        gap: 6px;
+        border-radius: 14px;
+        font-size: 0.76rem;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .meeting-code-display #meetingCodeDisplay {
+        flex: 0 1 auto;
+    }
+
+    .meeting-code-display .copy-icon {
+        position: static;
+        width: 16px;
+        height: 16px;
+        font-size: 12px;
+        background: transparent;
+        box-shadow: none;
+        flex-shrink: 0;
+    }
+
+    .control-btn,
+    .control-btn.small-btn {
+        width: 100%;
+        min-width: 0;
+        height: 42px;
+        border-radius: 12px;
+        padding: 0;
+    }
+
+    .control-btn .material-icons,
+    .control-btn.small-btn .material-icons {
+        font-size: 20px;
+    }
+
+    .control-btn.small-btn {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid transparent;
+    }
+
     /* Lock body to screen — no scroll on join screen */
     .main-stage.is-connected .local-view-container {
         bottom: 185px;
