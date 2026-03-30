@@ -7,8 +7,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#050510">
-    <title>Sign Language Link</title> <!-- Branding Name -->
-    <link rel="stylesheet" href="style.css?v=20260323-1">
+    <title>Sign Language Link</title> <!-- Standard Custom Styles -->
+    <link rel="stylesheet" href="style.css?v=20260330-2">
+    <!-- UI Modernization Styles -->
     <link rel="stylesheet" href="modal.css">
 
     <!-- Icons -->
@@ -470,6 +471,13 @@
 
         <!-- Bottom Control Bar -->
         <div class="control-bar">
+            <div class="control-left">
+                <div id="meetingCodeBtn" class="meeting-code-display" title="Copy meeting code">
+                    <span id="meetingCodeDisplay"></span>
+                    <span class="material-icons copy-icon" style="font-size: 14px;">content_copy</span>
+                </div>
+            </div>
+
             <div class="control-center">
                 <button class="control-btn" id="micBtn" title="Turn off microphone">
                     <span class="material-icons">mic</span>
@@ -483,10 +491,6 @@
             </div>
 
             <div class="control-right">
-                <button class="control-btn small-btn" id="sttToggleBtn" title="Toggle Speech-to-Text">
-                    <span class="material-icons">interpreter_mode</span>
-                </button>
-
                 <button class="control-btn small-btn" id="chatToggleBtn" title="Chat">
                     <span class="material-icons">chat</span>
                 </button>
@@ -497,6 +501,22 @@
                     </button>
 
                     <div class="more-options-menu" id="moreOptionsMenu" hidden>
+                        <button class="more-option-item" id="ttsToggleBtn" type="button" aria-pressed="false">
+                            <span class="more-option-copy">
+                                <span class="more-option-label">Text-to-Speech</span>
+                                <span class="more-option-hint">Read aloud incoming signs</span>
+                            </span>
+                            <span class="more-option-state">Off</span>
+                        </button>
+
+                        <button class="more-option-item" id="sttToggleBtn" type="button" aria-pressed="false">
+                            <span class="more-option-copy">
+                                <span class="more-option-label">Speech-to-Text</span>
+                                <span class="more-option-hint">Enable live captions</span>
+                            </span>
+                            <span class="more-option-state">Off</span>
+                        </button>
+
                         <button class="more-option-item" id="speakerToggleBtn" type="button" aria-pressed="true">
                             <span class="more-option-copy">
                                 <span class="more-option-label">Speaker sound</span>
@@ -588,7 +608,7 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=20260323-1"></script>
+    <script type="module" src="script.js?v=20260330-2"></script>
 </body>
 
 </html>

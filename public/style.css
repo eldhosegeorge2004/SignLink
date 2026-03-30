@@ -782,11 +782,29 @@ video {
 }
 
 #remote-caption-overlay {
-    bottom: 16px;
-    background: rgba(0, 77, 64, 0.9);
-    color: #80cbc4;
-    border: 1px solid #4db6ac;
+    position: fixed !important;
+    bottom: 190px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: 90% !important;
+    max-width: 560px !important;
+    padding: 12px 20px !important;
+    background: rgba(0, 77, 64, 0.95) !important;
+    color: #80cbc4 !important;
+    border: 1px solid rgba(77, 182, 172, 0.3) !important;
+    border-radius: 30px !important;
+    z-index: 1000 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 1.1rem !important;
+    font-weight: 500 !important;
 }
+
+#remote-caption-overlay.hidden {
+    display: none !important;
+}
+
 
 .remote-says-label {
     font-size: 0.8rem;
@@ -817,8 +835,8 @@ video {
 }
 
 .caption-log-panel.visible {
-    display: flex;
-    visibility: visible;
+    display: none;
+    visibility: hidden;
 }
 
 body.stt-active .caption-log-panel.visible {
@@ -1002,6 +1020,7 @@ body.stt-active .caption-log-panel.visible {
     flex-wrap: nowrap;
     overflow-x: hidden;
     overflow-y: auto;
+    touch-action: pan-y;
     gap: 12px;
     align-items: stretch;
     scrollbar-width: none;
@@ -1021,10 +1040,20 @@ body.stt-active .caption-log-panel.visible {
 
 .caption-log-panel .prediction-sign-line {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: flex-start;
     gap: 10px;
     width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    touch-action: pan-x pan-y;
+}
+
+.caption-log-panel .prediction-sign-line::-webkit-scrollbar {
+    display: none;
 }
 
 .prediction-word-group {
@@ -1071,6 +1100,43 @@ body.stt-active .caption-log-panel.visible {
     z-index: 10;
     gap: 8px;
     min-width: 0;
+}
+
+.meeting-code-display {
+    position: relative;
+    background: rgba(255, 255, 255, 0.05); /* slightly lighter than control-bar */
+    padding: 8px 16px;
+    border-radius: 12px;
+    color: white;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.2s;
+}
+
+.meeting-code-display:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.meeting-code-display .copy-icon {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #2f81f7;
+    color: white;
+    font-size: 14px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.4);
 }
 
 .control-right {

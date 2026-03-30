@@ -1016,9 +1016,6 @@ function handleSpelling(letter) {
     dynamicFrameBuffer = [];
     dynamicBufferStartTime = 0;
 
-    // Speak the letter immediately if TTS is enabled
-    if (isTTSOn) speakText(letter.toLowerCase());
-
     updateSpellingDisplay();
 }
 
@@ -1084,10 +1081,9 @@ setInterval(() => {
 function finishSpelling(forceSpeak = false) {
     const wordToSpeak = accumulatedWord.charAt(0).toUpperCase() + accumulatedWord.slice(1).toLowerCase();
 
-    // Speak the whole word only if TTS is OFF (to avoid redundancy since letters are already spoken)
-    // but allow forceSpeak (hand loss) to still trigger it if TTS is disabled.
-    if (!isTTSOn) {
-        speakText(wordToSpeak, forceSpeak);
+    // Speak the whole word when TTS is ON
+    if (isTTSOn) {
+        speakText(wordToSpeak);
     }
 
     // Show in main result area
@@ -1652,26 +1648,30 @@ function renderTranslationCardQueue() {
         cardArea.appendChild(lineEl);
     });
     
-    // Auto-scroll logic with smooth panning for new words
-    // Calculate the jump point (previous end) to start the smooth pan from
-    const oldScrollWidth = cardArea.dataset.lastScrollWidth ? parseInt(cardArea.dataset.lastScrollWidth) : 0;
-    const newScrollWidth = cardArea.scrollWidth;
-    
-    // 1. Instantly jump back to the previous end position so we can pan from there
-    cardArea.scrollLeft = oldScrollWidth;
-
-    // 2. Perform smooth scroll to the new end position
+    // Auto-scroll: scroll the sign cards panel to the bottom so newly added rows are visible
     setTimeout(() => {
         cardArea.scrollTo({
-            left: newScrollWidth,
+            top: cardArea.scrollHeight,
             behavior: 'smooth'
         });
-        // Store current width for the next word
-        cardArea.dataset.lastScrollWidth = newScrollWidth.toString();
+
+        // Horizontally pan the last (currently growing) line to reveal the newest card
+        const lastLine = cardArea.querySelector('.prediction-sign-line:last-child');
+        if (lastLine) {
+            lastLine.scrollTo({
+                left: lastLine.scrollWidth,
+                behavior: 'smooth'
+            });
+        }
     }, 10);
 
-    // Vertical scroll for desktop side-panel
-    cardArea.scrollTop = cardArea.scrollHeight;
+    // Also scroll the speech caption log to the bottom if it exists
+    if (speechCaptionLog) {
+        speechCaptionLog.scrollTo({
+            top: speechCaptionLog.scrollHeight,
+            behavior: 'smooth'
+        });
+    }
 }
 
 async function displaySignCards(text) {
@@ -1717,8 +1717,8 @@ async function displaySignCards(text) {
             // Reveal this card now
             renderTranslationCardQueue();
 
-            // Delay for readability (250ms is roughly matching manual sign speed)
-            await new Promise(r => setTimeout(r, 250));
+            // Delay for readability (200ms pause after each image is generated)
+            await new Promise(r => setTimeout(r, 200));
         }
 
         // Add linebreak after each word unit

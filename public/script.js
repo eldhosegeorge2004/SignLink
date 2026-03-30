@@ -184,6 +184,7 @@ const hangupBtn = document.getElementById('hangupBtn');
 const ttsBtn = document.getElementById('ttsBtn');
 
 const sttToggleBtn = document.getElementById('sttToggleBtn');
+const ttsToggleBtn = document.getElementById('ttsToggleBtn');
 const captionLogList = document.getElementById('caption-log-list');
 const localVolumeMeter = document.getElementById('localVolume');
 const remoteVolumeMeter = document.getElementById('remoteVolume');
@@ -786,17 +787,35 @@ function updateSTTUI() {
         sttToggleBtn.style.display = 'none';
         return;
     }
-    sttToggleBtn.innerHTML = `<span class="material-icons">${isSTTOn ? 'interpreter_mode' : 'voice_over_off'}</span>`;
-    sttToggleBtn.classList.toggle('red-btn', !isSTTOn);
-    sttToggleBtn.title = isSTTOn ? "Turn off Speech-to-Text" : "Turn on Speech-to-Text";
+    if (sttToggleBtn.classList.contains('more-option-item')) {
+        sttToggleBtn.classList.toggle('off', !isSTTOn);
+        sttToggleBtn.setAttribute('aria-pressed', String(isSTTOn));
+        const stateTag = sttToggleBtn.querySelector('.more-option-state');
+        if (stateTag) {
+            stateTag.textContent = isSTTOn ? "On" : "Off";
+        }
+    } else {
+        sttToggleBtn.innerHTML = `<span class="material-icons">${isSTTOn ? 'interpreter_mode' : 'voice_over_off'}</span>`;
+        sttToggleBtn.classList.toggle('red-btn', !isSTTOn);
+        sttToggleBtn.title = isSTTOn ? "Turn off Speech-to-Text" : "Turn on Speech-to-Text";
+    }
 }
 updateSTTUI(); // Sync at startup
 
 function updateTTSUI() {
-    if (!ttsBtn) return;
-    ttsBtn.innerHTML = `<span class="material-icons">${isTTSOn ? 'volume_up' : 'volume_off'}</span>`;
-    ttsBtn.classList.toggle('red-btn', !isTTSOn);
-    ttsBtn.setAttribute('title', isTTSOn ? 'Mute Text-to-Speech' : 'Enable Text-to-Speech');
+    if (ttsBtn) {
+        ttsBtn.innerHTML = `<span class="material-icons">${isTTSOn ? 'volume_up' : 'volume_off'}</span>`;
+        ttsBtn.classList.toggle('red-btn', !isTTSOn);
+        ttsBtn.setAttribute('title', isTTSOn ? 'Mute Text-to-Speech' : 'Enable Text-to-Speech');
+    }
+    if (ttsToggleBtn) {
+        ttsToggleBtn.classList.toggle('off', !isTTSOn);
+        ttsToggleBtn.setAttribute('aria-pressed', String(isTTSOn));
+        const stateTag = ttsToggleBtn.querySelector('.more-option-state');
+        if (stateTag) {
+            stateTag.textContent = isTTSOn ? "On" : "Off";
+        }
+    }
 }
 updateTTSUI(); // Sync at startup
 
@@ -1637,7 +1656,7 @@ joinBtn.addEventListener('click', async (e) => {
                     }, 3000);
                 }
 
-                // NEW: Unify with STT Caption Log and Cards
+                // Unify with STT Caption Log and Cards
                 // Note: isSTTOn check removed to allow one-way translation (everyone sees remote captions)
                 const logText = isDynamic ? `${text} 🔄` : text;
                 appendCaptionLog(name, logText);
@@ -2152,7 +2171,6 @@ async function startCamera() {
         if (localVolumeMeter) localVolumeMeter.innerText = 'mic_off';
         const localContainer = document.getElementById('localContainer');
         if (localContainer) localContainer.classList.add('video-muted');
-        setPredictionText('Camera Off');
 
         localCameraController = new Camera(localVideo, {
             onFrame: async () => {
@@ -2737,7 +2755,6 @@ function handleSpelling(letter) {
     lastAddedLetter = letter;
     accumulatedWord += letter;
 
-    if (isTTSOn) speak(letter.toLowerCase());
     updateSpellingDisplay();
 }
 
@@ -2793,21 +2810,18 @@ function finishSpelling(forceSpeak = false) {
     // Convert to Title Case to encourage TTS to say it as a word, not spell it (e.g. "Saurav" vs "SAURAV")
     const wordToSpeak = accumulatedWord.charAt(0).toUpperCase() + accumulatedWord.slice(1).toLowerCase();
 
-    // Speak locally if TTS is on
-    if (isTTSOn || forceSpeak) speak(wordToSpeak);
-
     // Keep finalized spelled words in the local live caption feed too.
     if (isSTTOn) {
-        appendCaptionLog("You", wordToSpeak);
+        appendCaptionLog("You", `[Spelled] ${wordToSpeak}`);
         displayVCSignCards(wordToSpeak);
     }
 
-    // Send to remote user
+    // Send to remote user as specialized spelled-word event
     if (supabaseChannel) {
         supabaseChannel.send({
             type: 'broadcast',
             event: 'sign-message',
-            payload: { text: wordToSpeak, name: localName }
+            payload: { text: wordToSpeak, name: localName, isSpelled: true }
         });
     }
 
@@ -3047,6 +3061,16 @@ camBtn.addEventListener('click', () => {
 
 if (ttsBtn) {
     ttsBtn.addEventListener('click', () => {
+        isTTSOn = !isTTSOn;
+        updateTTSUI();
+        if (!isTTSOn && window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
+    });
+}
+
+if (ttsToggleBtn) {
+    ttsToggleBtn.addEventListener('click', () => {
         isTTSOn = !isTTSOn;
         updateTTSUI();
         if (!isTTSOn && window.speechSynthesis) {
@@ -3492,6 +3516,11 @@ if (copyCodeBtn) {
 
 if (mobileCopyCodeBtn) {
     mobileCopyCodeBtn.addEventListener('click', copyMeetingCode);
+}
+
+const meetingCodeBtn = document.getElementById('meetingCodeBtn');
+if (meetingCodeBtn) {
+    meetingCodeBtn.addEventListener('click', copyMeetingCode);
 }
 
 // Full Room Modal Logic
