@@ -215,6 +215,38 @@
             display: none !important;
         }
 
+        .sign-cards-area-right.popup-in {
+            animation: sign-cards-slide-in 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .sign-card-item {
+            animation: sign-card-item-pop 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        @keyframes sign-cards-slide-in {
+            from {
+                opacity: 0;
+                transform: translateY(18px) scale(0.98);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes sign-card-item-pop {
+            from {
+                opacity: 0;
+                transform: translateY(16px) scale(0.9);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
         .placeholder-msg {
             width: 100%;
             height: 100%;
@@ -334,12 +366,311 @@
             letter-spacing: 3px !important;
         }
 
+        @media (max-width: 600px) {
+            :root {
+                --translation-mobile-control-height: 56px;
+                --translation-mobile-control-offset: 10px;
+                --translation-mobile-control-reserve: calc(var(--translation-mobile-control-height) + var(--translation-mobile-control-offset) + env(safe-area-inset-bottom) + 10px);
+            }
+
+            /* Override desktop voice mode layout on mobile */
+            body.voice-mode-active .translation-main {
+                grid-template-columns: 1fr;
+                width: 100%;
+            }
+
+            /* Full-screen container — no scroll */
+            .translation-container {
+                padding: 0;
+                gap: 0;
+                overflow: hidden;
+                height: 100dvh;
+                min-height: 100dvh;
+                justify-content: flex-start;
+                background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
+                flex-direction: column;
+            }
+            .translation-main {
+                grid-template-columns: 1fr;
+                width: 100%;
+                flex: none;
+                height: calc(100dvh - var(--translation-mobile-control-reserve));
+                min-height: 0;
+                gap: 0;
+                display: flex;
+                flex-direction: column;
+                padding-top: 0;
+            }
+
+            .video-section {
+                flex: 1;
+                min-height: 0;
+                display: flex;
+            }
+
+            /* Camera fills portion of screen */
+            .video-container {
+                left: 0;
+                width: 100%;
+                height: 100%;
+                aspect-ratio: unset;
+                border-radius: 0;
+                border: none;
+                box-shadow: none;
+                flex-shrink: 0;
+                background: #000;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+
+            /* Sign mode: no lower panel, camera fills down to control bar */
+            body:not(.voice-mode-active) .info-side-panel {
+                display: none !important;
+            }
+
+            body:not(.voice-mode-active) .video-container {
+                border-bottom: none;
+            }
+
+            /* Voice mode: show panel and reduce camera height */
+            body.voice-mode-active .video-section {
+                flex: 0 0 42vh;
+            }
+
+            /* Back button: icon-only circle */
+            .back-btn {
+                top: 14px;
+                left: 14px;
+                padding: 10px;
+                border-radius: 50%;
+                gap: 0;
+                background: rgba(0, 0, 0, 0.5);
+                backdrop-filter: blur(6px);
+                width: 44px;
+                height: 44px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0;
+                color: transparent;
+            }
+            .back-btn::before {
+                content: "\2190";
+                color: #fff;
+                font-size: 1.5rem;
+                line-height: 1;
+                font-weight: 600;
+            }
+            .back-btn span:last-child {
+                display: none;
+            }
+            .back-btn .material-icons {
+                display: none;
+            }
+
+            /* Translation result strip — compact */
+            .result-overlay {
+                bottom: 80px;
+                padding: 10px 18px;
+                font-size: 0.95rem;
+                max-width: 90%;
+                border-radius: 30px;
+            }
+
+            /* Control bar — fits in one tight row */
+            .control-bar {
+                bottom: calc(var(--translation-mobile-control-offset) + env(safe-area-inset-bottom));
+                gap: 10px;
+                padding: 0 10px;
+                display: flex;
+                flex-direction: row;
+                flex-wrap: nowrap;
+                align-items: center;
+                justify-content: center;
+            }
+
+            /* Control buttons styling for mobile */
+            .control-btn {
+                width: 44px;
+                height: 44px;
+                min-width: 44px;
+                min-height: 44px;
+                padding: 8px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            /* Shrink lang select to be compact */
+            #lang-select {
+                padding: 8px 12px !important;
+                font-size: 0.75rem !important;
+                border-radius: 16px !important;
+                min-width: 100px;
+                max-width: 140px;
+            }
+
+            /* Speech panel: captions and sign cards area */
+            .speech-container {
+                position: relative !important;
+                bottom: auto !important;
+                left: auto !important;
+                right: auto !important;
+                width: 100% !important;
+                height: 100%;
+                max-height: none;
+                min-height: 0;
+                border: none !important;
+                background: rgba(30, 41, 59, 0.6);
+                backdrop-filter: blur(8px);
+                padding: 0 !important;
+                box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+                grid-column: auto !important;
+                grid-row: auto !important;
+                display: flex;
+                flex-direction: column;
+                justify-content: flex-start;
+                align-items: stretch;
+                overflow: hidden;
+                flex: 1;
+            }
+
+            #speech-panel .card-body {
+                padding: 12px 14px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                min-height: 0;
+                overflow: hidden;
+            }
+
+            #speech-panel .speech-caption-log-right {
+                max-height: 32%;
+                min-height: 56px;
+                overflow-y: auto;
+                margin-bottom: 0;
+            }
+
+            #speech-panel .sign-cards-area-right {
+                height: auto;
+                min-height: 0;
+                max-height: none;
+                flex: 1;
+                overflow-y: auto;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                padding-bottom: 10px;
+            }
+
+            body.voice-mode-active .speech-container {
+                position: relative !important;
+                background: transparent !important;
+                backdrop-filter: none !important;
+                border: none !important;
+            }
+
+            /* Captions in the middle */
+            .listening-indicator {
+                position: static !important;
+                display: none !important;
+                left: auto !important;
+                top: auto !important;
+                z-index: auto;
+                margin: 24px 16px 0 16px !important;
+                font-size: 0.9rem !important;
+                color: #3b82f6;
+            }
+
+            body.voice-mode-active .listening-indicator {
+                display: flex !important;
+            }
+
+            body.voice-mode-active .listening-indicator.show {
+                display: flex !important;
+            }
+
+            .speech-caption-log {
+                max-height: auto;
+                min-height: auto;
+                position: static !important;
+                display: none !important;
+                left: auto !important;
+                top: auto !important;
+                z-index: auto;
+                width: 100% !important;
+                background: transparent !important;
+                padding: 6px 16px 12px 16px !important;
+                margin: 0 !important;
+                border: none !important;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                font-size: 0.85rem !important;
+                color: #e2e8f0;
+            }
+
+            body.voice-mode-active .speech-caption-log {
+                max-height: auto !important;
+                min-height: auto !important;
+                display: block !important;
+            }
+
+            body.voice-mode-active .speech-caption-log.show {
+                display: block !important;
+            }
+
+            /* Sign cards area at bottom */
+            .sign-cards-area {
+                height: auto;
+                min-height: 100px;
+                max-height: 30vh;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 12px 16px !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 0 !important;
+                background: rgba(15, 23, 42, 0.5);
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+                gap: 6px;
+                overflow-y: auto;
+            }
+
+            body.voice-mode-active .sign-cards-area {
+                width: 100% !important;
+                margin: 0 !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.15);
+                background: rgba(15, 23, 42, 0.5);
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+                gap: 6px;
+                padding: 12px 16px;
+            }
+
+            /* Spelling overlay: smaller on mobile */
+            #spelling-overlay {
+                top: 14px !important;
+                left: 50% !important;
+                transform: translateX(-50%) !important;
+                padding: 6px 16px !important;
+                border-radius: 8px !important;
+            }
+
+            #spelling-text {
+                font-size: 1.4rem !important;
+                letter-spacing: 3px !important;
+            }
+        }
+
 
         /* Extra small devices (< 360px) */
         @media (max-width: 360px) {
+            :root {
+                --translation-mobile-control-height: 48px;
+                --translation-mobile-control-offset: 8px;
+            }
+
             .control-bar {
                 gap: 6px;
-                bottom: 8px;
+                bottom: calc(var(--translation-mobile-control-offset) + env(safe-area-inset-bottom));
             }
 
             .control-btn {
