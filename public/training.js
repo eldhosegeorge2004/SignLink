@@ -205,6 +205,7 @@ async function deleteSignCardsFromCloud(labels = [], lang = currentLang) {
     const langLower = lang.toLowerCase();
 
     try {
+        const signCardsBucket = await window.getStorageBucket('signCards');
         let query = window.supabaseClient
             .from('sign_cards')
             .select('label, extension')
@@ -222,7 +223,7 @@ async function deleteSignCardsFromCloud(labels = [], lang = currentLang) {
             const paths = rows.map((row) => `${langLower}/${row.label}.${row.extension}`).filter(Boolean);
             if (paths.length > 0) {
                 const { error: removeErr } = await window.supabaseClient.storage
-                    .from('sign-cards')
+                    .from(signCardsBucket)
                     .remove(paths);
                 if (removeErr) {
                     console.warn('Failed to remove one or more sign card files from storage:', removeErr);
@@ -251,31 +252,21 @@ async function uploadSignCardRecord(label, cardRecord, lang = currentLang) {
 
     const normalizedLabel = normalizeLabel(label);
     if (!normalizedLabel) return;
-
-    const base64Response = await fetch(cardRecord.imageBase64);
-    const blob = await base64Response.blob();
-    const langLower = lang.toLowerCase();
-    const filePath = `${langLower}/${normalizedLabel}.${cardRecord.extension}`;
-
-    const { error: uploadErr } = await window.supabaseClient.storage
-        .from('sign-cards')
-        .upload(filePath, blob, { contentType: blob.type, upsert: true });
-    if (uploadErr) throw uploadErr;
-
-    const { data: urlData } = window.supabaseClient.storage
-        .from('sign-cards')
-        .getPublicUrl(filePath);
-
-    const { error: upsertErr } = await window.supabaseClient
-        .from('sign_cards')
-        .upsert({
-            lang: langLower,
+    const response = await fetch('/api/upload-sign-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            lang,
             label: normalizedLabel,
-            url: urlData.publicUrl,
-            extension: cardRecord.extension,
-            updated_at: new Date().toISOString()
-        }, { onConflict: 'lang,label' });
-    if (upsertErr) throw upsertErr;
+            imageBase64: cardRecord.imageBase64,
+            extension: cardRecord.extension
+        })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.error || 'Failed to upload sign card');
+    }
 }
 
 async function uploadAllPendingSignCards(lang = currentLang) {
@@ -866,22 +857,22 @@ function setupMobileSignSetup() {
         });
 
         const uploadComponent = async (type, fileName, fileDataB64, contentType) => {
-            const path = `${currentLang.toLowerCase()}/${type}/${fileName}`;
-            
-            // Convert base64 to Blob
-            const byteCharacters = atob(fileDataB64);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            const response = await fetch('/api/upload-model-component', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    lang: currentLang,
+                    type,
+                    fileName,
+                    fileDataB64,
+                    contentType
+                })
+            });
+
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to upload model component');
             }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: contentType });
-
-            const { error: uploadErr } = await window.supabaseClient.storage
-                .from('models')
-                .upload(path, blob, { contentType, upsert: true });
-
-            if (uploadErr) throw uploadErr;
         };
 
         // Static Model Backup
@@ -1269,22 +1260,22 @@ async function uploadModelToCloud(type, modelInstance, labels, handReqs = null) 
 }
 
 async function uploadComponent(type, fileName, b64Data, contentType) {
-    const path = `${currentLang.toLowerCase()}/${type}/${fileName}`;
-    
-    // Convert base64 to Blob
-    const byteCharacters = atob(b64Data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    const response = await fetch('/api/upload-model-component', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            lang: currentLang,
+            type,
+            fileName,
+            fileDataB64: b64Data,
+            contentType
+        })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.error || 'Failed to upload model component');
     }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: contentType });
-
-    const { error: uploadErr } = await window.supabaseClient.storage
-        .from('models')
-        .upload(path, blob, { contentType, upsert: true });
-
-    if (uploadErr) throw new Error(`Supabase upload error: ${uploadErr.message}`);
 }
 
 function arrayBufferToBase64(buffer) {
@@ -1688,43 +1679,16 @@ async function loadDataFromServer() {
 
 async function saveToServer() {
     try {
-        const lang = currentLang;
-        const samples = collectedData || [];
+        const groupedData = { [currentLang]: collectedData || [] };
+        const response = await fetch('/api/training-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(groupedData)
+        });
 
-        // Delete existing rows for this language
-        const { error: deleteErr } = await window.supabaseClient
-            .from('training_data')
-            .delete()
-            .eq('lang', lang);
-
-        if (deleteErr) throw deleteErr;
-
-        if (samples.length === 0) {
-            sessionHistory = [];
-            updateMobileRevertState();
-            return;
-        }
-
-        // Insert in batches of 500
-        const BATCH = 500;
-        for (let i = 0; i < samples.length; i += BATCH) {
-            const batch = samples.slice(i, i + BATCH).map(s => ({
-                lang,
-                label: s.label,
-                type: s.type || 'static',
-                landmarks: s.landmarks || null,
-                frames: s.frames || null,
-                hand_count: s.handCount || null,
-                is_trained: s.isTrained !== undefined ? s.isTrained : false,
-                recorded_at: s.recordedAt || null,
-                trained_at: s.trainedAt || null
-            }));
-
-            const { error: insertErr } = await window.supabaseClient
-                .from('training_data')
-                .insert(batch);
-
-            if (insertErr) throw insertErr;
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to save training data');
         }
 
         sessionHistory = [];
@@ -1998,36 +1962,44 @@ async function ensureTrainingModelsLoaded() {
 async function fetchCloudModel(type, lang) {
     try {
         const langLower = lang.toLowerCase();
-        
-        // 1. Get Public URLs for labels and model
-        const { data: labelsUrlData } = window.supabaseClient.storage
-            .from('models')
-            .getPublicUrl(`${langLower}/${type}/labels.json`);
-            
-        const { data: modelUrlData } = window.supabaseClient.storage
-            .from('models')
-            .getPublicUrl(`${langLower}/${type}/model.json`);
+        const candidates = await window.getStorageBucketCandidates('models');
 
-        // 2. Load Labels
-        const labelsRes = await fetch(labelsUrlData.publicUrl);
-        if (!labelsRes.ok) return null;
-        const labels = normalizeLabelList(await labelsRes.json()).normalized;
-        
-        // 3. Load Model
-        const cloudModel = await tf.loadLayersModel(modelUrlData.publicUrl);
-        
-        let handReqs = null;
-        if (type === 'dynamic') {
-            const { data: handReqsUrlData } = window.supabaseClient.storage
-                .from('models')
-                .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
-            const reqRes = await fetch(handReqsUrlData.publicUrl);
-            if (reqRes.ok) {
-                handReqs = normalizeHandRequirementMap(await reqRes.json()).normalized;
+        for (const modelsBucket of candidates) {
+            // 1. Get Public URLs for labels and model
+            const { data: labelsUrlData } = window.supabaseClient.storage
+                .from(modelsBucket)
+                .getPublicUrl(`${langLower}/${type}/labels.json`);
+                
+            const { data: modelUrlData } = window.supabaseClient.storage
+                .from(modelsBucket)
+                .getPublicUrl(`${langLower}/${type}/model.json`);
+
+            // 2. Load Labels
+            const labelsRes = await fetch(labelsUrlData.publicUrl);
+            if (!labelsRes.ok) {
+                continue;
             }
+
+            const labels = normalizeLabelList(await labelsRes.json()).normalized;
+            
+            // 3. Load Model
+            const cloudModel = await tf.loadLayersModel(modelUrlData.publicUrl);
+            
+            let handReqs = null;
+            if (type === 'dynamic') {
+                const { data: handReqsUrlData } = window.supabaseClient.storage
+                    .from(modelsBucket)
+                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
+                const reqRes = await fetch(handReqsUrlData.publicUrl);
+                if (reqRes.ok) {
+                    handReqs = normalizeHandRequirementMap(await reqRes.json()).normalized;
+                }
+            }
+            
+            return { model: cloudModel, labels, handReqs };
         }
-        
-        return { model: cloudModel, labels, handReqs };
+
+        return null;
     } catch (err) {
         console.warn(`Cloud model fetch failed for ${type}:`, err);
         return null;
@@ -2498,6 +2470,7 @@ if (signCardBtn && signCardInput) {
             if (label) {
                 // Attempt to delete any associated sign card image from the server
                 try {
+                    const signCardsBucket = await window.getStorageBucket('signCards');
                     const { data: cardData } = await window.supabaseClient
                         .from('sign_cards')
                         .select('extension')
@@ -2507,7 +2480,7 @@ if (signCardBtn && signCardInput) {
 
                     if (cardData) {
                         const filePath = `${currentLang.toLowerCase()}/${label}.${cardData.extension}`;
-                        await window.supabaseClient.storage.from('sign-cards').remove([filePath]);
+                        await window.supabaseClient.storage.from(signCardsBucket).remove([filePath]);
                     }
                     await window.supabaseClient.from('sign_cards').delete().eq('lang', currentLang.toLowerCase()).eq('label', label);
                 } catch (err) {
@@ -2579,26 +2552,19 @@ if (signCardBtn && signCardInput) {
                     return;
                 }
 
-                // Convert base64 to Blob
-                const base64Response = await fetch(base64Data);
-                const blob = await base64Response.blob();
-                
-                const filePath = `${currentLang.toLowerCase()}/${label}.${extension}`;
-                const { error: uploadErr } = await window.supabaseClient.storage
-                    .from('sign-cards')
-                    .upload(filePath, blob, { contentType: blob.type, upsert: true });
-                
-                if (uploadErr) throw uploadErr;
+                const response = await fetch('/api/upload-sign-card', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lang: currentLang,
+                        label,
+                        imageBase64: base64Data,
+                        extension
+                    })
+                });
 
-                const { data: urlData } = window.supabaseClient.storage
-                    .from('sign-cards')
-                    .getPublicUrl(filePath);
-
-                const { error: upsertErr } = await window.supabaseClient
-                    .from('sign_cards')
-                    .upsert({ lang: currentLang.toLowerCase(), label: label, url: urlData.publicUrl, extension, updated_at: new Date().toISOString() }, { onConflict: 'lang,label' });
-
-                if (upsertErr) throw upsertErr;
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.error || 'Failed to upload sign card');
 
                 if (true) {
                     signCardStatus.textContent = `✅ Uploaded successfully!`;

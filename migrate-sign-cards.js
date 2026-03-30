@@ -8,7 +8,7 @@ const { supabase } = require('./supabase-config');
 const fs = require('fs');
 const path = require('path');
 
-const STORAGE_BUCKET = 'sign-cards';
+const STORAGE_BUCKET = process.env.SUPABASE_SIGN_CARDS_BUCKET || 'sign-cards';
 const SIGNS_DIR = path.join(__dirname, 'public', 'signs-images');
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 
@@ -110,7 +110,7 @@ async function main() {
     const bucket = buckets.find(b => b.name === STORAGE_BUCKET);
     if (!bucket) {
         console.error(`❌ Bucket "${STORAGE_BUCKET}" not found!`);
-        console.error('Please create a PUBLIC bucket named "sign-cards" in Supabase Dashboard → Storage → New Bucket');
+        console.error(`Please create a PUBLIC bucket named "${STORAGE_BUCKET}" in Supabase Dashboard → Storage → New Bucket`);
         process.exit(1);
     }
     console.log(`✅ Bucket "${STORAGE_BUCKET}" found (public: ${bucket.public})\n`);
@@ -141,7 +141,7 @@ async function main() {
     }
 
     console.log(`\n✅ Migration complete! Uploaded ${total} sign card images to Supabase Storage.`);
-    console.log(`\nVerify in Supabase Dashboard → Storage → sign-cards bucket & Table Editor → sign_cards table`);
+    console.log(`\nVerify in Supabase Dashboard → Storage → ${STORAGE_BUCKET} bucket & Table Editor → sign_cards table`);
     process.exit(0);
 }
 
