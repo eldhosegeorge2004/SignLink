@@ -703,7 +703,7 @@ function setupMobileSignSetup() {
             setTrainSaveButtonBusy(true);
 
             try {
-                showProcessingModal("Training & Saving...", "Creating your local model for Live Translation and Video Call.");
+                showProcessingModal("Training & Uploading...", "Creating your local model for Live Translation and Video Call.");
                 const trainingResult = await runInternalTraining();
 
                 updateProcessingModal("Saving Model...", "Saving the trained model on this device...");
@@ -712,8 +712,14 @@ function setupMobileSignSetup() {
                     throw new Error("No trained model was available to save.");
                 }
 
-                updateProcessingModal("Saving Samples...", "Syncing training metadata...");
+                updateProcessingModal("Uploading Details...", "Uploading sign cards and reference images...");
+                await uploadAllPendingSignCards();
+
+                updateProcessingModal("Syncing Data...", "Saving hand landmarks to the cloud database...");
                 await saveToServer();
+
+                updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
+                await uploadTrainedModelsToCloud();
 
                 hideProcessingModal();
 
@@ -726,13 +732,13 @@ function setupMobileSignSetup() {
                 updateMobileTrainSaveVisibility();
 
                 const successMsg = trainingResult?.alreadyTrained
-                    ? "Model already trained and saved for Live Translation & Video Call."
-                    : "Model trained and saved for Live Translation & Video Call.";
-                showToast(successMsg, 'task_alt');
+                    ? "Model already trained and uploaded to Supabase."
+                    : "Model trained and uploaded to Supabase.";
+                showToast(successMsg, 'cloud_done');
             } catch (err) {
-                console.error('Train & save failed:', err);
+                console.error('Train & upload failed:', err);
                 hideProcessingModal();
-                showCustomAlert(`Could not train and save the model: ${err.message || 'Unknown error'}`);
+                showCustomAlert(`Could not train and upload the model: ${err.message || 'Unknown error'}`);
                 setTrainSaveButtonBusy(false);
                 return;
             }
@@ -754,51 +760,6 @@ function setupMobileSignSetup() {
         });
     }
 
-    // Connect Mobile Action Buttons
-    if (mobileUploadBtn) {
-        mobileUploadBtn.addEventListener('click', async () => {
-            if (!hasCollectedData()) {
-                showToast("No data to upload!", "warning");
-                return;
-            }
-
-            if (!hasAllDataTrained()) {
-                showToast("Train all collected data before uploading.", "warning");
-                return;
-            }
-
-            mobileUploadBtn.disabled = true;
-            
-            try {
-                showProcessingModal("Preparing Upload...", "Checking for trained local models to sync to Supabase.");
-
-                await ensureTrainingModelsLoaded();
-                if (!model?.static && !model?.dynamic) {
-                    throw new Error("Train locally first, then upload the trained data to Supabase.");
-                }
-                
-                updateProcessingModal("Uploading Details...", "Uploading sign cards and reference images...");
-                await uploadAllPendingSignCards();
-
-                updateProcessingModal("Syncing Data...", "Saving hand landmarks to the cloud database...");
-                await saveToServer();
-                
-                updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
-                await uploadTrainedModelsToCloud();
-
-                hideProcessingModal();
-                showToast('Uploaded trained data to Supabase.', 'cloud_done');
-                
-            } catch (err) {
-                console.error('Mobile process failed:', err);
-                hideProcessingModal();
-                showCustomAlert(`Encountered an issue: ${err.message || 'Check connection'}`);
-            } finally {
-                mobileUploadBtn.disabled = false;
-            }
-        });
-    }
-
     if (trainCollectedDataBtn) {
         trainCollectedDataBtn.addEventListener('click', async () => {
             if (!hasCollectedData()) {
@@ -806,15 +767,10 @@ function setupMobileSignSetup() {
                 return;
             }
 
-            if (hasAllDataTrained()) {
-                showToast("All collected data is already trained.", "task_alt");
-                return;
-            }
-
             trainCollectedDataBtn.disabled = true;
 
             try {
-                showProcessingModal("Training Collected Data...", "Creating your local model for Live Translation and Video Call.");
+                showProcessingModal("Training & Uploading...", "Creating your local model for Live Translation and Video Call.");
                 const trainingResult = await runInternalTraining();
 
                 updateProcessingModal("Saving Model...", "Saving the trained model on this device...");
@@ -823,19 +779,25 @@ function setupMobileSignSetup() {
                     throw new Error("No trained model was available to save.");
                 }
 
-                updateProcessingModal("Saving Samples...", "Syncing training metadata...");
+                updateProcessingModal("Uploading Details...", "Uploading sign cards and reference images...");
+                await uploadAllPendingSignCards();
+
+                updateProcessingModal("Syncing Data...", "Saving hand landmarks to the cloud database...");
                 await saveToServer();
+
+                updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
+                await uploadTrainedModelsToCloud();
 
                 hideProcessingModal();
 
                 const successMsg = trainingResult?.alreadyTrained
-                    ? "Collected data was already trained locally."
-                    : "Collected data trained and saved locally.";
-                showToast(successMsg, 'task_alt');
+                    ? "Collected data already trained and uploaded to Supabase."
+                    : "Collected data trained and uploaded to Supabase.";
+                showToast(successMsg, 'cloud_done');
             } catch (err) {
-                console.error('Collected data training failed:', err);
+                console.error('Collected data train/upload failed:', err);
                 hideProcessingModal();
-                showCustomAlert(`Could not train the collected data: ${err.message || 'Unknown error'}`);
+                showCustomAlert(`Could not train and upload the collected data: ${err.message || 'Unknown error'}`);
             } finally {
                 setTrainCollectedDataButtonState();
                 setUploadButtonState();
@@ -1112,7 +1074,7 @@ function setTrainSaveButtonBusy(isBusy) {
     mobileTrainSaveBtn.disabled = isBusy;
     mobileTrainSaveBtn.innerHTML = isBusy
         ? '<span class="material-icons" style="font-size: 22px;">sync</span><span>Training...</span>'
-        : '<span class="material-icons" style="font-size: 22px;">task_alt</span><span>Train &amp; Save</span>';
+    : '<span class="material-icons" style="font-size: 22px;">cloud_upload</span><span>Train &amp; Upload</span>';
 }
 
 function setTrainCollectedDataButtonState() {
@@ -1120,17 +1082,16 @@ function setTrainCollectedDataButtonState() {
 
     const hasData = hasCollectedData();
     const untrainedCount = getUntrainedSampleCount();
-    const allTrained = hasData && untrainedCount === 0;
 
-    trainCollectedDataBtn.disabled = !hasData || allTrained;
+    trainCollectedDataBtn.disabled = !hasData;
     trainCollectedDataBtn.title = !hasData
         ? 'Record some signs first'
-        : allTrained
-            ? 'All collected data is already trained'
-            : 'Train all collected data locally';
-    trainCollectedDataBtn.innerHTML = allTrained
-        ? '<span class="material-icons" style="font-size: 20px;">check_circle</span>All Data Trained'
-        : '<span class="material-icons" style="font-size: 20px;">model_training</span>Train Collected Data';
+        : untrainedCount === 0
+            ? 'Upload already trained data, models, and sign cards to Supabase'
+            : 'Train and upload all collected data to Supabase';
+    trainCollectedDataBtn.innerHTML = untrainedCount === 0
+        ? '<span class="material-icons" style="font-size: 20px;">cloud_upload</span>Upload Trained Data'
+        : '<span class="material-icons" style="font-size: 20px;">cloud_upload</span>Train &amp; Upload';
 }
 
 function setUploadButtonState() {
@@ -1166,7 +1127,7 @@ function updateMobileTrainSaveVisibility() {
     if (shouldShow) {
         if (alreadySaved) {
             mobileTrainSaveBtn.disabled = true;
-            mobileTrainSaveBtn.innerHTML = '<span class="material-icons" style="font-size: 22px;">check_circle</span><span>Saved</span>';
+            mobileTrainSaveBtn.innerHTML = '<span class="material-icons" style="font-size: 22px;">check_circle</span><span>Uploaded</span>';
         } else {
             setTrainSaveButtonBusy(false);
         }
