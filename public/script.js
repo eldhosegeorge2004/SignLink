@@ -239,6 +239,7 @@ let localName = "You";
 let remoteName = "Remote User";
 let activeCaptionPanelView = 'captions';
 let lastSTTStartAt = 0;
+let sttRestartTimer = null;
 let isRemoteAudioEnabled = JSON.parse(localStorage.getItem('vc-remote-audio-enabled') ?? 'true');
 let isOverlayOn = JSON.parse(localStorage.getItem('vc-hand-overlay-enabled') ?? 'true');
 
@@ -296,6 +297,10 @@ updateOptionsMenuUI();
 function disableSTTWithStatus(message) {
     isSTTOn = false;
     isRecognitionActive = false;
+    if (sttRestartTimer) {
+        clearTimeout(sttRestartTimer);
+        sttRestartTimer = null;
+    }
     updateSTTUI();
     document.body.classList.remove('stt-active');
     if (message) {
@@ -725,16 +730,44 @@ async function initSTT() {
         }
     };
 
-    const restartSTT = async () => {
-        if (!isSTTOn || !recognition) return;
+    let lastPartialSentText = '';
+    let lastPartialSentAt = 0;
+    const handlePartialTranscript = (partialTranscript) => {
+        const text = String(partialTranscript || '').trim();
+        if (!text || text.length < 10) return;
 
-        console.log("STT: Attempting auto-restart...");
-        try {
-            await recognition.start();
-        } catch (e) {
-            console.error("STT Restart Error:", e);
-        }
+        const now = Date.now();
+        const normalized = text.toLowerCase();
+        const isDuplicate = normalized === lastPartialSentText.toLowerCase();
+        const tooSoon = (now - lastPartialSentAt) < 2200;
+        if (isDuplicate || tooSoon) return;
+
+        lastPartialSentText = text;
+        lastPartialSentAt = now;
+        handleFinalTranscript(text);
     };
+
+    const scheduleSTTRestart = (delayMs = 450) => {
+        if (!isSTTOn || !recognition) return;
+        if (sttRestartTimer) {
+            clearTimeout(sttRestartTimer);
+            sttRestartTimer = null;
+        }
+
+        sttRestartTimer = setTimeout(async () => {
+            sttRestartTimer = null;
+            if (!isSTTOn || !recognition) return;
+
+            console.log("STT: Attempting auto-restart...");
+            try {
+                await recognition.start();
+            } catch (e) {
+                console.error("STT Restart Error:", e);
+            }
+        }, delayMs);
+    };
+
+    const restartSTT = async (delayMs = 450) => scheduleSTTRestart(delayMs);
 
     if (nativeSpeechBridge && nativeSpeechBridge.isSupportedCandidate()) {
         const nativeAvailable = await nativeSpeechBridge.isAvailable();
@@ -750,6 +783,9 @@ async function initSTT() {
                 onFinal: (data) => {
                     handleFinalTranscript(data && data.transcript);
                 },
+                onPartial: (data) => {
+                    handlePartialTranscript(data && data.transcript);
+                },
                 onError: (data) => {
                     const errorCode = data && data.error;
                     console.error("STT Error:", errorCode || (data && data.message));
@@ -758,23 +794,33 @@ async function initSTT() {
                         alert("Speech recognition permission denied.");
                         disableSTTWithStatus("Speech-to-text permission denied.");
                     } else if (errorCode === 'audio-capture') {
-                        disableSTTWithStatus("Speech-to-text could not access the microphone on this device.");
+                        disableSTTWithStatus("Speech-to-text could not access mic input for captions. On some phones, STT cannot run while call mic is active.");
                     } else if (errorCode === 'service-not-allowed') {
                         disableSTTWithStatus("Speech-to-text is not available on this device.");
+                    } else if (errorCode === 'busy') {
+                        restartSTT(1000);
+                    } else if (errorCode === 'no-match' || errorCode === 'no-speech') {
+                        restartSTT(300);
                     } else if (errorCode === 'aborted') {
                         const startedRecently = lastSTTStartAt && (Date.now() - lastSTTStartAt < 5000);
                         const hiddenTab = document.hidden;
                         if (hiddenTab || startedRecently) {
                             disableSTTWithStatus("Speech-to-text stopped in this tab. For local testing, use two different browsers or two devices.");
+                        } else {
+                            restartSTT(500);
                         }
                     } else if (errorCode === 'network') {
                         console.warn("STT Network error. Will attempt restart.");
+                        restartSTT(1200);
                     }
                 },
-                onEnd: () => {
+                onEnd: (data) => {
                     isRecognitionActive = false;
                     console.log("STT: Recognition ended.");
-                    restartSTT();
+                    const restartable = data && data.restartable !== false;
+                    if (restartable) {
+                        restartSTT(350);
+                    }
                 }
             });
 
@@ -789,6 +835,20 @@ async function initSTT() {
 
             return recognition;
         }
+
+        if (!SpeechRecognition) {
+            isSTTSupported = false;
+            updateSTTUI();
+            disableSTTWithStatus("Speech-to-text is not available on this phone.");
+            return null;
+        }
+    }
+
+    if (!SpeechRecognition) {
+        isSTTSupported = false;
+        updateSTTUI();
+        disableSTTWithStatus("Speech-to-text is not available in this browser.");
+        return null;
     }
 
     recognition = new SpeechRecognition();
@@ -824,14 +884,21 @@ async function initSTT() {
             disableSTTWithStatus("Speech-to-text could not access the microphone in this tab.");
         } else if (event.error === 'service-not-allowed') {
             disableSTTWithStatus("Speech-to-text is not available in this browser tab.");
+        } else if (event.error === 'busy') {
+            restartSTT(1000);
+        } else if (event.error === 'no-speech' || event.error === 'no-match') {
+            restartSTT(300);
         } else if (event.error === 'aborted') {
             const startedRecently = lastSTTStartAt && (Date.now() - lastSTTStartAt < 5000);
             const hiddenTab = document.hidden;
             if (hiddenTab || startedRecently) {
                 disableSTTWithStatus("Speech-to-text stopped in this tab. For local testing, use two different browsers or two devices.");
+            } else {
+                restartSTT(500);
             }
         } else if (event.error === 'network') {
             console.warn("STT Network error. Will attempt restart.");
+            restartSTT(1200);
         }
     };
 
@@ -903,15 +970,18 @@ function startSTTSession() {
             hideVCSignCards();
         } catch (e) {
             console.error("Failed to start Recognition:", e);
-            isSTTOn = false;
-            updateSTTUI();
-            document.body.classList.remove('stt-active');
+            const reason = e && (e.message || String(e));
+            disableSTTWithStatus(`Speech-to-text could not start${reason ? `: ${reason}` : '.'}`);
         }
     })();
 }
 
 function stopSTTSession() {
     isSTTOn = false;
+    if (sttRestartTimer) {
+        clearTimeout(sttRestartTimer);
+        sttRestartTimer = null;
+    }
     updateSTTUI();
     document.body.classList.remove('stt-active');
     if (recognition && isRecognitionActive) {

@@ -24,6 +24,7 @@ let localStream = null;
 let cameraLoopId = null;
 let recognition = null; // For Speech to Text
 const nativeSpeechBridge = window.SignLinkCapacitorSpeech || null;
+let speechRestartTimer = null;
 let isHandInferencePending = false;
 let lastHandInferenceAt = 0;
 let lastResultText = null;
@@ -1357,35 +1358,74 @@ setSignCardsPanelCollapsed(false);
 // --- Speech Recognition Logic (Speech to Sign) ---
 async function initSpeechRecognition() {
     if (recognition) return recognition;
+    let lastFinalCaption = '';
+    let lastFinalCaptionAt = 0;
+
+    const normalizeTranscript = (text) => String(text || '')
+        .toLowerCase()
+        .replace(/[^\w\s]|_/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
 
     const handleFinalTranscript = (text) => {
         if (isSignMode) return;
 
         const finalized = String(text || '').trim();
         if (!finalized) return;
+        const now = Date.now();
+        const normalized = normalizeTranscript(finalized);
+        if (!normalized) return;
+
+        const isDuplicate = normalized === lastFinalCaption && (now - lastFinalCaptionAt) < 4500;
+        if (isDuplicate) {
+            console.log('STT duplicate suppressed:', finalized);
+            return;
+        }
+
+        lastFinalCaption = normalized;
+        lastFinalCaptionAt = now;
 
         appendSpeechCaption(finalized);
         displaySignCards(finalized);
+        setResultText(finalized);
     };
 
-    const restartRecognition = async () => {
+    let lastPartialSentText = '';
+    let lastPartialSentAt = 0;
+    const handlePartialTranscript = (text) => {
+        if (isSignMode) return;
+        const partial = String(text || '').trim();
+        if (!partial || partial.length < 4) return;
+
+        const now = Date.now();
+        const isDuplicate = partial.toLowerCase() === lastPartialSentText.toLowerCase();
+        const tooSoon = (now - lastPartialSentAt) < 350;
+        if (isDuplicate || tooSoon) return;
+
+        lastPartialSentText = partial;
+        lastPartialSentAt = now;
+        setResultText(`Listening: ${partial}`);
+    };
+
+    const restartRecognition = async (delayMs = 450) => {
         if (isSignMode || !recognition) return;
 
-        console.log("Restarting speech recognition...");
-        try {
-            await recognition.start();
-        } catch (e) {
-            console.error("Error restarting recognition:", e);
-            setTimeout(async () => {
-                if (isSignMode || !recognition) return;
-
-                try {
-                    await recognition.start();
-                } catch (retryError) {
-                    console.error("Error retrying recognition restart:", retryError);
-                }
-            }, 1000);
+        if (speechRestartTimer) {
+            clearTimeout(speechRestartTimer);
+            speechRestartTimer = null;
         }
+
+        speechRestartTimer = setTimeout(async () => {
+            speechRestartTimer = null;
+            if (isSignMode || !recognition) return;
+
+            console.log("Restarting speech recognition...");
+            try {
+                await recognition.start();
+            } catch (e) {
+                console.error("Error restarting recognition:", e);
+            }
+        }, delayMs);
     };
 
     if (nativeSpeechBridge && nativeSpeechBridge.isSupportedCandidate()) {
@@ -1394,21 +1434,48 @@ async function initSpeechRecognition() {
             const session = await nativeSpeechBridge.createSession({
                 lang: 'en-US',
                 partialResults: true,
+                onStart: () => {
+                    if (!isSignMode) {
+                        setResultText('Listening... speak now');
+                    }
+                },
                 onFinal: (data) => {
                     handleFinalTranscript(data && data.transcript);
                 },
-                onError: (data) => {
-                    console.error("Speech recognition error:", data && (data.error || data.message));
+                onPartial: (data) => {
+                    handlePartialTranscript(data && data.transcript);
                 },
-                onEnd: () => {
+                onError: (data) => {
+                    const errorCode = data && data.error;
+                    console.error("Speech recognition error:", errorCode || (data && data.message));
+                    if (errorCode === 'busy') {
+                        restartRecognition(1400);
+                    } else if (errorCode === 'no-match' || errorCode === 'no-speech') {
+                        restartRecognition(1400);
+                    } else if (errorCode === 'network') {
+                        restartRecognition(2000);
+                    } else if (errorCode === 'not-allowed') {
+                        setResultText("Microphone permission denied for speech mode.");
+                    } else if (errorCode === 'service-not-allowed') {
+                        setResultText("Speech service unavailable on this phone.");
+                    }
+                },
+                onEnd: (data) => {
                     console.log("Speech recognition ended.");
-                    restartRecognition();
+                    const restartable = data && data.restartable !== false;
+                    if (restartable) {
+                        restartRecognition(1300);
+                    }
                 }
             });
 
             recognition = {
                 async start() {
-                    return session.start({ lang: 'en-US', partialResults: true });
+                    const started = await session.start({ lang: 'en-US', partialResults: true });
+                    if (!isSignMode) {
+                        setResultText('Listening... speak now');
+                    }
+                    return started;
                 },
                 async stop() {
                     return session.stop();
@@ -1421,6 +1488,7 @@ async function initSpeechRecognition() {
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
+        setResultText("Speech-to-text is not available on this device/browser.");
         return null;
     }
 
@@ -1445,11 +1513,18 @@ async function initSpeechRecognition() {
 
     recognition.onerror = (event) => {
         console.error("Speech recognition error:", event.error);
+        if (event.error === 'busy') {
+            restartRecognition(1400);
+        } else if (event.error === 'no-match' || event.error === 'no-speech') {
+            restartRecognition(1400);
+        } else if (event.error === 'network') {
+            restartRecognition(2000);
+        }
     };
 
     recognition.onend = () => {
         console.log("Speech recognition ended.");
-        restartRecognition();
+        restartRecognition(1300);
     };
 
     return recognition;
@@ -1852,6 +1927,10 @@ function bindSignVoiceToggle() {
             toggleBtn.title = 'Switch to Voice Mode';
 
             if (isCamOn && !localStream) startCamera();
+            if (speechRestartTimer) {
+                clearTimeout(speechRestartTimer);
+                speechRestartTimer = null;
+            }
             if (recognition) {
                 try {
                     await recognition.stop();
@@ -1871,12 +1950,18 @@ function bindSignVoiceToggle() {
                 await initSpeechRecognition();
             }
 
+            if (!recognition) {
+                setResultText("Speech-to-text is unavailable on this phone/browser.");
+                return;
+            }
+
             setTimeout(async () => {
                 if (recognition) {
                     try {
                         await recognition.start();
                     } catch (e) {
                         console.error("Error starting recognition:", e);
+                        setResultText(`Speech-to-text could not start: ${e && e.message ? e.message : 'unknown error'}`);
                     }
                 }
             }, 500);
