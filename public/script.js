@@ -85,6 +85,50 @@ function normalizeHandRequirementMap(map) {
     return { map: normalized, changed };
 }
 
+async function fetchCloudModel(type, lang) {
+    try {
+        const langLower = lang.toLowerCase();
+        const candidates = await window.getStorageBucketCandidates('models');
+
+        for (const modelsBucket of candidates) {
+            const { data: labelsUrlData } = window.supabaseClient.storage
+                .from(modelsBucket)
+                .getPublicUrl(`${langLower}/${type}/labels.json`);
+
+            const { data: modelUrlData } = window.supabaseClient.storage
+                .from(modelsBucket)
+                .getPublicUrl(`${langLower}/${type}/model.json`);
+
+            const labelsRes = await fetch(labelsUrlData.publicUrl);
+            if (!labelsRes.ok) {
+                continue;
+            }
+
+            const labels = normalizeLabelList(await labelsRes.json()).labels;
+
+            const model = await tf.loadLayersModel(modelUrlData.publicUrl);
+
+            let handReqs = null;
+            if (type === 'dynamic') {
+                const { data: handReqsUrlData } = window.supabaseClient.storage
+                    .from(modelsBucket)
+                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
+                const reqRes = await fetch(handReqsUrlData.publicUrl);
+                if (reqRes.ok) {
+                    handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
+                }
+            }
+
+            return { model, labels, handReqs };
+        }
+
+        return null;
+    } catch (err) {
+        console.warn(`Cloud model fetch failed for ${type}:`, err);
+        return null;
+    }
+}
+
 async function updateModeVariables() {
     if (currentMode === 'ISL') {
         dbCollection = 'gestures';
@@ -100,21 +144,7 @@ async function updateModeVariables() {
     await loadModelsAndLabels();
 }
 
-// Helper to load from Firestore
-async function loadFromFirestore() {
-    try {
-        const querySnapshot = await getDocs(collection(db, dbCollection));
-        collectedData = [];
-        querySnapshot.forEach((doc) => {
-            collectedData.push({ ...doc.data(), id: doc.id }); // Use Firestore ID
-        });
-        updateDataStats();
-        renderSignList();
-        console.log("Loaded data from Firestore:", collectedData.length);
-    } catch (e) {
-        console.error("Error loading from Firestore:", e);
-    }
-}
+// loadFromFirestore and updateDataStats removed
 
 // Global State
 let collectedData = [];
@@ -130,6 +160,9 @@ const meetingRoom = document.getElementById('meeting-room');
 const newMeetingBtn = document.getElementById('newMeetingBtn');
 const startRoomInput = document.getElementById('startRoomInput');
 const lobbyStatus = document.getElementById('status');
+let meetingStatusToastTimer = null;
+let lastMeetingStatusToast = '';
+let captionPanelDimTimer = null;
 const userNameInput = document.getElementById('userNameInput');
 const joinBtn = document.getElementById('joinBtn');
 const clockElement = document.getElementById('clock');
@@ -144,49 +177,34 @@ const mobileMeetingCodeDisplay = document.getElementById('mobileMeetingCodeDispl
 const predictionOverlay = document.getElementById('prediction-overlay');
 const predictionDiv = document.getElementById('prediction');
 const predictionSignCardsContainer = document.getElementById('prediction-sign-cards-container');
+const captionLogWindow = document.getElementById('caption-log-window');
+const captionToggleBtn = document.getElementById('captionToggleBtn');
+const signCardsPanelWindow = document.getElementById('sign-cards-panel-window');
+const signCardsToggleBtn = document.getElementById('signCardsToggleBtn');
+const captionPanelViewport = document.getElementById('caption-panel-viewport');
+const captionPanelTrack = document.getElementById('caption-panel-track');
 const remotePredictionDiv = document.getElementById('remotePrediction');
 const remoteCaptionOverlay = document.getElementById('remote-caption-overlay');
 
 const micBtn = document.getElementById('micBtn');
 const camBtn = document.getElementById('camBtn');
 const hangupBtn = document.getElementById('hangupBtn');
-const trainToggleBtn = document.getElementById('trainToggleBtn');
 const ttsBtn = document.getElementById('ttsBtn');
 
-const sidePanel = document.getElementById('side-panel');
-const closePanelBtn = document.getElementById('closePanelBtn');
-const labelInput = document.getElementById('labelInput');
-const collectBtn = document.getElementById('collectBtn');
-const dataCountDiv = document.getElementById('dataCount');
-const trainBtn = document.getElementById('trainBtn');
-const saveBtn = document.getElementById('saveBtn');
-const clearBtn = document.getElementById('clearBtn');
-const trainStatusDiv = document.getElementById('trainStatus');
 const sttToggleBtn = document.getElementById('sttToggleBtn');
-const vcCaptionBar = document.getElementById('vc-caption-bar');
-const vcLineA = document.getElementById('vc-caption-line-a');
-const vcLineB = document.getElementById('vc-caption-line-b');
+const ttsToggleBtn = document.getElementById('ttsToggleBtn');
 const captionLogList = document.getElementById('caption-log-list');
 const localVolumeMeter = document.getElementById('localVolume');
 const remoteVolumeMeter = document.getElementById('remoteVolume');
+const moreOptionsBtn = document.getElementById('moreOptionsBtn');
+const moreOptionsMenu = document.getElementById('moreOptionsMenu');
+const speakerToggleBtn = document.getElementById('speakerToggleBtn');
+const skeletonToggleBtn = document.getElementById('skeletonToggleBtn');
 
 // Panels & Controls
-const infoBtn = document.getElementById('infoBtn');
-const peopleBtn = document.getElementById('peopleBtn');
 const chatToggleBtn = document.getElementById('chatToggleBtn');
-
-const infoPanel = document.getElementById('info-panel');
-const peoplePanel = document.getElementById('people-panel');
 const chatPanel = document.getElementById('chat-panel');
-
-const closeInfoBtn = document.getElementById('closeInfoBtn');
-const closePeopleBtn = document.getElementById('closePeopleBtn');
 const closeChatBtn = document.getElementById('closeChatBtn');
-
-const infoCurrentMode = document.getElementById('infoCurrentMode');
-const infoMeetingCode = document.getElementById('infoMeetingCode');
-const copyInfoCodeBtn = document.getElementById('copyInfoCodeBtn');
-const peopleList = document.getElementById('peopleList');
 
 const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
@@ -194,15 +212,20 @@ const sendChatBtn = document.getElementById('sendChatBtn');
 const mobileCopyCodeBtn = document.getElementById('mobileCopyCodeBtn');
 
 // --- Global State ---
+let vcCardQueue = [];
+let vcCardRenderSeq = 0;
+let vcAutoHideTimeout = null;
+let signCardsPanelManuallyCollapsed = false;
 let localStream;
 let pc;
 let roomName;
 let isMicOn = true;
 let isCamOn = true;
-let isTTSOn = true;
+let isTTSOn = false;
 let isSTTOn = false;
 let lastSpokenTime = 0;
 let lastRemoteSpokenTime = 0;
+let lastRemoteVolumeActiveTime = 0;
 const localWordLastSpoken = {};    // NEW: Per-word cooldown for local signs
 const remoteWordLastSpoken = {};   // NEW: Per-word cooldown for remote signs
 let lastSpokenLabel = "";
@@ -210,12 +233,97 @@ let lastRemoteSpokenText = "";
 let speakTimeout = null;           // NEW: Track pending speech to avoid race conditions
 let iceCandidatesBuffer = []; // Buffer for ICE candidates
 let isRecognitionActive = false;   // NEW: Track if SpeechRecognition is actually running
+const nativeSpeechBridge = window.SignLinkCapacitorSpeech || null;
 let isCreatingMeeting = false;    // NEW: Track if user is the meeting creator
 let localName = "You";
 let remoteName = "Remote User";
+let activeCaptionPanelView = 'captions';
+let lastSTTStartAt = 0;
+let isRemoteAudioEnabled = JSON.parse(localStorage.getItem('vc-remote-audio-enabled') ?? 'true');
+let isOverlayOn = JSON.parse(localStorage.getItem('vc-hand-overlay-enabled') ?? 'true');
+
+function applyRemoteAudioPreference() {
+    if (!remoteVideo) return;
+    remoteVideo.muted = !isRemoteAudioEnabled;
+    remoteVideo.volume = isRemoteAudioEnabled ? 1.0 : 0;
+}
+
+function updateOptionsMenuUI() {
+    if (speakerToggleBtn) {
+        speakerToggleBtn.classList.toggle('off', !isRemoteAudioEnabled);
+        speakerToggleBtn.setAttribute('aria-pressed', String(isRemoteAudioEnabled));
+        const state = speakerToggleBtn.querySelector('.more-option-state');
+        if (state) state.textContent = isRemoteAudioEnabled ? 'On' : 'Off';
+    }
+
+    if (skeletonToggleBtn) {
+        skeletonToggleBtn.classList.toggle('off', !isOverlayOn);
+        skeletonToggleBtn.setAttribute('aria-pressed', String(isOverlayOn));
+        const state = skeletonToggleBtn.querySelector('.more-option-state');
+        if (state) state.textContent = isOverlayOn ? 'On' : 'Off';
+    }
+
+    if (moreOptionsBtn && moreOptionsMenu) {
+        const isOpen = !moreOptionsMenu.hasAttribute('hidden');
+        moreOptionsBtn.setAttribute('aria-expanded', String(isOpen));
+    }
+}
+
+function closeMoreOptionsMenu() {
+    if (!moreOptionsMenu) return;
+    moreOptionsMenu.setAttribute('hidden', '');
+    updateOptionsMenuUI();
+}
+
+function toggleMoreOptionsMenu(forceOpen) {
+    if (!moreOptionsMenu) return;
+    const shouldOpen = typeof forceOpen === 'boolean'
+        ? forceOpen
+        : moreOptionsMenu.hasAttribute('hidden');
+
+    if (shouldOpen) {
+        moreOptionsMenu.removeAttribute('hidden');
+    } else {
+        moreOptionsMenu.setAttribute('hidden', '');
+    }
+
+    updateOptionsMenuUI();
+}
+
+applyRemoteAudioPreference();
+updateOptionsMenuUI();
+
+function disableSTTWithStatus(message) {
+    isSTTOn = false;
+    isRecognitionActive = false;
+    updateSTTUI();
+    document.body.classList.remove('stt-active');
+    if (message) {
+        const statusEl = document.getElementById('status');
+        if (statusEl) {
+            statusEl.innerText = message;
+            statusEl.style.color = '#ef4444';
+        }
+        console.log(`[Status] ${message}`);
+    }
+}
 
 // Helper to stop all camera/mic tracks
 function stopCamera() {
+    if (localCameraController) {
+        try {
+            localCameraController.stop();
+        } catch (e) {
+            console.warn('Unable to stop camera controller cleanly:', e);
+        }
+        localCameraController = null;
+    }
+
+    isCameraStarted = false;
+    isHandInferencePending = false;
+    lastHandInferenceAt = 0;
+    overlayHadRenderedContent = false;
+
     if (localStream) {
         localStream.getTracks().forEach(track => {
             track.stop();
@@ -225,15 +333,27 @@ function stopCamera() {
     }
     if (localVideo) localVideo.srcObject = null;
     if (remoteVideo) remoteVideo.srcObject = null;
+    if (localCanvas.width && localCanvas.height) {
+        ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
+    }
     console.log("Camera and tracks stopped.");
 }
 
-// --- YouTube-style Caption State (Video Call) ---
-let vcCaptionLineA = '';
-let vcCaptionLineB = '';
-const VC_CAPTION_MAX_CHARS = 50; // slightly wider than translation page (wider video layout)
-let vcCardQueue = [];
-let vcCardRenderSeq = 0;
+function setRemoteName(name) {
+    if (!name || (name === remoteName && remoteName !== "Remote User")) return;
+    remoteName = name;
+    console.log("Updating remote name to:", name);
+    
+    // Update Video Labels
+    const remoteNameSpan = document.getElementById('remoteUserName');
+    if (remoteNameSpan) remoteNameSpan.innerText = remoteName;
+    
+    const remoteSaysLabel = document.getElementById('remote-says-label');
+    if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+    
+    // Sidebar update removed (People panel is deleted)
+}
+
 const vcImageExistsCache = new Map();
 let signPhraseMap = { common: {}, asl: {}, isl: {} };
 const DIGIT_WORD_MAP = {
@@ -268,9 +388,17 @@ loadSignPhraseMap();
 // Preload sign card URLs from Supabase into cache so cards render instantly
 async function preloadSignCardsFromSupabase() {
     try {
-        const response = await fetch('/api/sign-cards', { cache: 'no-cache' });
-        if (!response.ok) return;
-        const cards = await response.json(); // { isl: [{label, url}], asl: [...] }
+        const { data, error } = await window.supabaseClient
+            .from('sign_cards')
+            .select('lang, label, url');
+        if (error) return;
+        
+        const cards = { isl: [], asl: [] };
+        for (const row of data) {
+            if (!cards[row.lang]) cards[row.lang] = [];
+            cards[row.lang].push(row);
+        }
+        
         let count = 0;
         for (const [lang, items] of Object.entries(cards)) {
             for (const item of items) {
@@ -320,39 +448,58 @@ function checkImageExists(url) {
     });
 }
 
+function buildSignImageCandidates(basePath, keys) {
+    const extensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+    const uniqueKeys = [...new Set(keys.filter(Boolean))];
+    const urls = [];
+
+    for (const key of uniqueKeys) {
+        for (const ext of extensions) {
+            urls.push(`${basePath}/${key}.${ext}`);
+        }
+    }
+
+    return urls;
+}
+
 async function resolveWordTokens(word, langFolder) {
-    const normalizedWord = word.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const normalizedWord = word.toLowerCase().replace(/[^a-z0-9-\s]/g, '').trim();
     if (!normalizedWord) return [];
 
+    const collapsedWord = normalizedWord.replace(/\s+/g, '-');
+    const joinedWord = normalizedWord.replace(/\s+/g, '');
     const wordCandidates = [
-        `/signs-images/${langFolder}/words/${normalizedWord}.jpg`,
-        `/signs-images/${langFolder}/words/${normalizedWord}.png`,
-        `/signs-images/${langFolder}/${normalizedWord}.jpg`,
-        `/signs-images/${langFolder}/${normalizedWord}.png`
+        ...buildSignImageCandidates(`/signs-images/${langFolder}/words`, [
+            collapsedWord,
+            joinedWord,
+            normalizedWord
+        ]),
+        ...buildSignImageCandidates(`/signs-images/${langFolder}`, [
+            collapsedWord,
+            joinedWord,
+            normalizedWord
+        ])
     ];
 
     for (const src of wordCandidates) {
         if (await checkImageExists(src)) {
-            return [{ type: 'card', src, label: normalizedWord }];
+            return [{ type: 'card', src, label: collapsedWord }];
         }
     }
 
     const charTokens = [];
-    const charsOnly = normalizedWord.replace(/-/g, '');
+    const charsOnly = joinedWord.replace(/-/g, '');
     for (const char of charsOnly.toUpperCase()) {
         if (!/[A-Z0-9]/.test(char)) continue;
 
         const charCandidates = [];
         if (/[A-Z]/.test(char)) {
-            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
-            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
+            charCandidates.push(...buildSignImageCandidates(`/signs-images/${langFolder}/characters`, [char]));
         } else {
-            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.jpg`);
-            charCandidates.push(`/signs-images/${langFolder}/characters/${char}.png`);
+            charCandidates.push(...buildSignImageCandidates(`/signs-images/${langFolder}/characters`, [char]));
             const digitWord = DIGIT_WORD_MAP[char];
             if (digitWord) {
-                charCandidates.push(`/signs-images/${langFolder}/characters/${digitWord}.jpg`);
-                charCandidates.push(`/signs-images/${langFolder}/characters/${digitWord}.png`);
+                charCandidates.push(...buildSignImageCandidates(`/signs-images/${langFolder}/characters`, [digitWord]));
             }
         }
 
@@ -447,10 +594,17 @@ let audioContext;
 let analyser;
 let micSource;
 let volumeInterval;
+let localCameraController = null;
+let isHandInferencePending = false;
+let lastHandInferenceAt = 0;
+let overlayHadRenderedContent = false;
+let lastPredictionText = null;
+const HAND_INFERENCE_INTERVAL_MS = 80;
 
 function setPredictionText(text) {
-    if (predictionDiv) {
+    if (predictionDiv && text !== lastPredictionText) {
         predictionDiv.innerText = text;
+        lastPredictionText = text;
     }
 }
 
@@ -462,6 +616,13 @@ document.addEventListener('click', () => {
         audioContext.resume().then(() => console.log("AudioContext manually resumed."));
     }
 }, { once: true });
+
+document.addEventListener('click', (event) => {
+    if (!moreOptionsMenu || !moreOptionsBtn) return;
+    if (moreOptionsMenu.hasAttribute('hidden')) return;
+    if (moreOptionsMenu.contains(event.target) || moreOptionsBtn.contains(event.target)) return;
+    closeMoreOptionsMenu();
+});
 
 // Supabase connection handled during join-room
 
@@ -518,6 +679,7 @@ function setMaxBitrate(sdp, maxBitrateKbps) {
 
 // --- Clock Utility ---
 function updateClock() {
+    if (!clockElement) return;
     const now = new Date();
     clockElement.innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -527,12 +689,106 @@ updateClock();
 // --- Accessibility & Communication Boost Features ---
 
 // 1. Speech to Text (Bi-Directional)
-function initSTT() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+async function initSTT() {
+    if (!isSTTSupported) {
         console.warn("Speech Recognition not supported in this browser.");
         if (sttToggleBtn) sttToggleBtn.style.display = 'none';
-        return;
+        return null;
+    }
+
+    if (recognition) return recognition;
+
+    const handleFinalTranscript = (finalTranscript) => {
+        if (!finalTranscript) return;
+
+        const trimmed = finalTranscript.trim().toLowerCase();
+
+        // --- STT Echo Suppression Logic ---
+        // If the local STT picks up the other participant's voice from the speakers,
+        // the text will match what was just broadcast. We ignore recent duplicates.
+        if (trimmed === lastRemoteSpokenText.toLowerCase() && (Date.now() - lastRemoteSpokenTime < 3000)) {
+            console.log("[STT Diagnostic] Suppressing local transcript echo matching remote speech.");
+            return;
+        }
+
+        const capitalized = finalTranscript.trim();
+
+        appendCaptionLog("You", capitalized);
+        displayVCSignCards(capitalized);
+
+        if (supabaseChannel) {
+            supabaseChannel.send({
+                type: 'broadcast',
+                event: 'speech-message',
+                payload: { text: capitalized, name: localName }
+            });
+        }
+    };
+
+    const restartSTT = async () => {
+        if (!isSTTOn || !recognition) return;
+
+        console.log("STT: Attempting auto-restart...");
+        try {
+            await recognition.start();
+        } catch (e) {
+            console.error("STT Restart Error:", e);
+        }
+    };
+
+    if (nativeSpeechBridge && nativeSpeechBridge.isSupportedCandidate()) {
+        const nativeAvailable = await nativeSpeechBridge.isAvailable();
+        if (nativeAvailable) {
+            const session = await nativeSpeechBridge.createSession({
+                lang: 'en-US',
+                partialResults: true,
+                onStart: () => {
+                    isRecognitionActive = true;
+                    lastSTTStartAt = Date.now();
+                    console.log("STT: Recognition started.");
+                },
+                onFinal: (data) => {
+                    handleFinalTranscript(data && data.transcript);
+                },
+                onError: (data) => {
+                    const errorCode = data && data.error;
+                    console.error("STT Error:", errorCode || (data && data.message));
+
+                    if (errorCode === 'not-allowed') {
+                        alert("Speech recognition permission denied.");
+                        disableSTTWithStatus("Speech-to-text permission denied.");
+                    } else if (errorCode === 'audio-capture') {
+                        disableSTTWithStatus("Speech-to-text could not access the microphone on this device.");
+                    } else if (errorCode === 'service-not-allowed') {
+                        disableSTTWithStatus("Speech-to-text is not available on this device.");
+                    } else if (errorCode === 'aborted') {
+                        const startedRecently = lastSTTStartAt && (Date.now() - lastSTTStartAt < 5000);
+                        const hiddenTab = document.hidden;
+                        if (hiddenTab || startedRecently) {
+                            disableSTTWithStatus("Speech-to-text stopped in this tab. For local testing, use two different browsers or two devices.");
+                        }
+                    } else if (errorCode === 'network') {
+                        console.warn("STT Network error. Will attempt restart.");
+                    }
+                },
+                onEnd: () => {
+                    isRecognitionActive = false;
+                    console.log("STT: Recognition ended.");
+                    restartSTT();
+                }
+            });
+
+            recognition = {
+                async start() {
+                    return session.start({ lang: 'en-US', partialResults: true });
+                },
+                async stop() {
+                    return session.stop();
+                }
+            };
+
+            return recognition;
+        }
     }
 
     recognition = new SpeechRecognition();
@@ -542,47 +798,38 @@ function initSTT() {
 
     recognition.onstart = () => {
         isRecognitionActive = true;
+        lastSTTStartAt = Date.now();
         console.log("STT: Recognition started.");
     };
 
     recognition.onresult = (event) => {
-        let interimTranscript = '';
         let finalTranscript = '';
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             const t = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
                 finalTranscript += t;
-            } else {
-                interimTranscript += t;
             }
         }
 
-        if (finalTranscript) {
-            const trimmed = finalTranscript.trim();
-            appendVCCaption(trimmed);
-            appendCaptionLog('You', trimmed);
-            // Send finalized text to remote peer
-            // Send finalized text to remote peer
-            if (supabaseChannel) {
-                supabaseChannel.send({
-                    type: 'broadcast',
-                    event: 'speech-message',
-                    payload: { text: trimmed }
-                });
-            }
-        } else {
-            // Show interim words in real-time
-            updateVCCaptionDisplay(interimTranscript.trim());
-        }
+        handleFinalTranscript(finalTranscript);
     };
 
     recognition.onerror = (event) => {
         console.error("STT Error:", event.error);
         if (event.error === 'not-allowed') {
             alert("Speech recognition permission denied.");
-            isSTTOn = false;
-            updateSTTUI();
+            disableSTTWithStatus("Speech-to-text permission denied.");
+        } else if (event.error === 'audio-capture') {
+            disableSTTWithStatus("Speech-to-text could not access the microphone in this tab.");
+        } else if (event.error === 'service-not-allowed') {
+            disableSTTWithStatus("Speech-to-text is not available in this browser tab.");
+        } else if (event.error === 'aborted') {
+            const startedRecently = lastSTTStartAt && (Date.now() - lastSTTStartAt < 5000);
+            const hiddenTab = document.hidden;
+            if (hiddenTab || startedRecently) {
+                disableSTTWithStatus("Speech-to-text stopped in this tab. For local testing, use two different browsers or two devices.");
+            }
         } else if (event.error === 'network') {
             console.warn("STT Network error. Will attempt restart.");
         }
@@ -591,76 +838,113 @@ function initSTT() {
     recognition.onend = () => {
         isRecognitionActive = false;
         console.log("STT: Recognition ended.");
-        // Auto-restart only if user still wants it on and it wasn't a hard error
-        if (isSTTOn) {
-            console.log("STT: Attempting auto-restart...");
-            try {
-                recognition.start();
-            } catch (e) {
-                console.error("STT Restart Error:", e);
-            }
-        }
+        restartSTT();
     };
+
+    return recognition;
 }
+
+// --- Speech Recognition Support Check ---
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let isSTTSupported = !!SpeechRecognition || Boolean(nativeSpeechBridge && nativeSpeechBridge.isSupportedCandidate());
 
 function updateSTTUI() {
     if (!sttToggleBtn) return;
-    sttToggleBtn.innerHTML = `<span class="material-icons">${isSTTOn ? 'interpreter_mode' : 'voice_over_off'}</span>`;
-    sttToggleBtn.classList.toggle('red-btn', !isSTTOn);
-    sttToggleBtn.title = isSTTOn ? "Turn off Speech-to-Text" : "Turn on Speech-to-Text";
+    if (!isSTTSupported) {
+        sttToggleBtn.style.display = 'none';
+        return;
+    }
+    if (sttToggleBtn.classList.contains('more-option-item')) {
+        sttToggleBtn.classList.toggle('off', !isSTTOn);
+        sttToggleBtn.setAttribute('aria-pressed', String(isSTTOn));
+        const stateTag = sttToggleBtn.querySelector('.more-option-state');
+        if (stateTag) {
+            stateTag.textContent = isSTTOn ? "On" : "Off";
+        }
+    } else {
+        sttToggleBtn.innerHTML = `<span class="material-icons">${isSTTOn ? 'interpreter_mode' : 'voice_over_off'}</span>`;
+        sttToggleBtn.classList.toggle('red-btn', !isSTTOn);
+        sttToggleBtn.title = isSTTOn ? "Turn off Speech-to-Text" : "Turn on Speech-to-Text";
+    }
 }
 updateSTTUI(); // Sync at startup
 
 function updateTTSUI() {
-    if (!ttsBtn) return;
-    ttsBtn.innerHTML = `<span class="material-icons">${isTTSOn ? 'volume_up' : 'volume_off'}</span>`;
-    ttsBtn.classList.toggle('red-btn', !isTTSOn);
-    ttsBtn.setAttribute('title', isTTSOn ? 'Mute Text-to-Speech' : 'Enable Text-to-Speech');
+    if (ttsBtn) {
+        ttsBtn.innerHTML = `<span class="material-icons">${isTTSOn ? 'volume_up' : 'volume_off'}</span>`;
+        ttsBtn.classList.toggle('red-btn', !isTTSOn);
+        ttsBtn.setAttribute('title', isTTSOn ? 'Mute Text-to-Speech' : 'Enable Text-to-Speech');
+    }
+    if (ttsToggleBtn) {
+        ttsToggleBtn.classList.toggle('off', !isTTSOn);
+        ttsToggleBtn.setAttribute('aria-pressed', String(isTTSOn));
+        const stateTag = ttsToggleBtn.querySelector('.more-option-state');
+        if (stateTag) {
+            stateTag.textContent = isTTSOn ? "On" : "Off";
+        }
+    }
 }
 updateTTSUI(); // Sync at startup
 
-sttToggleBtn.addEventListener('click', () => {
-    isSTTOn = !isSTTOn;
+function startSTTSession() {
+    if (!isSTTSupported) return;
+    isSTTOn = true;
     updateSTTUI();
+    document.body.classList.add('stt-active');
 
-    if (isSTTOn) {
-        if (!recognition) initSTT();
-        if (!isRecognitionActive) {
-            try {
-                recognition.start();
-                if (vcCaptionBar) vcCaptionBar.classList.add('active');
-                resetVCCaptions();
-            } catch (e) {
-                console.error("Failed to start Recognition:", e);
-                isSTTOn = false;
-                updateSTTUI();
-            }
+    (async () => {
+        if (!recognition) {
+            await initSTT();
         }
-    } else {
-        if (recognition && isRecognitionActive) recognition.stop();
-        if (vcCaptionBar) vcCaptionBar.classList.remove('active');
-        hideVCSignCards();
-    }
-});
+        if (!recognition || isRecognitionActive) return;
 
-// --- YouTube-Style Caption Helpers (Video Call) ---
-function updateVCCaptionDisplay(interimText = '') {
-    if (!vcLineA || !vcLineB) return;
-    vcLineA.textContent = vcCaptionLineA;
-    if (interimText) {
-        vcLineB.innerHTML =
-            (vcCaptionLineB ? document.createTextNode(vcCaptionLineB + ' ').textContent : '') +
-            `<span class="vc-interim">${interimText}</span>`;
-    } else {
-        vcLineB.textContent = vcCaptionLineB;
-    }
+        try {
+            await recognition.start();
+            hideVCSignCards();
+        } catch (e) {
+            console.error("Failed to start Recognition:", e);
+            isSTTOn = false;
+            updateSTTUI();
+            document.body.classList.remove('stt-active');
+        }
+    })();
 }
+
+function stopSTTSession() {
+    isSTTOn = false;
+    updateSTTUI();
+    document.body.classList.remove('stt-active');
+    if (recognition && isRecognitionActive) {
+        Promise.resolve(recognition.stop()).catch((error) => {
+            console.error("Failed to stop Recognition:", error);
+        });
+    }
+    hideVCSignCards();
+}
+
+if (sttToggleBtn) {
+    sttToggleBtn.addEventListener('click', () => {
+        if (isSTTOn) {
+            stopSTTSession();
+        } else {
+            startSTTSession();
+        }
+    });
+}
+
+
 
 function appendCaptionLog(speaker, text) {
     if (!captionLogList || !text) return;
 
-    const emptyState = captionLogList.querySelector('.caption-log-empty');
-    if (emptyState) emptyState.remove();
+    // Remove empty placeholder
+    const emptyMsg = captionLogList.querySelector('.caption-log-empty');
+    if (emptyMsg) emptyMsg.remove();
+
+    // Maintain a history of the last 15 messages for context
+    while (captionLogList.children.length > 15) {
+        captionLogList.removeChild(captionLogList.firstChild);
+    }
 
     const entry = document.createElement('div');
     entry.className = 'caption-log-entry';
@@ -675,32 +959,57 @@ function appendCaptionLog(speaker, text) {
     entry.appendChild(speakerLabel);
     entry.appendChild(dialogue);
     captionLogList.appendChild(entry);
-    captionLogList.scrollTop = captionLogList.scrollHeight;
+    wakeCaptionPanel();
+    updateCaptionLogViewport();
+    scrollCaptionLogToLatest();
 }
 
-function appendVCCaption(finalText) {
-    const words = finalText.trim().split(/\s+/).filter(Boolean);
-    for (const word of words) {
-        const proposed = vcCaptionLineB ? vcCaptionLineB + ' ' + word : word;
-        if (proposed.length > VC_CAPTION_MAX_CHARS && vcCaptionLineB) {
-            vcCaptionLineA = vcCaptionLineB;
-            vcCaptionLineB = word;
-        } else {
-            vcCaptionLineB = proposed;
-        }
+function ensureCaptionPlaceholder() {
+    if (!captionLogList) return;
+    const hasEntries = !!captionLogList.querySelector('.caption-log-entry');
+    const emptyMsg = captionLogList.querySelector('.caption-log-empty');
+
+    if (!hasEntries && !emptyMsg) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'caption-log-empty';
+        placeholder.textContent = 'Captions will appear here during the call.';
+        captionLogList.appendChild(placeholder);
+    } else if (hasEntries && emptyMsg) {
+        emptyMsg.remove();
     }
-    updateVCCaptionDisplay();
 }
 
 function resetVCCaptions() {
-    vcCaptionLineA = '';
-    vcCaptionLineB = '';
-    updateVCCaptionDisplay();
     hideVCSignCards();
+    if (captionLogList) {
+        captionLogList.innerHTML = '';
+        ensureCaptionPlaceholder();
+        updateCaptionLogViewport();
+        scrollCaptionLogToLatest();
+    }
 }
 
+function setSignCardsPanelCollapsed(collapsed) {
+    if (!signCardsPanelWindow || !signCardsToggleBtn) return;
+
+    signCardsPanelWindow.classList.toggle('collapsed', collapsed);
+    signCardsToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    signCardsToggleBtn.setAttribute('title', collapsed ? 'Show sign cards' : 'Hide sign cards');
+}
+
+function setCaptionLogCollapsed(collapsed) {
+    if (!captionLogWindow || !captionToggleBtn) return;
+
+    captionLogWindow.classList.toggle('collapsed', collapsed);
+    captionToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    captionToggleBtn.setAttribute('title', collapsed ? 'Show captions' : 'Hide captions');
+}
+
+setSignCardsPanelCollapsed(true);
+setCaptionLogCollapsed(false);
+
 function displayVCSignCards(text) {
-    const container = predictionSignCardsContainer;
+    const container = document.getElementById('prediction-sign-cards-container');
     if (!container) return;
 
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
@@ -708,46 +1017,129 @@ function displayVCSignCards(text) {
 
     const renderSeq = ++vcCardRenderSeq;
     const langFolder = currentMode.toLowerCase(); // 'isl' or 'asl'
-    const isMobileViewport = window.innerWidth <= 768;
 
-    // On mobile, each new utterance should replace previous cards to avoid stacked rows.
-    if (isMobileViewport) {
-        vcCardQueue = [];
-    }
+    // Always clear history to only show the most recent utterance
+    vcCardQueue = [];
+    container.innerHTML = '';
+    container.scrollTop = 0;
 
     (async () => {
-        const newTokens = [];
         const units = buildCardUnits(words, langFolder);
+
+        // Clear any pending auto-hide timer since new speech is arriving
+        if (vcAutoHideTimeout) {
+            clearTimeout(vcAutoHideTimeout);
+            vcAutoHideTimeout = null;
+        }
+
+        if (!signCardsPanelManuallyCollapsed) {
+            setSignCardsPanelCollapsed(false);
+        }
+
+        // Ensure panel is visible at the start of rendering
+        wakeCaptionPanel();
 
         for (let i = 0; i < units.length; i++) {
             const tokens = await resolveCardUnitTokens(units[i], langFolder);
-            newTokens.push(...tokens);
+            
+            // Staggered loop for streaming effect (inherited from live translation mode)
+            for (const token of tokens) {
+                if (renderSeq !== vcCardRenderSeq) return;
+
+                vcCardQueue.push(token);
+                
+                // Incremental Render: Directly append the new card to avoid flickering existing ones
+                appendIncrementalVCCard(token);
+
+                // Streaming delay
+                await new Promise(r => setTimeout(r, 220));
+            }
+
             if (i < units.length - 1) {
-                newTokens.push({ type: 'space' });
+                if (renderSeq !== vcCardRenderSeq) return;
+                const spaceToken = { type: 'space' };
+                vcCardQueue.push(spaceToken);
+                appendIncrementalVCCard(spaceToken);
+                // Extra gap for word spacing
+                await new Promise(r => setTimeout(r, 100));
             }
         }
 
-        if (renderSeq !== vcCardRenderSeq) return;
-
-        if (!isMobileViewport && vcCardQueue.length && vcCardQueue[vcCardQueue.length - 1]?.type !== 'linebreak') {
-            vcCardQueue.push({ type: 'linebreak' });
-        }
-        vcCardQueue.push(...newTokens);
-
-        // Limit global queue size to prevent memory leaks
-        if (vcCardQueue.length > 100) {
-            vcCardQueue = vcCardQueue.slice(vcCardQueue.length - 100);
-            while (vcCardQueue.length && ['space', 'linebreak'].includes(vcCardQueue[0].type)) {
-                vcCardQueue.shift();
-            }
-        }
-
-        reRenderVCSignCards();
+        // Dim the panel after inactivity instead of hiding it
+        vcAutoHideTimeout = setTimeout(() => {
+            dimCaptionPanel();
+        }, 7000);
     })();
 }
 
+function appendIncrementalVCCard(token) {
+    const container = document.getElementById('prediction-sign-cards-container');
+    if (!container) return;
+
+    if (!container.classList.contains('active')) {
+        container.classList.add('active');
+        container.innerHTML = ''; // Clear placeholder
+    }
+
+    // 1. Ensure we have a line
+    let lastLine = container.querySelector('.prediction-sign-line:last-child');
+    if (!lastLine) {
+        lastLine = document.createElement('div');
+        lastLine.className = 'prediction-sign-line';
+        container.appendChild(lastLine);
+    }
+
+    if (token.type === 'space') {
+        // Create a new word group for the next cards
+        const wordGroupEl = document.createElement('div');
+        wordGroupEl.className = 'prediction-word-group';
+        lastLine.appendChild(wordGroupEl);
+        return;
+    }
+
+    if (token.type === 'linebreak') {
+        const lineEl = document.createElement('div');
+        lineEl.className = 'prediction-sign-line';
+        container.appendChild(lineEl);
+        return;
+    }
+
+    // 2. Ensure we have a word group in the current line
+    let lastGroup = lastLine.querySelector('.prediction-word-group:last-child');
+    if (!lastGroup) {
+        lastGroup = document.createElement('div');
+        lastGroup.className = 'prediction-word-group';
+        lastLine.appendChild(lastGroup);
+    }
+
+    // 3. Create and append the card
+    const card = document.createElement('div');
+    card.className = 'prediction-sign-card';
+
+    if (token.type === 'card') {
+        const img = document.createElement('img');
+        img.src = token.src;
+        img.alt = token.label;
+        img.onerror = () => {
+            img.style.display = 'none';
+            card.classList.add('no-image');
+        };
+        card.appendChild(img);
+    } else {
+        card.classList.add('no-image');
+    }
+
+    const label = document.createElement('div');
+    label.className = 'prediction-sign-card-label';
+    label.textContent = token.label.length > 12 ? token.label.substring(0, 10) + '...' : token.label;
+
+    card.appendChild(label);
+    lastGroup.appendChild(card);
+    container.scrollTop = container.scrollHeight;
+}
+
 function reRenderVCSignCards() {
-    const container = predictionSignCardsContainer;
+    const container = document.getElementById('prediction-sign-cards-container');
     if (!container) return;
 
     if (vcCardQueue.length === 0) {
@@ -866,6 +1258,7 @@ function reRenderVCSignCards() {
     });
 
     container.classList.add('active');
+    container.scrollTop = container.scrollHeight;
 }
 
 window.addEventListener('resize', () => {
@@ -875,13 +1268,17 @@ window.addEventListener('resize', () => {
 });
 
 function hideVCSignCards() {
-    const container = predictionSignCardsContainer;
+    const container = document.getElementById('prediction-sign-cards-container');
+    dimCaptionPanel();
+    
     if (container) {
         vcCardRenderSeq++;
         vcCardQueue = [];
         container.classList.remove('active');
         container.innerHTML = '';
     }
+
+    setSignCardsPanelCollapsed(true);
 }
 
 // 2. Visual Audio Feedback (Volume Meter)
@@ -925,30 +1322,31 @@ async function initAudioAnalysis(stream) {
         console.log("Audio analysis started. Loop active.");
 
         function checkVolume() {
-            if (!isMicOn || !localStream || !localStream.getAudioTracks().some(t => t.enabled)) {
+            let volume = 0;
+            if (isMicOn && localStream && localStream.getAudioTracks().some(t => t.enabled)) {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    sum += dataArray[i];
+                }
+                let average = sum / bufferLength;
+                volume = average / 128; // 0 to 2
+
+                if (volume > 0.02) {
+                    localVolumeMeter.classList.add('volume-active');
+                } else {
+                    localVolumeMeter.classList.remove('volume-active');
+                }
+            } else {
                 localVolumeMeter.classList.remove('volume-active');
-                return;
             }
 
-            analyser.getByteFrequencyData(dataArray);
-            let sum = 0;
-            for (let i = 0; i < bufferLength; i++) {
-                sum += dataArray[i];
-            }
-            let average = sum / bufferLength;
-            let volume = average / 128; // 0 to 2
-
-            if (volume > 0.02) {
-                localVolumeMeter.classList.add('volume-active');
             if (supabaseChannel) {
                 supabaseChannel.send({
                     type: 'broadcast',
                     event: 'volume-level',
-                    payload: { level: volume }
+                    payload: { level: volume, micOn: isMicOn }
                 });
-            }
-            } else {
-                localVolumeMeter.classList.remove('volume-active');
             }
         }
 
@@ -1031,7 +1429,6 @@ if (modeSelect) {
 
         // Reload everything
         model = null; // Clear current model (will be reset by loader)
-        trainStatusDiv.innerText = "Model cleared (Switching mode).";
 
         await loadFromFirestore(); // Reload data
         // new loader handles both server & local models
@@ -1092,11 +1489,12 @@ newMeetingBtn.addEventListener('click', () => {
 
 joinBtn.addEventListener('click', async (e) => {
     // If this click was manual (not from New Meeting button), reset creator flag
-    if (e.isTrusted && !newMeetingBtn.contains(document.activeElement)) {
+    // Synthetic clicks from newMeetingBtn.click() have isTrusted === false
+    if (e.isTrusted) {
         isCreatingMeeting = false;
     }
 
-    roomName = startRoomInput.value.trim().replace(/[^a-zA-Z0-9-]/g, '-');
+    roomName = startRoomInput.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
     if (!roomName) return;
 
     lobbyStatus.innerText = "Joining...";
@@ -1138,7 +1536,8 @@ joinBtn.addEventListener('click', async (e) => {
             alert("Diagnostic failed: " + e.message);
         }
     };
-    document.querySelector('.join-box').appendChild(diagBtn);
+    const joinBox = document.querySelector('.join-card') || document.querySelector('.join-box');
+    if (joinBox) joinBox.appendChild(diagBtn);
 
 
     // 1. MUST start camera BEFORE joining room to avoid WebRTC errors
@@ -1153,54 +1552,103 @@ joinBtn.addEventListener('click', async (e) => {
         joiningLoader.classList.add('active');
     }
 
-    meetingCodeDisplay.innerText = roomName;
+    if (meetingCodeDisplay) meetingCodeDisplay.innerText = roomName;
     if (mobileMeetingCodeDisplay) mobileMeetingCodeDisplay.innerText = roomName;
 
     // Capture Local Name
     localName = userNameInput.value.trim() || "You";
     const localNameSpan = document.getElementById('localUserName');
     if (localNameSpan) localNameSpan.innerText = localName + " (You)";
-    updatePeopleList();
+
+    // Bitrate Utility Function
+    function setMaxBitrate(sdp, bitrate) {
+        const lines = sdp.split('\n');
+        let line = -1;
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].indexOf('m=video') === 0) {
+                line = i;
+                break;
+            }
+        }
+        if (line === -1) return sdp;
+        line++;
+        while (lines[line].indexOf('i=') === 0 || lines[line].indexOf('c=') === 0) {
+            line++;
+        }
+        if (lines[line].indexOf('b') === 0) {
+            lines[line] = 'b=AS:' + bitrate;
+            return lines.join('\n');
+        }
+        lines.splice(line, 0, 'b=AS:' + bitrate);
+        return lines.join('\n');
+    }
 
     // Supabase Channel Setup
+    const myPresenceKey = 'user-' + Math.random().toString(36).substring(7);
     supabaseChannel = window.supabaseClient.channel(roomName, {
         config: {
             broadcast: { self: false },
-            presence: { key: 'user-' + Math.random().toString(36).substring(7) }
+            presence: { key: myPresenceKey }
         }
     });
 
-    const updateStatus = (text, type = 'info') => {
-        const statusEl = document.getElementById('status');
+    const showMeetingStatusToast = (text, type = 'info') => {
         const meetingStatusText = document.getElementById('meeting-status-text');
         const meetingStatusBar = document.getElementById('meeting-status-bar');
+        if (!meetingStatusText || !meetingStatusBar) return;
+        if (lastMeetingStatusToast === text) return;
+
+        lastMeetingStatusToast = text;
+        meetingStatusText.innerText = text;
+        meetingStatusBar.className = `meeting-status-bar ${type} visible`;
+
+        if (meetingStatusToastTimer) {
+            clearTimeout(meetingStatusToastTimer);
+        }
+
+        meetingStatusToastTimer = setTimeout(() => {
+            meetingStatusBar.classList.remove('visible');
+        }, 2000);
+    };
+
+    const updateStatus = (text, type = 'info') => {
+        const statusEl = document.getElementById('status');
+
+        if (text === "Connected to peer") {
+            document.querySelector('.main-stage')?.classList.add('is-connected');
+        }
 
         if (statusEl) {
             statusEl.innerText = text;
             statusEl.style.color = type === 'error' ? '#ef4444' : (type === 'success' ? '#4db6ac' : '#aaa');
         }
 
-        if (meetingStatusText) {
-            meetingStatusText.innerText = text;
-        }
-
-        if (meetingStatusBar) {
-            meetingStatusBar.className = `meeting-status-bar ${type}`;
-        }
+        showMeetingStatusToast(text, type);
         
         console.log(`[Status] ${text}`);
     };
     supabaseChannel
-        .on('broadcast', { event: 'user-joined' }, (payload) => {
+        .on('broadcast', { event: 'user-joined' }, ({ payload }) => {
             console.log("New peer joined room:", payload.id, "Name:", payload.name);
             if (payload.name) {
-                remoteName = payload.name;
-                const remoteNameSpan = document.getElementById('remoteUserName');
-                if (remoteNameSpan) remoteNameSpan.innerText = remoteName;
-                const remoteSaysLabel = document.getElementById('remote-says-label');
-                if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+                setRemoteName(payload.name);
             }
-            updatePeopleList(payload.id);
+
+            supabaseChannel.send({
+                type: 'broadcast',
+                event: 'camera-toggle',
+                payload: { isCamOn }
+            });
+            
+            // If we are the host, immediately announce ourselves back to the new joiner
+            if (isCreatingMeeting) {
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'host-heartbeat',
+                    payload: { host: localName }
+                });
+            }
+
             if (localStream) {
                 handlePeerJoined(payload.id);
             }
@@ -1208,12 +1656,7 @@ joinBtn.addEventListener('click', async (e) => {
         .on('broadcast', { event: 'offer' }, async ({ payload }) => {
             console.log("Offer received from peer. Name:", payload.name);
             if (payload.name) {
-                remoteName = payload.name;
-                const remoteNameSpan = document.getElementById('remoteUserName');
-                if (remoteNameSpan) remoteNameSpan.innerText = remoteName;
-                const remoteSaysLabel = document.getElementById('remote-says-label');
-                if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
-                updatePeopleList('peer-id'); // Ensure remote name is updated in people list
+                setRemoteName(payload.name);
             }
             try {
                 if (!pc) createPeerConnection();
@@ -1230,7 +1673,7 @@ joinBtn.addEventListener('click', async (e) => {
                 supabaseChannel.send({
                     type: 'broadcast',
                     event: 'answer',
-                    payload: { sdp: answer }
+                    payload: { sdp: answer, name: localName }
                 });
                 updateStatus("Connected to peer", "success");
             } catch (e) {
@@ -1241,12 +1684,7 @@ joinBtn.addEventListener('click', async (e) => {
         .on('broadcast', { event: 'answer' }, async ({ payload }) => {
             console.log("Answer received from peer. Name:", payload.name);
             if (payload.name) {
-                remoteName = payload.name;
-                const remoteNameSpan = document.getElementById('remoteUserName');
-                if (remoteNameSpan) remoteNameSpan.innerText = remoteName;
-                const remoteSaysLabel = document.getElementById('remote-says-label');
-                if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
-                updatePeopleList('peer-id');
+                setRemoteName(payload.name);
             }
             try {
                 if (pc) {
@@ -1272,43 +1710,67 @@ joinBtn.addEventListener('click', async (e) => {
             }
         })
         .on('broadcast', { event: 'sign-message' }, data => {
-            const payload = data.payload || data; // Handle different payload structures
-            remotePredictionDiv.innerText = payload.text;
-            
-            // Update remote says label if it was "Remote User Says:"
-            const remoteSaysLabel = document.getElementById('remote-says-label');
-            if (remoteSaysLabel) remoteSaysLabel.innerText = `${remoteName} Says:`;
+            const payload = data.payload || data;
+            if (payload.text) {
+                const text = payload.text;
+                const isDynamic = !!payload.isDynamic;
+                const name = payload.name || "Remote User";
+                setRemoteName(name);
 
-            remoteCaptionOverlay.classList.remove('hidden');
-            setTimeout(() => remoteCaptionOverlay.classList.add('hidden'), 3000);
+                // Update Remote Overlay (Toast)
+                if (remotePredictionDiv) {
+                    const displayText = isDynamic ? `${text} 🔄` : text;
+                    remotePredictionDiv.innerText = displayText;
+                }
+                if (remoteCaptionOverlay) {
+                    remoteCaptionOverlay.classList.remove('hidden');
+                    // Auto-hide toast after 3s
+                    if (window.vcRemoteToastTimeout) clearTimeout(window.vcRemoteToastTimeout);
+                    window.vcRemoteToastTimeout = setTimeout(() => {
+                        remoteCaptionOverlay.classList.add('hidden');
+                    }, 3000);
+                }
 
-            const now = Date.now();
-            const wordLastSpoken = remoteWordLastSpoken[payload.text] || 0;
-            const timeSinceAny = now - lastRemoteSpokenTime;
-            const timeSinceSame = now - wordLastSpoken;
+                // Unify with STT Caption Log and Cards
+                // Note: isSTTOn check removed to allow one-way translation (everyone sees remote captions)
+                const logText = isDynamic ? `${text} 🔄` : text;
+                appendCaptionLog(name, logText);
+                displayVCSignCards(text); // Resolve cards for the sign label
 
-            if (isTTSOn && timeSinceSame > 4000 && timeSinceAny > 800) {
-                speak(payload.text);
-                lastRemoteSpokenText = payload.text;
-                lastRemoteSpokenTime = now;
-                remoteWordLastSpoken[payload.text] = now;
+                const now = Date.now();
+                const wordLastSpoken = remoteWordLastSpoken[text] || 0;
+                const timeSinceAny = now - lastRemoteSpokenTime;
+                const timeSinceSame = now - wordLastSpoken;
+
+                if (isTTSOn && timeSinceSame > 4000 && timeSinceAny > 800) {
+                    speak(text);
+                    lastRemoteSpokenText = text;
+                    lastRemoteSpokenTime = now;
+                    remoteWordLastSpoken[text] = now;
+                }
             }
         })
         .on('broadcast', { event: 'speech-message' }, data => {
+            // Note: isSTTOn check removed to allow one-way translation (everyone sees remote captions)
             const payload = data.payload || data;
             if (payload.text && payload.text.trim()) {
-                if (vcCaptionBar && !vcCaptionBar.classList.contains('active')) {
-                    vcCaptionBar.classList.add('active');
-                }
+                if (payload.name) setRemoteName(payload.name);
                 const remoteText = payload.text.trim();
-                appendVCCaption(remoteText);
+                
+                // Update global tracking for echo suppression
+                lastRemoteSpokenText = remoteText;
+                lastRemoteSpokenTime = Date.now();
+
                 appendCaptionLog(remoteName, remoteText);
                 displayVCSignCards(remoteText);
             }
         })
         .on('broadcast', { event: 'chat-message' }, (data) => {
             const payload = data.payload || data;
-            appendMessage({ ...payload, sender: 'Remote User' }, 'remote');
+            if (payload.sender && payload.sender !== 'You') {
+                setRemoteName(payload.sender);
+            }
+            appendMessage({ ...payload, sender: remoteName }, 'remote');
             if (!chatPanel.classList.contains('open') && chatToggleBtn) {
                 chatToggleBtn.style.color = '#e37400';
             }
@@ -1316,10 +1778,28 @@ joinBtn.addEventListener('click', async (e) => {
         .on('broadcast', { event: 'volume-level' }, data => {
             const payload = data.payload || data;
             if (remoteVolumeMeter) {
-                if (payload.level > 0.02) {
-                    remoteVolumeMeter.classList.add('volume-active');
-                } else {
+                if (payload.micOn === false) {
+                    remoteVolumeMeter.innerText = 'mic_off';
                     remoteVolumeMeter.classList.remove('volume-active');
+                } else {
+                    remoteVolumeMeter.innerText = 'mic';
+                    if (payload.level > 0.02) {
+                        remoteVolumeMeter.classList.add('volume-active');
+                        lastRemoteVolumeActiveTime = Date.now();
+                    } else {
+                        remoteVolumeMeter.classList.remove('volume-active');
+                    }
+                }
+            }
+        })
+        .on('broadcast', { event: 'camera-toggle' }, data => {
+            const payload = data.payload || data;
+            const remoteContainer = document.getElementById('remoteContainer');
+            if (remoteContainer) {
+                if (payload.isCamOn === false) {
+                    remoteContainer.classList.add('video-muted');
+                } else {
+                    remoteContainer.classList.remove('video-muted');
                 }
             }
         })
@@ -1327,9 +1807,8 @@ joinBtn.addEventListener('click', async (e) => {
             const payload = data.payload || data;
             popEmojis(payload.emoji);
         })
-        .on('broadcast', { event: 'user-left' }, (payload) => {
+        .on('broadcast', { event: 'user-left' }, ({ payload }) => {
             console.log("Peer left room:", payload.id);
-            updatePeopleList(null);
             if (pc) {
                 pc.close();
                 pc = null;
@@ -1337,40 +1816,146 @@ joinBtn.addEventListener('click', async (e) => {
             if (remoteVideo) {
                 remoteVideo.srcObject = null;
             }
+            document.querySelector('.main-stage')?.classList.remove('is-connected');
+            updateStatus("Peer left", "info");
         })
-        .subscribe(async (status) => {
+        .on('broadcast', { event: 'host-heartbeat' }, (data) => {
+            const payload = data.payload || data;
+            if (payload.host) {
+                setRemoteName(payload.host);
+            }
+            if (!isCreatingMeeting && joiningLoader.classList.contains('active')) {
+                console.log("Host heartbeat detected! Entering room...");
+                joiningLoader.classList.remove('active');
+                meetingRoom.classList.add('active');
+                updateStatus("Connected to peer", "success");
+            }
+        })
+        .on('presence', { event: 'sync' }, () => {
+            const state = supabaseChannel.presenceState();
+            const users = Object.values(state).flat();
+            
+            // Enforce max 2 participants limit
+            if (users.length > 2) {
+                // Sort by who joined first
+                const sortedUsers = [...users].sort((a, b) => new Date(a.online_at) - new Date(b.online_at));
+                const myIndex = sortedUsers.findIndex(u => u.presenceKey === myPresenceKey);
+                
+                // If I am 3rd or later, I must disconnect
+                if (myIndex >= 2) {
+                    console.log("Room is full. Disconnecting...");
+                    supabaseChannel.unsubscribe();
+                    stopCamera();
+                    
+                    const joiningLoader = document.getElementById('joining-loader');
+                    const meetingRoom = document.getElementById('meeting-room');
+                    const joinScreen = document.getElementById('join-screen');
+                    const lobbyStatus = document.getElementById('status');
+                    
+                    if (joiningLoader) joiningLoader.classList.remove('active');
+                    if (meetingRoom) meetingRoom.classList.remove('active');
+                    if (joinScreen) joinScreen.classList.add('active');
+                    
+                    setTimeout(() => {
+                        const modal = document.getElementById('full-room-modal');
+                        if (modal) modal.classList.add('active');
+                    }, 100);
+                    return; // Stop processing sync
+                }
+            }
+            
+            // Try to find the remote peer's name from presence data
+            const peer = users.find(u => u.user_id !== (isCreatingMeeting ? 'host' : 'joiner'));
+            if (peer && peer.name) {
+                setRemoteName(peer.name);
+            }
+
+            const hostFound = users.some(u => u.user_id === 'host');
+            console.log(`[Presence Sync] ${users.length} users. Host found: ${hostFound}`);
+            
+            if (hostFound && !isCreatingMeeting && joiningLoader.classList.contains('active')) {
+                joiningLoader.classList.remove('active');
+                meetingRoom.classList.add('active');
+                updateStatus("Connected to peer", "success");
+            }
+        });
+
+        let subRetries = 0;
+        const handleSubscription = async (status) => {
             if (status === 'SUBSCRIBED') {
                 updateStatus("Connected to signaling server", "success");
 
-                // Check for existing users if we are NOT the creator
+                // Register ourselves in the presence state
+                supabaseChannel.track({ 
+                    user_id: isCreatingMeeting ? 'host' : 'joiner', 
+                    name: localName,
+                    presenceKey: myPresenceKey,
+                    online_at: new Date().toISOString() 
+                });
+
+                // Host: Start a heartbeat so joiners can find us easily
+                if (isCreatingMeeting) {
+                    setInterval(() => {
+                        supabaseChannel.send({
+                            type: 'broadcast',
+                            event: 'host-heartbeat',
+                            payload: { host: localName }
+                        });
+                    }, 2000);
+                }
+
+                // Joiner: Polling Fallback (in case heartbeats/sync are skipped)
                 if (!isCreatingMeeting) {
-                    // Register presence first to be noticed
-                    supabaseChannel.track({ user_id: 'joiner', online_at: new Date().toISOString() });
+                    let attempts = 0;
+                    const maxAttempts = 20; // Wait up to 10 seconds
                     
-                    // Small delay to let presence sync
-                    setTimeout(() => {
+                    const checkInterval = setInterval(() => {
+                        attempts++;
+                        if (!joiningLoader.classList.contains('active')) {
+                            clearInterval(checkInterval);
+                            return;
+                        }
+
                         const presenceState = supabaseChannel.presenceState();
-                        const participantCount = Object.keys(presenceState).length;
-                        
-                        // If no one else is in the room, it means the meeting doesn't exist
-                        if (participantCount <= 1) {
-                            alert("Meeting not found. Please check your code or wait for the host to start.");
-                            stopCamera(); // Safety: Turn off camera since we are leaving
+                        const users = Object.values(presenceState).flat();
+                        const hostFound = users.some(u => u.user_id === 'host');
+                        // Also accept if ANY peer is present (handles host-rejoin case
+                        // where the original host left and is now rejoining, but the
+                        // other participant is still registered as 'joiner')
+                        const anyoneFound = users.length > 1 || (users.length === 1 && users[0].user_id !== (isCreatingMeeting ? 'host' : 'joiner'));
+
+                        if (hostFound) {
+                            clearInterval(checkInterval);
+                            joiningLoader.classList.remove('active');
+                            meetingRoom.classList.add('active');
+                            updateStatus("Connected to peer", "success");
+                        } else if (anyoneFound) {
+                            // No host presence, but someone is in the room —
+                            // promote this user to host so the meeting can continue
+                            clearInterval(checkInterval);
+                            console.log("[Rejoin] No host found but peers present — rejoining as host.");
+                            isCreatingMeeting = true;
+                            supabaseChannel.track({
+                                user_id: 'host',
+                                name: localName,
+                                presenceKey: myPresenceKey,
+                                online_at: new Date().toISOString()
+                            });
+                            joiningLoader.classList.remove('active');
+                            meetingRoom.classList.add('active');
+                            updateStatus("Reconnected as host", "success");
+                        } else if (attempts >= maxAttempts) {
+                            clearInterval(checkInterval);
+                            stopCamera(); 
                             joiningLoader.classList.remove('active');
                             joinScreen.classList.add('active');
                             lobbyStatus.innerText = "Meeting not found.";
                             lobbyStatus.style.color = "#ef4444";
-                            isCreatingMeeting = false; // Reset state
-                            return;
-                        } else {
-                            // Host found, show meeting room
-                            joiningLoader.classList.remove('active');
-                            meetingRoom.classList.add('active');
                         }
-                    }, 2500); // Increased slightly for better visual feedback
+                    }, 500);
                 }
 
-                // Notify others that we joined
+                // Broadcast join event for WebRTC
                 setTimeout(() => {
                     supabaseChannel.send({
                         type: 'broadcast',
@@ -1380,16 +1965,37 @@ joinBtn.addEventListener('click', async (e) => {
                             name: localName
                         }
                     });
-                }, 500);
+                    // Immediately broadcast our camera/mic state so the remote peer
+                    // shows the camera-off icon right from the start
+                    supabaseChannel.send({
+                        type: 'broadcast',
+                        event: 'camera-toggle',
+                        payload: { isCamOn }
+                    });
+                }, 1000);
             } else if (status === 'CHANNEL_ERROR') {
                 updateStatus("Signaling connection error", "error");
             } else if (status === 'TIMED_OUT') {
-                updateStatus("Signaling timed out", "error");
+                if (subRetries < 3) {
+                    subRetries++;
+                    updateStatus(`Signaling timed out. Retrying... (${subRetries}/3)`, "info");
+                    setTimeout(() => {
+                        if (supabaseChannel) supabaseChannel.subscribe(handleSubscription, 30000);
+                    }, 2000);
+                } else {
+                    updateStatus("Signaling timed out. Please refresh.", "error");
+                }
             }
-        });
+        };
+        
+        supabaseChannel.subscribe(handleSubscription, 30000);
 
-    if (window.speechSynthesis) {
-        const primingUtterance = new SpeechSynthesisUtterance("");
+    if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+        window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+    } else if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const primingUtterance = new SpeechSynthesisUtterance(" ");
+        primingUtterance.lang = 'en-US';
         window.speechSynthesis.speak(primingUtterance);
     }
 });
@@ -1412,67 +2018,12 @@ hands.onResults(onResults);
 let isCollecting = false;
 // Initial Load
 if (modeSelect) modeSelect.value = currentMode;
-// updateModeVariables is async now, so wait for it and then load models
-updateModeVariables().then(() => {
-    loadModelsAndLabels();
-});
+// updateModeVariables already reloads models for the active mode.
+updateModeVariables();
 loadSavedLabels();
-loadFromFirestore();
+// loadFromFirestore removed to prevent reference errors to deleted UI components
 
-function renderSignList() {
-    const listDiv = document.getElementById('signList');
-    if (!listDiv) return;
-
-    // Group data by label
-    const grouped = {};
-    collectedData.forEach(item => {
-        if (!grouped[item.label]) grouped[item.label] = [];
-        grouped[item.label].push(item);
-    });
-
-    // Render grouped list
-    listDiv.innerHTML = Object.keys(grouped).sort().map(label => {
-        const count = grouped[label].length;
-        return `
-        <div class="sign-item">
-            <div class="sign-info">
-                <span class="sign-label">${label}</span>
-                <span class="sign-count">${count} samples</span>
-            </div>
-            <button class="delete-btn" onclick="deleteLabel('${label}')" title="Delete Sign">
-                <span class="material-icons" style="font-size: 18px;">delete</span>
-            </button>
-        </div>
-        `;
-    }).join('');
-}
-
-// Global function to delete all data for a specific label
-// Global function to delete all data for a specific label
-window.deleteLabel = async (label) => {
-    if (!confirm(`Are you sure you want to delete the sign "${label}"? This will delete from the database.`)) return;
-
-    // 1. Identify items to delete
-    const itemsToDelete = collectedData.filter(d => d.label === label);
-
-    // 2. Delete from Firestore
-    // Note: Batch delete is better, but simple loop for now
-    for (const item of itemsToDelete) {
-        if (item.id) {
-            try {
-                await deleteDoc(doc(db, dbCollection, item.id));
-            } catch (e) {
-                console.error("Failed to delete doc:", item.id, e);
-            }
-        }
-    }
-
-    // 3. Update local state
-    collectedData = collectedData.filter(d => d.label !== label);
-    renderSignList(); // Re-render
-    updateDataStats();
-    console.log(`Deleted sign: ${label}`);
-};
+// Global function to delete all data for a specific label removed
 
 function saveGesture(label, landmarks) {
     const dataPoint = {
@@ -1486,8 +2037,6 @@ function saveGesture(label, landmarks) {
 
     // Add to batch queue for upload on mouseup
     batchQueue.push(dataPoint);
-
-    updateDataStats();
 }
 
 // --- Model Loading ---
@@ -1511,14 +2060,15 @@ async function loadModelsAndLabels() {
 
     // load server model for selected language
     const serverModelPath = currentMode === 'ASL' ? 'model/asl/model.json' : 'model/model.json';
+    const serverLabelsPath = currentMode === 'ASL' ? 'model/asl/labels.json' : 'labels.json';
     try {
-        const response = await fetch('labels.json');
+        const response = await fetch(serverLabelsPath);
         if (response.ok) {
             serverLabels = normalizeLabelList(await response.json()).labels;
             serverModel = await tf.loadLayersModel(serverModelPath);
             console.log(`Server model loaded (${serverLabels.length} labels)`);
         } else {
-            console.warn('labels.json not found for server model.');
+            console.warn(`${serverLabelsPath} not found for server model.`);
         }
     } catch (e) {
         console.warn('Server model load failed:', e);
@@ -1527,7 +2077,14 @@ async function loadModelsAndLabels() {
     // load local static model if available
     try {
         const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
-        if (localLabelData) {
+        if (!localLabelData) {
+            const cloudData = await fetchCloudModel('static', currentMode);
+            if (cloudData) {
+                uniqueLabels = cloudData.labels;
+                model = cloudData.model;
+                console.log(`Cloud static model loaded (${uniqueLabels.length} labels)`);
+            }
+        } else {
             const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
             uniqueLabels = normalizedLocalLabels.labels;
             if (normalizedLocalLabels.changed) {
@@ -1537,8 +2094,15 @@ async function loadModelsAndLabels() {
                 model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
                 console.log(`Local static model loaded (${uniqueLabels.length} labels)`);
             } catch (e) {
-                console.warn('Local static model weights not found in localStorage.');
-                model = null;
+                console.warn('Local static model weights not found in localStorage. Checking cloud...');
+                const cloudData = await fetchCloudModel('static', currentMode);
+                if (cloudData) {
+                    uniqueLabels = cloudData.labels;
+                    model = cloudData.model;
+                    console.log(`Cloud static model loaded (${uniqueLabels.length} labels)`);
+                } else {
+                    model = null;
+                }
             }
         }
     } catch (e) {
@@ -1548,7 +2112,15 @@ async function loadModelsAndLabels() {
     // load local dynamic model if available
     try {
         const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
-        if (dynamicLabelData) {
+        if (!dynamicLabelData) {
+            const cloudData = await fetchCloudModel('dynamic', currentMode);
+            if (cloudData) {
+                uniqueLabelsDynamic = cloudData.labels;
+                modelDynamic = cloudData.model;
+                dynamicLabelHandRequirements = cloudData.handReqs || {};
+                console.log(`Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
+            }
+        } else {
             const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
             uniqueLabelsDynamic = normalizedDynamicLabels.labels;
             if (normalizedDynamicLabels.changed) {
@@ -1564,8 +2136,16 @@ async function loadModelsAndLabels() {
                 modelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
                 console.log(`Local dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
             } catch (e) {
-                console.warn('Local dynamic model weights not found in localStorage.');
-                modelDynamic = null;
+                console.warn('Local dynamic model weights not found in localStorage. Checking cloud...');
+                const cloudData = await fetchCloudModel('dynamic', currentMode);
+                if (cloudData) {
+                    uniqueLabelsDynamic = cloudData.labels;
+                    modelDynamic = cloudData.model;
+                    dynamicLabelHandRequirements = cloudData.handReqs || {};
+                    console.log(`Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
+                } else {
+                    modelDynamic = null;
+                }
             }
         }
     } catch (e) {
@@ -1574,10 +2154,9 @@ async function loadModelsAndLabels() {
 
     // update training UI
     if ((model && uniqueLabels.length > 0) || (modelDynamic && uniqueLabelsDynamic.length > 0)) {
-        trainStatusDiv.innerText = 'Saved model(s) loaded.';
-        if (saveBtn) saveBtn.disabled = false;
+        console.log('Saved model(s) loaded.');
     } else {
-        trainStatusDiv.innerText = 'No saved local model.';
+        console.log('No saved local model.');
     }
 
     console.log('loadModelsAndLabels completed', {
@@ -1590,17 +2169,15 @@ async function loadModelsAndLabels() {
     });
 }
 
-// initial load
-loadModelsAndLabels();
-
 // --- Camera & Hand Tracking ---
 let isCameraStarted = false;
 async function startCamera() {
-    if (isCameraStarted) return;
+    if (isCameraStarted && localStream) return;
     isCameraStarted = true;
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert("Browser API navigator.mediaDevices.getUserMedia not available. Please ensure you are using a modern browser and running on localhost or HTTPS.");
+        isCameraStarted = false;
         return;
     }
 
@@ -1624,93 +2201,81 @@ async function startCamera() {
             };
             localStream = await navigator.mediaDevices.getUserMedia(constraints);
             console.log("Media access granted.");
+
+            // --- Mute on join: start with mic and camera off ---
+            localStream.getAudioTracks().forEach(t => t.enabled = false);
+            localStream.getVideoTracks().forEach(t => t.enabled = false);
+            isMicOn = false;
+            isCamOn = false;
         } catch (err) {
-            if (err.name === 'NotFoundError') {
-                console.warn("Microphone not found, attempting video only.");
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: 'user',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        resizeMode: 'none',
-                        frameRate: { ideal: 24, max: 30 }
+            console.error("Initial media request failed:", err);
+            if (err.name === 'NotFoundError' || err.name === 'NotAllowedError') {
+                console.warn("Microphone access issue, attempting video only.");
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        video: videoConstraints
+                    });
+                    
+                    // Update UI state to reflect missing mic
+                    isMicOn = false;
+                    if (micBtn) {
+                        micBtn.innerHTML = `<span class="material-icons">mic_off</span>`;
+                        micBtn.classList.add('red-btn');
+                        micBtn.title = err.name === 'NotAllowedError' ? "Microphone blocked (Click to request)" : "No microphone detected (Click to retry)";
                     }
-                });
-                alert("Microphone not found. Starting with camera only.");
+                    if (localVolumeMeter) localVolumeMeter.innerText = 'mic_off';
 
-                // Disable mic state and UI physically, but allow user to TRY enabling it again.
-                isMicOn = false;
-                micBtn.innerHTML = `<span class="material-icons">mic_off</span>`;
-                micBtn.classList.add('red-btn');
-                micBtn.disabled = false; // Allow user to click and retry
-                micBtn.title = "No microphone detected (Click to retry)";
-                micBtn.style.opacity = "1";
-                micBtn.style.cursor = "pointer";
-
-                // Add retry handler ONLY if not already added (simple check)
-                if (!micBtn.hasAttribute('data-retry-listener')) {
-                    micBtn.setAttribute('data-retry-listener', 'true');
-                    micBtn.addEventListener('click', async (e) => {
-                        e.stopImmediatePropagation(); // Prevent standard toggle logic
-                        try {
-                            console.log("Retrying microphone access...");
-                            const audioConstraints = {
-                                audio: {
-                                    echoCancellation: { ideal: true },
-                                    noiseSuppression: { ideal: true },
-                                    autoGainControl: { ideal: true }
-                                }
-                            };
-                            const newStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
-
-                            // Success! Add track to stream and PC
-                            const audioTrack = newStream.getAudioTracks()[0];
-                            localStream.addTrack(audioTrack);
-                            if (pc) {
-                                pc.addTrack(audioTrack, localStream); // sending to remote
-                            }
-
-                            // Update UI
-                            isMicOn = true;
-                            micBtn.innerHTML = `<span class="material-icons">mic</span>`;
-                            micBtn.classList.remove('red-btn');
-                            micBtn.title = "Turn off microphone";
-
-                            // Initialize analysis for the new track
-                            initAudioAnalysis(localStream);
-
-                            alert("Microphone connected successfully!");
-                        } catch (retryErr) {
-                            console.error("Retry failed:", retryErr);
-                            alert("Still cannot find microphone. Please check connection.");
-                        }
-                    }, { once: true }); // Only try this special retry once per failure state
+                } catch (vErr) {
+                    console.error("Complete media failure:", vErr);
+                    alert("Could not access camera or microphone. Please check permissions.");
+                    throw vErr;
                 }
-
             } else {
                 throw err;
             }
         }
         localVideo.srcObject = localStream;
 
-        let frameCount = 0;
-        const camera = new Camera(localVideo, {
+        // Sync buttons to the muted-on-join state
+        if (micBtn) {
+            micBtn.innerHTML = `<span class="material-icons">mic_off</span>`;
+            micBtn.classList.add('red-btn');
+            micBtn.setAttribute('title', 'Turn on microphone');
+        }
+        if (camBtn) {
+            camBtn.innerHTML = `<span class="material-icons">videocam_off</span>`;
+            camBtn.classList.add('red-btn');
+            camBtn.setAttribute('title', 'Turn on camera');
+        }
+        if (localVolumeMeter) localVolumeMeter.innerText = 'mic_off';
+        const localContainer = document.getElementById('localContainer');
+        if (localContainer) localContainer.classList.add('video-muted');
+
+        localCameraController = new Camera(localVideo, {
             onFrame: async () => {
-                if (isCamOn) {
-                    // CPU Optimization: Only run AI tracking every 3rd frame (roughly 10-15 FPS)
-                    // This keeps the video call smooth while still detecting signs effectively.
-                    frameCount++;
-                    if (frameCount % 3 === 0) {
-                        await hands.send({ image: localVideo });
-                    }
-                } else {
-                    console.debug('onFrame: camera disabled');
+                if (!isCamOn || !localVideo.videoWidth || !localVideo.videoHeight) {
+                    return;
+                }
+
+                const now = performance.now();
+                if (isHandInferencePending || (now - lastHandInferenceAt) < HAND_INFERENCE_INTERVAL_MS) {
+                    return;
+                }
+
+                isHandInferencePending = true;
+                lastHandInferenceAt = now;
+
+                try {
+                    await hands.send({ image: localVideo });
+                } finally {
+                    isHandInferencePending = false;
                 }
             },
         });
-        await camera.start();
+        await localCameraController.start();
         initAudioAnalysis(localStream);
     } catch (err) {
+        isCameraStarted = false;
         console.error("Camera error:", err);
         let msg = "Could not access camera/microphone.";
         if (err.name === 'NotAllowedError') {
@@ -1728,29 +2293,23 @@ async function startCamera() {
 
 function preprocessLandmarks(landmarks) {
     const wrist = landmarks[0];
+    const indexMCP = landmarks[5];
+    const distance = Math.hypot(
+        indexMCP.x - wrist.x,
+        indexMCP.y - wrist.y,
+        indexMCP.z - wrist.z
+    ) || 1e-6;
+    const normalized = new Array(landmarks.length * 3);
 
-    // 1. Translation Invariance: Shift all points relative to the wrist (0,0,0)
-    let shifted = landmarks.map(p => ({
-        x: p.x - wrist.x,
-        y: p.y - wrist.y,
-        z: p.z - wrist.z
-    }));
+    for (let index = 0; index < landmarks.length; index += 1) {
+        const point = landmarks[index];
+        const base = index * 3;
+        normalized[base] = (point.x - wrist.x) / distance;
+        normalized[base + 1] = (point.y - wrist.y) / distance;
+        normalized[base + 2] = (point.z - wrist.z) / distance;
+    }
 
-    // 2. Scale Invariance: Calculate "hand size" (distance from wrist to index finger MCP)
-    // Index MCP is landmark 5
-    const indexMCP = shifted[5];
-    const distance = Math.sqrt(
-        Math.pow(indexMCP.x, 2) +
-        Math.pow(indexMCP.y, 2) +
-        Math.pow(indexMCP.z, 2)
-    ) || 1e-6; // Avoid division by zero
-
-    // 3. Normalize all coordinates by this distance
-    return shifted.flatMap(p => [
-        p.x / distance,
-        p.y / distance,
-        p.z / distance
-    ]);
+    return normalized;
 }
 
 function getSmoothedPrediction(predLabel) {
@@ -1765,7 +2324,7 @@ function updateMotionState(currentFrame) {
     const now = Date.now();
 
     if (!previousMotionFrame) {
-        previousMotionFrame = [...currentFrame];
+        previousMotionFrame = currentFrame.slice();
         staticStillStartTime = now;
         return { isStillFrame: false, stillForMs: 0 };
     }
@@ -1784,7 +2343,7 @@ function updateMotionState(currentFrame) {
         staticStillStartTime = 0;
     }
 
-    previousMotionFrame = [...currentFrame];
+    previousMotionFrame = currentFrame.slice();
     const stillForMs = staticStillStartTime ? (now - staticStillStartTime) : 0;
     return { isStillFrame, stillForMs };
 }
@@ -1806,7 +2365,7 @@ function getFrameDifference(frameA, frameB) {
 
 function updateDisplayedPrediction(label, conf, isDynamic, currentFrame) {
     lastDisplayedPrediction = { label, conf, isDynamic };
-    lastDisplayedFrame = [...currentFrame];
+    lastDisplayedFrame = currentFrame.slice();
 }
 
 function shouldKeepLastPrediction(currentFrame) {
@@ -1816,18 +2375,20 @@ function shouldKeepLastPrediction(currentFrame) {
 }
 
 function onResults(results) {
-    console.debug('onResults invoked', {
-        hands: results.multiHandLandmarks ? results.multiHandLandmarks.length : 0
-    });
-    if (localCanvas.width !== localVideo.videoWidth || localCanvas.height !== localVideo.videoHeight) {
-        localCanvas.width = localVideo.videoWidth;
-        localCanvas.height = localVideo.videoHeight;
+    const handLandmarks = results.multiHandLandmarks || [];
+    const shouldDrawOverlay = isOverlayOn && handLandmarks.length > 0 && typeof drawConnectors !== 'undefined';
+    const shouldTouchCanvas = (shouldDrawOverlay || overlayHadRenderedContent) && localVideo.videoWidth && localVideo.videoHeight;
+
+    if (shouldTouchCanvas) {
+        if (localCanvas.width !== localVideo.videoWidth || localCanvas.height !== localVideo.videoHeight) {
+            localCanvas.width = localVideo.videoWidth;
+            localCanvas.height = localVideo.videoHeight;
+        }
+        ctx.save();
+        ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
     }
 
-    ctx.save();
-    ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
-
-    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    if (handLandmarks.length > 0) {
         // Hands detected - clear the timeout
         lastHandDetectedTime = Date.now();
         if (accumulatedWord.length > 0) {
@@ -1840,27 +2401,25 @@ function onResults(results) {
         }
 
         // ALWAYS use the first hand for prediction to avoid "Double Speak" from two hands
-        const landmarks = results.multiHandLandmarks[0];
+        const landmarks = handLandmarks[0];
 
         // Handle Hand Overlay Drawing
-        if (isOverlayOn && typeof drawConnectors !== 'undefined') {
-            for (const hand of results.multiHandLandmarks) {
+        if (shouldDrawOverlay) {
+            for (const hand of handLandmarks) {
                 drawConnectors(ctx, hand, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
                 drawLandmarks(ctx, hand, { color: '#FF0000', lineWidth: 2 });
             }
+            overlayHadRenderedContent = true;
         }
 
         // Preprocess for AI (Normalization is Scale/Translation invariant)
         const flatLandmarks = preprocessLandmarks(landmarks);
 
-        const detectedHandCount = Math.min(2, results.multiHandLandmarks.length);
+        const detectedHandCount = Math.min(2, handLandmarks.length);
 
         // Handle Collection or Prediction
         if (isCollecting) {
-            const label = labelInput.value.trim();
-            if (label) {
-                saveGesture(label, flatLandmarks);
-            }
+            // Collection disabled
         } else {
             runPrediction(flatLandmarks, detectedHandCount);
         }
@@ -1886,14 +2445,17 @@ function onResults(results) {
         // Reset the last added letter so user can sign the same letter again if they lift their hand
         // e.g. "Apple" requires P -> lift -> P
         if (lastAddedLetter !== null) {
-            console.log("Hands removed, resetting lastAddedLetter");
             lastAddedLetter = null;
         }
         // also clear hold tracking
         heldLetter = null;
         holdStartTime = 0;
+        overlayHadRenderedContent = false;
     }
-    ctx.restore();
+
+    if (shouldTouchCanvas) {
+        ctx.restore();
+    }
 }
 
 function normalizeHandRequirement(rawValue) {
@@ -2042,6 +2604,24 @@ function shouldSkipStaticLabel(label) {
     return typeof label === 'string' && label.toLowerCase() === 'hello';
 }
 
+function getPredictionPeak(predictionTensor, labels) {
+    const values = predictionTensor.dataSync();
+    let maxIndex = 0;
+    let maxConfidence = values[0] ?? 0;
+
+    for (let index = 1; index < values.length; index += 1) {
+        if (values[index] > maxConfidence) {
+            maxConfidence = values[index];
+            maxIndex = index;
+        }
+    }
+
+    return {
+        conf: maxConfidence,
+        label: normalizeAlphabetLabel(labels[maxIndex])
+    };
+}
+
 function chooseBestCandidateWithLocalPriority(candidates) {
     const serverCandidates = candidates.filter(c => c.source === 'server');
     const localCandidates = candidates.filter(c => c.source === 'local' || c.source === 'dynamic');
@@ -2096,9 +2676,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
         // server predictions (ISL only, only when hand is still)
         if (staticAllowed && serverModel && serverLabels.length) {
             const pred = serverModel.predict(input);
-            const conf = pred.max().dataSync()[0];
-            const idx = pred.argMax(-1).dataSync()[0];
-            const label = normalizeAlphabetLabel(serverLabels[idx]);
+            const { conf, label } = getPredictionPeak(pred, serverLabels);
             if (!shouldSkipStaticLabel(label)) {
                 candidates.push({ label, conf, source: 'server' });
             }
@@ -2107,9 +2685,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
         // local static predictions (only when hand is still)
         if (staticAllowed && model && uniqueLabels.length) {
             const pred = model.predict(input);
-            const conf = pred.max().dataSync()[0];
-            const idx = pred.argMax(-1).dataSync()[0];
-            const label = normalizeAlphabetLabel(uniqueLabels[idx]);
+            const { conf, label } = getPredictionPeak(pred, uniqueLabels);
             if (!shouldSkipStaticLabel(label)) {
                 candidates.push({ label, conf, source: 'local' });
             }
@@ -2138,9 +2714,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
 
                 const tensorDynamic = tf.tensor3d([paddedFrames]);
                 const predDynamic = modelDynamic.predict(tensorDynamic);
-                const conf = predDynamic.max().dataSync()[0];
-                const idx = predDynamic.argMax(-1).dataSync()[0];
-                const predictedDynamicLabel = normalizeAlphabetLabel(uniqueLabelsDynamic[idx]);
+                const { conf, label: predictedDynamicLabel } = getPredictionPeak(predDynamic, uniqueLabelsDynamic);
 
                 // Boost confidence for dynamic signs to compete with static scores
                 const boostedConf = Math.min(conf * 1.2, 1.0);
@@ -2214,11 +2788,21 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 lastSpokenTime = now;
                 localWordLastSpoken[outputLabel] = now;
 
+                if (isSTTOn) {
+                    const logText = best.isDynamic ? `${outputLabel} 🔄` : outputLabel;
+                    appendCaptionLog("You", logText);
+                    displayVCSignCards(outputLabel);
+                }
+
                 if (supabaseChannel) {
                     supabaseChannel.send({
                         type: 'broadcast',
                         event: 'sign-message',
-                        payload: { text: outputLabel }
+                        payload: { 
+                            text: outputLabel, 
+                            name: localName, 
+                            isDynamic: !!best.isDynamic 
+                        }
                     });
                 }
 
@@ -2250,7 +2834,6 @@ function handleSpelling(letter) {
     lastAddedLetter = letter;
     accumulatedWord += letter;
 
-    if (isTTSOn) speak(letter.toLowerCase());
     updateSpellingDisplay();
 }
 
@@ -2306,15 +2889,18 @@ function finishSpelling(forceSpeak = false) {
     // Convert to Title Case to encourage TTS to say it as a word, not spell it (e.g. "Saurav" vs "SAURAV")
     const wordToSpeak = accumulatedWord.charAt(0).toUpperCase() + accumulatedWord.slice(1).toLowerCase();
 
-    // Speak locally if TTS is on
-    if (isTTSOn || forceSpeak) speak(wordToSpeak);
+    // Keep finalized spelled words in the local live caption feed too.
+    if (isSTTOn) {
+        appendCaptionLog("You", `[Spelled] ${wordToSpeak}`);
+        displayVCSignCards(wordToSpeak);
+    }
 
-    // Send to remote user
+    // Send to remote user as specialized spelled-word event
     if (supabaseChannel) {
         supabaseChannel.send({
             type: 'broadcast',
             event: 'sign-message',
-            payload: { text: wordToSpeak }
+            payload: { text: wordToSpeak, name: localName, isSpelled: true }
         });
     }
 
@@ -2331,103 +2917,11 @@ function finishSpelling(forceSpeak = false) {
 function saveToLocal() {
     // This helper updates the UI and stats after local data modification
     // Note: Use addDoc/deleteDoc for persistent Firestore changes.
-    updateDataStats();
-    renderSignList();
 }
 
-function updateDataStats() {
-    dataCountDiv.innerText = `Samples: ${collectedData.length}`;
-}
+// updateDataStats removed
 
-collectBtn.addEventListener('mousedown', () => isCollecting = true);
-collectBtn.addEventListener('mouseup', async () => {
-    isCollecting = false;
-
-    if (batchQueue.length > 0) {
-        const count = batchQueue.length;
-        trainStatusDiv.innerText = `Saving ${count} samples...`;
-
-        // Upload batch
-        try {
-            const promises = batchQueue.map(data => addDoc(collection(db, dbCollection), data));
-            await Promise.all(promises);
-            trainStatusDiv.innerText = `Saved ${count} samples to DB!`;
-            batchQueue = []; // Clear queue
-            // Reload to get IDs? Or just trust it. Reloading is safer for Sync.
-            await loadFromFirestore();
-        } catch (e) {
-            console.error("Error saving batch:", e);
-            trainStatusDiv.innerText = "Error saving data.";
-        }
-    }
-});
-
-trainBtn.addEventListener('click', async () => {
-    if (collectedData.length < 10) return alert("Collect more data (min 10 samples)!");
-
-    uniqueLabels = [...new Set(collectedData.map(d => d.label))];
-    if (uniqueLabels.length < 2) return alert("Need at least 2 different signs.");
-
-    const labelMap = {};
-    uniqueLabels.forEach((l, i) => labelMap[l] = i);
-
-    const xs = tf.tensor2d(collectedData.map(d => d.landmarks));
-    const ys = tf.oneHot(tf.tensor1d(collectedData.map(d => labelMap[d.label]), 'int32'), uniqueLabels.length);
-
-    const newModel = tf.sequential();
-    newModel.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [63] }));
-    newModel.add(tf.layers.dropout({ rate: 0.2 })); // Prevent overfitting
-    newModel.add(tf.layers.dense({ units: 32, activation: 'relu' }));
-    newModel.add(tf.layers.dense({ units: uniqueLabels.length, activation: 'softmax' }));
-
-    newModel.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
-
-    trainStatusDiv.innerText = "Training...";
-    trainBtn.disabled = true;
-
-    await newModel.fit(xs, ys, {
-        epochs: 40,
-        shuffle: true,
-        callbacks: {
-            onEpochEnd: (epoch, logs) => {
-                trainStatusDiv.innerText = `Loss: ${logs.loss.toFixed(3)}`;
-            }
-        }
-    });
-
-    model = newModel;
-    updateModelStatusUI();
-    trainStatusDiv.innerText = "Training Done!";
-    trainBtn.disabled = false;
-    if (saveBtn) saveBtn.disabled = false;
-
-    // 4. Auto-save for better persistence
-    try {
-        await model.save(`localstorage://${localStorageModelKey}`);
-        localStorage.setItem(localStorageLabelKey, JSON.stringify(uniqueLabels));
-        console.log("Model and labels auto-saved successfully.");
-    } catch (err) {
-        console.error("Auto-save failed:", err);
-    }
-
-    xs.dispose();
-    ys.dispose();
-});
-
-saveBtn.addEventListener('click', async () => {
-    if (!model) return;
-    await model.save(`localstorage://${localStorageModelKey}`);
-    localStorage.setItem(localStorageLabelKey, JSON.stringify(uniqueLabels));
-    alert("Model and labels saved!");
-});
-
-clearBtn.addEventListener('click', () => {
-    if (!confirm("Are you sure you want to delete ALL collected training gestures? This cannot be undone.")) return;
-
-    collectedData = [];
-    saveToLocal();
-    console.log("Deleted all gestures.");
-});
+// Training Logic removed
 
 // --- Signaling & WebRTC ---
 // Peer logic refactored into Supabase Channel setup
@@ -2505,8 +2999,7 @@ function createPeerConnection() {
         }
 
         // Ensure remote audio plays (browsers may block autoplay)
-        remoteVideo.muted = false;
-        remoteVideo.volume = 1.0;
+        applyRemoteAudioPreference();
         const playPromise = remoteVideo.play();
         if (playPromise !== undefined) {
             playPromise.catch(err => {
@@ -2533,19 +3026,16 @@ function createPeerConnection() {
     pc.onconnectionstatechange = () => {
         const state = pc ? pc.connectionState : 'closed';
         console.log("WebRTC Connection State:", state);
-        const statusText = document.getElementById('meeting-status-text');
-        const statusBar = document.getElementById('meeting-status-bar');
-        if (statusText) {
-            if (state === 'connected') {
-                statusText.innerText = 'Connected';
-                if (statusBar) statusBar.className = 'meeting-status-bar success';
-            } else if (state === 'disconnected' || state === 'failed') {
-                statusText.innerText = 'Peer disconnected';
-                if (statusBar) statusBar.className = 'meeting-status-bar error';
-            } else if (state === 'connecting') {
-                statusText.innerText = 'Connecting...';
-                if (statusBar) statusBar.className = 'meeting-status-bar info';
-            }
+        
+        if (state === 'disconnected' || state === 'failed') {
+            document.querySelector('.main-stage')?.classList.remove('is-connected');
+        }
+        if (state === 'connected') {
+            showMeetingStatusToast('Connected', 'success');
+        } else if (state === 'disconnected' || state === 'failed') {
+            showMeetingStatusToast('Peer disconnected', 'error');
+        } else if (state === 'connecting') {
+            showMeetingStatusToast('Connecting...', 'info');
         }
     };
 
@@ -2559,13 +3049,39 @@ function createPeerConnection() {
 
 // --- Audio Controls ---
 micBtn.addEventListener('click', async () => {
+    // If no audio track exists, attempt to acquire one (Retry logic)
     if (!localStream || !localStream.getAudioTracks().length) {
-        console.warn("No audio track to toggle");
-        return;
+        try {
+            console.log("Attempting to acquire microphone track...");
+            const tempStream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                } 
+            });
+            const audioTrack = tempStream.getAudioTracks()[0];
+            localStream.addTrack(audioTrack);
+            
+            if (pc) {
+                // Inform remote user about new track
+                pc.addTrack(audioTrack, localStream);
+                // Renogotiation might be needed here but usually RTCPeerConnection handles simple addTrack ok
+                // In some setups we might need to createOffer again.
+            }
+            
+            isMicOn = true;
+            initAudioAnalysis(localStream);
+            alert("Microphone linked successfully!");
+        } catch (e) {
+            console.error("Microphone recovery failed:", e);
+            alert("Could not find or access microphone. Check browser permissions.");
+            return;
+        }
+    } else {
+        isMicOn = !isMicOn;
+        localStream.getAudioTracks()[0].enabled = isMicOn;
     }
-
-    isMicOn = !isMicOn;
-    localStream.getAudioTracks()[0].enabled = isMicOn;
 
     // Ensure AudioContext resumes if it was blocked by browser
     if (isMicOn && audioContext && audioContext.state === 'suspended') {
@@ -2575,6 +3091,21 @@ micBtn.addEventListener('click', async () => {
     micBtn.innerHTML = `<span class="material-icons">${isMicOn ? 'mic' : 'mic_off'}</span>`;
     micBtn.classList.toggle('red-btn', !isMicOn);
     micBtn.setAttribute('title', isMicOn ? 'Turn off microphone' : 'Turn on microphone');
+
+    // Sync the status icon next to user name
+    if (localVolumeMeter) {
+        localVolumeMeter.innerText = isMicOn ? 'mic' : 'mic_off';
+        if (!isMicOn) localVolumeMeter.classList.remove('volume-active');
+    }
+
+    // Immediate broadcast for responsiveness
+    if (supabaseChannel) {
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'volume-level',
+            payload: { level: 0, micOn: isMicOn }
+        });
+    }
 });
 
 camBtn.addEventListener('click', () => {
@@ -2596,15 +3127,47 @@ camBtn.addEventListener('click', () => {
     camBtn.innerHTML = `<span class="material-icons">${isCamOn ? 'videocam' : 'videocam_off'}</span>`;
     camBtn.classList.toggle('red-btn', !isCamOn);
     camBtn.setAttribute('title', isCamOn ? 'Turn off camera' : 'Turn on camera');
+
+    // Broadcast camera state
+    if (supabaseChannel) {
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'camera-toggle',
+            payload: { isCamOn }
+        });
+    }
 });
 
-ttsBtn.addEventListener('click', () => {
-    isTTSOn = !isTTSOn;
-    updateTTSUI();
-});
+if (ttsBtn) {
+    ttsBtn.addEventListener('click', () => {
+        isTTSOn = !isTTSOn;
+        updateTTSUI();
+        if (!isTTSOn) {
+            if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+                window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+            } else if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
+        }
+    });
+}
+
+if (ttsToggleBtn) {
+    ttsToggleBtn.addEventListener('click', () => {
+        isTTSOn = !isTTSOn;
+        updateTTSUI();
+        if (!isTTSOn) {
+            if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+                window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+            } else if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
+        }
+    });
+}
 
 function speak(text) {
-    if (!window.speechSynthesis) return;
+    if (!isTTSOn) return;
 
     // 1. Hardware-level safety: Unified temporal debounce (500ms)
     // We use localStorage to coordinate across multiple tabs (e.g. if user has translation.html AND videocall.html open)
@@ -2626,76 +3189,90 @@ function speak(text) {
         speakTimeout = null;
     }
 
-    // 3. Cancel current speech and queue the new one
-    // We use a small delay because window.speechSynthesis.cancel() is often asynchronous 
-    // on the OS level and needs a moment to clear hardware buffers.
-    window.speechSynthesis.cancel();
+    if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+        window.capacitorTextToSpeech.TextToSpeech.speak({
+            text: text,
+            lang: 'en-US',
+            rate: 1.0,
+            pitch: 1.0,
+            volume: 1.0,
+        }).catch(e => console.error("Native TTS Error:", e));
+    } else if (window.speechSynthesis) {
+        // 3. Cancel current speech and queue the new one
+        window.speechSynthesis.cancel();
 
-    speakTimeout = setTimeout(() => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
+        speakTimeout = setTimeout(() => {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            utterance.lang = 'en-US';
 
-        window.speechSynthesis.speak(utterance);
-        speakTimeout = null;
-    }, 50);
+            window.speechSynthesis.speak(utterance);
+            speakTimeout = null;
+        }, 50);
+    }
 }
 
 // --- Chat Logic ---
 
 function closeAllPanels() {
-    sidePanel.classList.remove('open');
-    chatPanel.classList.remove('open');
-    if (infoPanel) infoPanel.classList.remove('open');
-    if (peoplePanel) peoplePanel.classList.remove('open');
+    if (chatPanel) {
+        chatPanel.classList.remove('open');
+    }
+    closeMoreOptionsMenu();
 }
 
 // Toggle Chat Panel
 if (chatToggleBtn) {
-    chatToggleBtn.addEventListener('click', () => {
+    chatToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent document click from closing it immediately
         const isOpen = chatPanel.classList.contains('open');
-        closeAllPanels();
-        if (!isOpen) chatPanel.classList.add('open');
-        if (chatToggleBtn) chatToggleBtn.style.color = '';
-    });
-}
-
-// Toggle Info Panel
-if (infoBtn) {
-    infoBtn.addEventListener('click', () => {
-        const isOpen = infoPanel.classList.contains('open');
+        console.log("Chat toggle clicked. Currently open:", isOpen);
         closeAllPanels();
         if (!isOpen) {
-            infoPanel.classList.add('open');
-            // Update info display
-            if (infoMeetingCode) infoMeetingCode.innerText = roomName || "N/A";
-            if (infoCurrentMode) infoCurrentMode.innerText = `${currentMode} Mode`;
+            chatPanel.classList.add('open');
+            chatToggleBtn.style.color = ''; // Reset alert color
+            console.log("Chat panel opened.");
+        } else {
+            console.log("Chat panel closed.");
         }
     });
 }
 
-// Toggle People Panel
-if (peopleBtn) {
-    peopleBtn.addEventListener('click', () => {
-        const isOpen = peoplePanel.classList.contains('open');
-        closeAllPanels();
-        if (!isOpen) peoplePanel.classList.add('open');
+if (closeChatBtn) closeChatBtn.addEventListener('click', () => chatPanel.classList.remove('open'));
+
+if (moreOptionsBtn) {
+    moreOptionsBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleMoreOptionsMenu();
     });
 }
 
-if (closeChatBtn) closeChatBtn.addEventListener('click', () => chatPanel.classList.remove('open'));
-if (closeInfoBtn) closeInfoBtn.addEventListener('click', () => infoPanel.classList.remove('open'));
-if (closePeopleBtn) closePeopleBtn.addEventListener('click', () => peoplePanel.classList.remove('open'));
+if (moreOptionsMenu) {
+    moreOptionsMenu.addEventListener('click', (event) => {
+        event.stopPropagation();
+    });
+}
 
-if (copyInfoCodeBtn) {
-    copyInfoCodeBtn.addEventListener('click', () => {
-        if (!roomName) return;
-        navigator.clipboard.writeText(roomName).then(() => {
-            const icon = copyInfoCodeBtn.querySelector('.material-icons');
-            icon.innerText = 'done';
-            setTimeout(() => icon.innerText = 'content_copy', 2000);
-        });
+if (speakerToggleBtn) {
+    speakerToggleBtn.addEventListener('click', () => {
+        isRemoteAudioEnabled = !isRemoteAudioEnabled;
+        localStorage.setItem('vc-remote-audio-enabled', JSON.stringify(isRemoteAudioEnabled));
+        applyRemoteAudioPreference();
+        updateOptionsMenuUI();
+    });
+}
+
+if (skeletonToggleBtn) {
+    skeletonToggleBtn.addEventListener('click', () => {
+        isOverlayOn = !isOverlayOn;
+        localStorage.setItem('vc-hand-overlay-enabled', JSON.stringify(isOverlayOn));
+        if (!isOverlayOn && localCanvas.width && localCanvas.height) {
+            ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
+            overlayHadRenderedContent = false;
+        }
+        updateOptionsMenuUI();
     });
 }
 
@@ -2736,36 +3313,7 @@ function sendMessage() {
 
 // Chat events refactored into Supabase Channel setup
 
-function updatePeopleList(remoteId = null) {
-    if (!peopleList) return;
-
-    let localInit = (localName || "Y").charAt(0).toUpperCase();
-    let remoteInit = (remoteName || "R").charAt(0).toUpperCase();
-
-    let html = `
-        <div class="person-item">
-            <div class="person-avatar">${localInit}</div>
-            <div class="person-info">
-                <div class="person-name">${localName} (You)</div>
-                <div class="person-status">Connected</div>
-            </div>
-        </div>
-    `;
-
-    if (remoteId) {
-        html += `
-            <div class="person-item">
-                <div class="person-avatar" style="background: #e37400;">${remoteInit}</div>
-                <div class="person-info">
-                    <div class="person-name">${remoteName}</div>
-                    <div class="person-status" style="color: #4db6ac;">Connected</div>
-                </div>
-            </div>
-        `;
-    }
-
-    peopleList.innerHTML = html;
-}
+// updatePeopleList removed
 
 function appendMessage(data, type) {
     const time = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -2784,28 +3332,7 @@ function appendMessage(data, type) {
     chatMessages.scrollTop = chatMessages.scrollHeight; // Auto scroll
 }
 
-// --- UI Toggles ---
-const overlayBtn = document.getElementById('overlayBtn');
-let isOverlayOn = true;
-
-// Overlay Toggle
-if (overlayBtn) {
-    overlayBtn.addEventListener('click', () => {
-        isOverlayOn = !isOverlayOn;
-        overlayBtn.innerHTML = `<span class="material-icons" style="color: ${isOverlayOn ? '#4db6ac' : '#8b949e'};">${isOverlayOn ? 'layers' : 'layers_clear'}</span>`;
-        overlayBtn.title = isOverlayOn ? "Hide Hand Overlay" : "Show Hand Overlay";
-    });
-}
-
-// Toggles are already wired up above to isOverlayOn variable
-
-
-// Training Toggle
-trainToggleBtn.addEventListener('click', () => {
-    const isOpen = sidePanel.classList.contains('open');
-    closeAllPanels();
-    if (!isOpen) sidePanel.classList.add('open');
-});
+// Training Toggle removed
 
 // Upload Dataset Logic
 const uploadBtn = document.getElementById('uploadBtn');
@@ -2845,26 +3372,8 @@ if (uploadBtn && uploadInput) {
 }
 
 
-closePanelBtn.addEventListener('click', () => sidePanel.classList.remove('open'));
+// Panel close listeners removed
 hangupBtn.addEventListener('click', () => window.location.reload());
-
-// More Options Toggle (Mobile)
-const moreBtn = document.getElementById('moreBtn');
-const secondaryControls = document.getElementById('secondary-controls');
-
-if (moreBtn && secondaryControls) {
-    moreBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        secondaryControls.classList.toggle('active');
-    });
-
-    // Close dropdown when clicking elsewhere
-    document.addEventListener('click', (e) => {
-        if (!secondaryControls.contains(e.target) && !moreBtn.contains(e.target)) {
-            secondaryControls.classList.remove('active');
-        }
-    });
-}
 
 // Copy Code Logic
 const copyCodeBtn = document.getElementById('copyCodeBtn');
@@ -2887,10 +3396,235 @@ function copyMeetingCode() {
     });
 }
 
+// --- Drag to Scroll Utility (Matching Live Translation Mode) ---
+function enableDragToScroll(el, direction = 'both') {
+    if (!el) return;
+    let isDown = false;
+    let startX, startY;
+    let scrollLeft, scrollTop;
+
+    el.addEventListener('mousedown', (e) => {
+        isDown = true;
+        el.style.cursor = 'grabbing';
+        startX = e.pageX - el.offsetLeft;
+        startY = e.pageY - el.offsetTop;
+        scrollLeft = el.scrollLeft;
+        scrollTop = el.scrollTop;
+    });
+
+    el.addEventListener('mouseleave', () => {
+        isDown = false;
+        el.style.cursor = 'default';
+    });
+
+    el.addEventListener('mouseup', () => {
+        isDown = false;
+        el.style.cursor = 'default';
+    });
+
+    el.addEventListener('mousemove', (e) => {
+        if (!isDown) return;
+        e.preventDefault();
+        
+        if (direction === 'both' || direction === 'horizontal') {
+            const x = e.pageX - el.offsetLeft;
+            const walkX = (x - startX) * 2;
+            el.scrollLeft = scrollLeft - walkX;
+        }
+        
+        if (direction === 'both' || direction === 'vertical') {
+            const y = e.pageY - el.offsetTop;
+            const walkY = (y - startY) * 2;
+            el.scrollTop = scrollTop - walkY;
+        }
+    });
+
+    // Mobile touch support
+    el.addEventListener('touchstart', (e) => {
+        isDown = true;
+        startX = e.touches[0].pageX - el.offsetLeft;
+        startY = e.touches[0].pageY - el.offsetTop;
+        scrollLeft = el.scrollLeft;
+        scrollTop = el.scrollTop;
+    });
+
+    el.addEventListener('touchend', () => {
+        isDown = false;
+    });
+
+    el.addEventListener('touchmove', (e) => {
+        if (!isDown) return;
+        
+        if (direction === 'both' || direction === 'horizontal') {
+            const x = e.touches[0].pageX - el.offsetLeft;
+            const walkX = (x - startX) * 2;
+            el.scrollLeft = scrollLeft - walkX;
+        }
+        
+        if (direction === 'both' || direction === 'vertical') {
+            const y = e.touches[0].pageY - el.offsetTop;
+            const walkY = (y - startY) * 2;
+            el.scrollTop = scrollTop - walkY;
+        }
+    });
+}
+
+function updateCaptionLogViewport() {
+    if (!captionLogList) return;
+
+    const entries = Array.from(captionLogList.children);
+    if (entries.length === 0) {
+        captionLogList.style.maxHeight = '0px';
+        return;
+    }
+
+    const visibleEntries = entries.slice(-3);
+    const listStyle = window.getComputedStyle(captionLogList);
+    const gap = parseFloat(listStyle.gap || listStyle.rowGap || '0') || 0;
+    const paddingTop = parseFloat(listStyle.paddingTop || '0') || 0;
+    const paddingBottom = parseFloat(listStyle.paddingBottom || '0') || 0;
+    const visibleHeight = visibleEntries.reduce((total, item) => total + item.offsetHeight, 0)
+        + gap * Math.max(visibleEntries.length - 1, 0)
+        + paddingTop
+        + paddingBottom;
+
+    captionLogList.style.maxHeight = `${Math.ceil(visibleHeight)}px`;
+}
+
+function getCaptionPanel() {
+    return document.querySelector('.caption-log-panel');
+}
+
+function hasCaptionContent() {
+    const hasEntries = !!(captionLogList && captionLogList.querySelector('.caption-log-entry'));
+    const hasCards = !!(
+        predictionSignCardsContainer &&
+        predictionSignCardsContainer.classList.contains('active') &&
+        vcCardQueue.length > 0 &&
+        signCardsPanelWindow &&
+        !signCardsPanelWindow.classList.contains('collapsed')
+    );
+    return hasEntries || hasCards;
+}
+
+function getLatestCaptionText() {
+    if (!captionLogList) return '';
+    const lastEntry = captionLogList.querySelector('.caption-log-entry:last-child');
+    if (!lastEntry) return '';
+
+    const speakerLabel = lastEntry.querySelector('.caption-log-speaker');
+    const speakerText = speakerLabel ? speakerLabel.textContent : '';
+    const fullText = lastEntry.textContent || '';
+    return fullText.replace(speakerText, '').replace(/\s*🔄\s*/g, ' ').trim();
+}
+
+function ensureCaptionPanelVisible() {
+    const panel = getCaptionPanel();
+    if (!panel) return null;
+    panel.classList.add('visible');
+    return panel;
+}
+
+function dimCaptionPanel() {
+    const panel = getCaptionPanel();
+    if (!panel) return;
+    panel.classList.remove('awake');
+}
+
+function wakeCaptionPanel() {
+    if (!hasCaptionContent()) return;
+    const panel = ensureCaptionPanelVisible();
+    if (!panel) return;
+    panel.classList.add('awake');
+    if (captionPanelDimTimer) {
+        clearTimeout(captionPanelDimTimer);
+    }
+    captionPanelDimTimer = setTimeout(() => {
+        dimCaptionPanel();
+    }, 7000);
+}
+
+function scrollCaptionLogToLatest() {
+    if (!captionLogList) return;
+    captionLogList.scrollTop = captionLogList.scrollHeight;
+}
+
+function snapCaptionLogToLatest() {
+    if (!captionLogList) return;
+    window.setTimeout(() => {
+        scrollCaptionLogToLatest();
+    }, 0);
+}
+
+// Enable for Video Call Screen elements
+if (predictionSignCardsContainer) {
+    predictionSignCardsContainer.addEventListener('mousedown', wakeCaptionPanel);
+    predictionSignCardsContainer.addEventListener('touchstart', wakeCaptionPanel, { passive: true });
+}
+if (captionToggleBtn) {
+    captionToggleBtn.addEventListener('click', () => {
+        if (!captionLogWindow) return;
+        const willCollapse = !captionLogWindow.classList.contains('collapsed');
+        setCaptionLogCollapsed(willCollapse);
+        if (willCollapse) {
+            dimCaptionPanel();
+        } else {
+            wakeCaptionPanel();
+            updateCaptionLogViewport();
+            scrollCaptionLogToLatest();
+        }
+    });
+}
+if (signCardsToggleBtn) {
+    signCardsToggleBtn.addEventListener('click', () => {
+        if (!signCardsPanelWindow) return;
+        const willCollapse = !signCardsPanelWindow.classList.contains('collapsed');
+        signCardsPanelManuallyCollapsed = willCollapse;
+        setSignCardsPanelCollapsed(willCollapse);
+        if (willCollapse) {
+            dimCaptionPanel();
+        } else {
+            wakeCaptionPanel();
+        }
+    });
+}
+if (captionLogList) {
+    ensureCaptionPlaceholder();
+    enableDragToScroll(captionLogList, 'vertical');
+    captionLogList.addEventListener('mouseup', snapCaptionLogToLatest);
+    captionLogList.addEventListener('mouseleave', snapCaptionLogToLatest);
+    captionLogList.addEventListener('touchend', snapCaptionLogToLatest);
+    captionLogList.addEventListener('touchcancel', snapCaptionLogToLatest);
+    captionLogList.addEventListener('mousedown', wakeCaptionPanel);
+    captionLogList.addEventListener('touchstart', wakeCaptionPanel, { passive: true });
+    captionLogList.addEventListener('pointerdown', wakeCaptionPanel);
+    document.addEventListener('mouseup', snapCaptionLogToLatest);
+    document.addEventListener('touchend', snapCaptionLogToLatest);
+    document.addEventListener('touchcancel', snapCaptionLogToLatest);
+    window.addEventListener('resize', updateCaptionLogViewport);
+    updateCaptionLogViewport();
+    scrollCaptionLogToLatest();
+}
+
 if (copyCodeBtn) {
     copyCodeBtn.addEventListener('click', copyMeetingCode);
 }
 
 if (mobileCopyCodeBtn) {
     mobileCopyCodeBtn.addEventListener('click', copyMeetingCode);
+}
+
+const meetingCodeBtn = document.getElementById('meetingCodeBtn');
+if (meetingCodeBtn) {
+    meetingCodeBtn.addEventListener('click', copyMeetingCode);
+}
+
+// Full Room Modal Logic
+const fullRoomModal = document.getElementById('full-room-modal');
+const fullRoomOkBtn = document.getElementById('fullRoomOkBtn');
+
+if (fullRoomOkBtn) {
+    fullRoomOkBtn.addEventListener('click', () => {
+        if (fullRoomModal) fullRoomModal.classList.remove('active');
+    });
 }
