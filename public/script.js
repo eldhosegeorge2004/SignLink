@@ -240,6 +240,9 @@ let remoteName = "Remote User";
 let activeCaptionPanelView = 'captions';
 let lastSTTStartAt = 0;
 let sttRestartTimer = null;
+let sttPausedCallMic = false;
+let sttPausedMicWasOn = false;
+let sttPausedAudioSender = null;
 let isRemoteAudioEnabled = JSON.parse(localStorage.getItem('vc-remote-audio-enabled') ?? 'true');
 let isOverlayOn = JSON.parse(localStorage.getItem('vc-hand-overlay-enabled') ?? 'true');
 let makingOffer = false;
@@ -305,6 +308,11 @@ function disableSTTWithStatus(message) {
     }
     updateSTTUI();
     document.body.classList.remove('stt-active');
+    if (sttPausedCallMic) {
+        restoreCallMicAfterNativeSTT().catch((error) => {
+            console.error('STT: Failed to restore microphone after disabling captions.', error);
+        });
+    }
     if (message) {
         const statusEl = document.getElementById('status');
         if (statusEl) {
@@ -312,6 +320,101 @@ function disableSTTWithStatus(message) {
             statusEl.style.color = '#ef4444';
         }
         console.log(`[Status] ${message}`);
+    }
+}
+
+function isAndroidNativeSTTCandidate() {
+    const capacitor = window.Capacitor;
+    return Boolean(
+        nativeSpeechBridge &&
+        nativeSpeechBridge.isSupportedCandidate &&
+        nativeSpeechBridge.isSupportedCandidate() &&
+        capacitor &&
+        typeof capacitor.getPlatform === 'function' &&
+        capacitor.getPlatform() === 'android'
+    );
+}
+
+async function releaseCallMicForNativeSTT() {
+    if (!isAndroidNativeSTTCandidate() || sttPausedCallMic || !localStream) return;
+
+    const audioTracks = localStream.getAudioTracks();
+    if (!audioTracks.length) return;
+
+    sttPausedMicWasOn = isMicOn;
+    sttPausedAudioSender = pc
+        ? pc.getSenders().find(sender => sender.track && sender.track.kind === 'audio')
+        : null;
+
+    try {
+        if (sttPausedAudioSender) {
+            await sttPausedAudioSender.replaceTrack(null);
+        }
+    } catch (error) {
+        console.warn('STT: Could not detach call mic track before native recognition.', error);
+    }
+
+    audioTracks.forEach(track => {
+        try {
+            track.stop();
+            localStream.removeTrack(track);
+        } catch (error) {
+            console.warn('STT: Could not stop call mic track before native recognition.', error);
+        }
+    });
+
+    sttPausedCallMic = true;
+    isMicOn = false;
+    if (localVolumeMeter) localVolumeMeter.innerText = 'mic_off';
+    if (micBtn) {
+        micBtn.innerHTML = `<span class="material-icons">mic_off</span>`;
+        micBtn.classList.add('red-btn');
+        micBtn.setAttribute('title', 'Microphone paused for speech-to-text');
+    }
+}
+
+async function restoreCallMicAfterNativeSTT() {
+    if (!sttPausedCallMic || !localStream) return;
+
+    sttPausedCallMic = false;
+
+    try {
+        const micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
+        });
+        const audioTrack = micStream.getAudioTracks()[0];
+        if (!audioTrack) throw new Error('No microphone track returned.');
+
+        audioTrack.enabled = sttPausedMicWasOn;
+        localStream.addTrack(audioTrack);
+
+        if (sttPausedAudioSender) {
+            await sttPausedAudioSender.replaceTrack(audioTrack);
+        } else if (pc) {
+            pc.addTrack(audioTrack, localStream);
+        }
+
+        isMicOn = sttPausedMicWasOn;
+        initAudioAnalysis(localStream);
+    } catch (error) {
+        console.error('STT: Failed to restore call microphone after native recognition.', error);
+        isMicOn = false;
+    } finally {
+        sttPausedAudioSender = null;
+        sttPausedMicWasOn = false;
+
+        if (micBtn) {
+            micBtn.innerHTML = `<span class="material-icons">${isMicOn ? 'mic' : 'mic_off'}</span>`;
+            micBtn.classList.toggle('red-btn', !isMicOn);
+            micBtn.setAttribute('title', isMicOn ? 'Turn off microphone' : 'Turn on microphone');
+        }
+        if (localVolumeMeter) {
+            localVolumeMeter.innerText = isMicOn ? 'graphic_eq' : 'mic_off';
+        }
     }
 }
 
@@ -980,10 +1083,12 @@ function startSTTSession() {
         if (!recognition || isRecognitionActive) return;
 
         try {
+            await releaseCallMicForNativeSTT();
             await recognition.start();
             hideVCSignCards();
         } catch (e) {
             console.error("Failed to start Recognition:", e);
+            await restoreCallMicAfterNativeSTT();
             const reason = e && (e.message || String(e));
             disableSTTWithStatus(`Speech-to-text could not start${reason ? `: ${reason}` : '.'}`);
         }
@@ -1001,6 +1106,14 @@ function stopSTTSession() {
     if (recognition && isRecognitionActive) {
         Promise.resolve(recognition.stop()).catch((error) => {
             console.error("Failed to stop Recognition:", error);
+        }).finally(() => {
+            restoreCallMicAfterNativeSTT().catch((error) => {
+                console.error('STT: Failed to restore microphone after stopping captions.', error);
+            });
+        });
+    } else {
+        restoreCallMicAfterNativeSTT().catch((error) => {
+            console.error('STT: Failed to restore microphone after stopping captions.', error);
         });
     }
     hideVCSignCards();
