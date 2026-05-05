@@ -200,9 +200,7 @@ public class NativeSpeechRecognitionPlugin extends Plugin {
     }
 
     private void emitTranscript(String eventName, @Nullable Bundle results) {
-        ArrayList<String> matches = results != null
-            ? results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            : null;
+        ArrayList<String> matches = extractRecognitionMatches(results);
 
         if (matches == null || matches.isEmpty()) return;
 
@@ -216,6 +214,30 @@ public class NativeSpeechRecognitionPlugin extends Plugin {
         data.put("matches", jsMatches);
 
         notifyListeners(eventName, data);
+    }
+
+    @Nullable
+    private ArrayList<String> extractRecognitionMatches(@Nullable Bundle results) {
+        if (results == null) return null;
+
+        ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+        if (matches != null && !matches.isEmpty()) return matches;
+
+        for (String key : results.keySet()) {
+            Object value = results.get(key);
+            if (value instanceof ArrayList) {
+                ArrayList<?> values = (ArrayList<?>) value;
+                ArrayList<String> stringValues = new ArrayList<>();
+                for (Object item : values) {
+                    if (item instanceof String && !((String) item).trim().isEmpty()) {
+                        stringValues.add((String) item);
+                    }
+                }
+                if (!stringValues.isEmpty()) return stringValues;
+            }
+        }
+
+        return null;
     }
 
     private void emitError(String errorCode, String message, boolean restartable) {
