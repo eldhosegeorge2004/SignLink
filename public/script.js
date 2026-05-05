@@ -696,6 +696,7 @@ let accumulatedWord = "";
 let lastLetterTime = 0;
 let lastAddedLetter = null; // Track the actual last ACCEPTED letter
 let spellingInterval = null;
+const WAITING_FOR_NEXT_LETTER_TEXT = "Waiting for next letter...";
 const SPELLING_IDLE_TIMEOUT_MS = 5000;
 
 // Accessibility Feature States
@@ -2962,8 +2963,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
         if (candidates.length === 0) {
             // No confident prediction
             if (accumulatedWord.length > 0) {
-                // During spelling, clear display to prevent competing outputs
-                setPredictionText('');
+                setPredictionText(WAITING_FOR_NEXT_LETTER_TEXT);
             } else if (lastDisplayedPrediction) {
                 // Only show last prediction if not spelling
                 const last = lastDisplayedPrediction;
@@ -2997,8 +2997,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             }
             setPredictionText(`Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`);
         } else if (accumulatedWord.length > 0) {
-            // During spelling, suppress prediction display (only show spelling overlay)
-            setPredictionText('');
+            setPredictionText(WAITING_FOR_NEXT_LETTER_TEXT);
         } else {
             const displayText = best.isDynamic ? `${outputLabel} 🔄` : outputLabel;
             setPredictionText(`Sign: ${displayText} (${Math.round(best.conf * 100)}%)`);
