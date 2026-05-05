@@ -242,6 +242,8 @@ let lastSTTStartAt = 0;
 let sttRestartTimer = null;
 let isRemoteAudioEnabled = JSON.parse(localStorage.getItem('vc-remote-audio-enabled') ?? 'true');
 let isOverlayOn = JSON.parse(localStorage.getItem('vc-hand-overlay-enabled') ?? 'true');
+let makingOffer = false;
+let myPresenceKey = '';
 
 function applyRemoteAudioPreference() {
     if (!remoteVideo) return;
@@ -639,7 +641,6 @@ const rtcConfig = {
         { urls: "stun:stun3.l.google.com:19302" },
         { urls: "stun:stun4.l.google.com:19302" },
         { urls: "stun:stun.services.mozilla.com" },
-        // Expanded TURN servers with more protocols to bypass strict firewalls
         {
             urls: [
                 "turn:openrelay.metered.ca:80",
@@ -651,34 +652,43 @@ const rtcConfig = {
         }
     ],
     iceCandidatePoolSize: 10,
-    bundlePolicy: "max-bundle",
+    bundlePolicy: "balanced",
     rtcpMuxPolicy: "require",
     iceTransportPolicy: "all"
 };
 
 // Helper to limit bitrate in SDP (prevents "poor connection" lag)
 function setMaxBitrate(sdp, maxBitrateKbps) {
-    const lines = sdp.split('\r\n');
+    if (!sdp) return sdp;
+    // Use universal line splitter to handle \r\n vs \n
+    const lines = sdp.split(/\r?\n/);
     let lineIndex = -1;
     for (let i = 0; i < lines.length; i++) {
-        if (lines[i].indexOf('m=video') !== -1) {
+        if (lines[i].startsWith('m=video')) {
             lineIndex = i;
             break;
         }
     }
     if (lineIndex === -1) return sdp;
 
-    // Check if there's already a 'b=' line
-    lineIndex++;
-    while (lines[lineIndex] && (lines[lineIndex].indexOf('i=') === 0 || lines[lineIndex].indexOf('c=') === 0)) {
-        lineIndex++;
+    // Check if there's already a 'b=' line after m=video but before next media or end
+    let i = lineIndex + 1;
+    let foundB = false;
+    while (lines[i] && !lines[i].startsWith('m=')) {
+        if (lines[i].startsWith('b=AS:') || lines[i].startsWith('b=TIAS:')) {
+            lines[i] = 'b=AS:' + maxBitrateKbps;
+            foundB = true;
+            break;
+        }
+        i++;
     }
 
-    if (lines[lineIndex] && lines[lineIndex].indexOf('b=AS') === 0) {
-        lines[lineIndex] = 'b=AS:' + maxBitrateKbps;
-    } else {
-        lines.splice(lineIndex, 0, 'b=AS:' + maxBitrateKbps);
+    if (!foundB) {
+        // Insert it after the m= line
+        lines.splice(lineIndex + 1, 0, 'b=AS:' + maxBitrateKbps);
     }
+    
+    // Join back with standard \r\n for SDP
     return lines.join('\r\n');
 }
 
@@ -1567,6 +1577,14 @@ joinBtn.addEventListener('click', async (e) => {
     roomName = startRoomInput.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
     if (!roomName) return;
 
+    // Warm up remote video for mobile autoplay
+    if (remoteVideo) {
+        remoteVideo.play().catch(() => {
+            // Silently fail, it's just a warm-up to tell the browser
+            // we intend to play video on this element after a user gesture.
+        });
+    }
+
     lobbyStatus.innerText = "Joining...";
 
 
@@ -1630,31 +1648,13 @@ joinBtn.addEventListener('click', async (e) => {
     const localNameSpan = document.getElementById('localUserName');
     if (localNameSpan) localNameSpan.innerText = localName + " (You)";
 
-    // Bitrate Utility Function
-    function setMaxBitrate(sdp, bitrate) {
-        const lines = sdp.split('\n');
-        let line = -1;
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].indexOf('m=video') === 0) {
-                line = i;
-                break;
-            }
-        }
-        if (line === -1) return sdp;
-        line++;
-        while (lines[line].indexOf('i=') === 0 || lines[line].indexOf('c=') === 0) {
-            line++;
-        }
-        if (lines[line].indexOf('b') === 0) {
-            lines[line] = 'b=AS:' + bitrate;
-            return lines.join('\n');
-        }
-        lines.splice(line, 0, 'b=AS:' + bitrate);
-        return lines.join('\n');
-    }
-
     // Supabase Channel Setup
-    const myPresenceKey = 'user-' + Math.random().toString(36).substring(7);
+    myPresenceKey = 'user-' + Math.random().toString(36).substring(7);
+    let remoteSessionId = null;
+    makingOffer = false;
+    let ignoreOffer = false;
+    let isSettingRemoteDescription = false;
+
     supabaseChannel = window.supabaseClient.channel(roomName, {
         config: {
             broadcast: { self: false },
@@ -1724,47 +1724,74 @@ joinBtn.addEventListener('click', async (e) => {
             }
         })
         .on('broadcast', { event: 'offer' }, async ({ payload }) => {
-            console.log("Offer received from peer. Name:", payload.name);
-            if (payload.name) {
-                setRemoteName(payload.name);
-            }
+            console.log("Offer received. Name:", payload.name);
+            const polite = !isCreatingMeeting;
+            
             try {
+                if (payload.sessionId && payload.sessionId !== remoteSessionId) {
+                    console.log("New session ID detected. Resetting for re-join.");
+                    remoteSessionId = payload.sessionId;
+                    if (pc) {
+                        pc.close();
+                        pc = null;
+                    }
+                }
+
                 if (!pc) createPeerConnection();
-                if (pc.signalingState !== "stable") {
-                    console.log("Signaling state not stable, ignoring offer (might be a collision)");
+
+                const description = new RTCSessionDescription(payload.sdp);
+                const readyForOffer = !makingOffer && (pc.signalingState === "stable" || isSettingRemoteDescription);
+                const offerCollision = !readyForOffer;
+
+                ignoreOffer = !polite && offerCollision;
+                if (ignoreOffer) {
+                    console.log("Collision detected, I am impolite. Ignoring offer.");
                     return;
                 }
-                await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+
+                isSettingRemoteDescription = true;
+                if (offerCollision) {
+                    console.log("Collision detected, I am polite. Rolling back.");
+                    await Promise.all([
+                        pc.setLocalDescription({ type: "rollback" }),
+                        pc.setRemoteDescription(description)
+                    ]);
+                } else {
+                    await pc.setRemoteDescription(description);
+                }
+                
                 processBufferedIceCandidates();
                 const answer = await pc.createAnswer();
                 answer.sdp = setMaxBitrate(answer.sdp, 1000);
                 await pc.setLocalDescription(answer);
+                
                 console.log("Sending answer...");
                 supabaseChannel.send({
                     type: 'broadcast',
                     event: 'answer',
-                    payload: { sdp: answer, name: localName }
+                    payload: { sdp: answer, name: localName, sessionId: myPresenceKey }
                 });
+                
+                if (payload.name) setRemoteName(payload.name);
                 updateStatus("Connected to peer", "success");
             } catch (e) {
                 console.error("Error handling offer:", e);
-                updateStatus("Connection failed: " + e.message, "error");
+            } finally {
+                isSettingRemoteDescription = false;
             }
         })
         .on('broadcast', { event: 'answer' }, async ({ payload }) => {
-            console.log("Answer received from peer. Name:", payload.name);
-            if (payload.name) {
-                setRemoteName(payload.name);
-            }
+            console.log("Answer received. Name:", payload.name);
             try {
                 if (pc) {
                     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
                     processBufferedIceCandidates();
+                    if (payload.name) setRemoteName(payload.name);
+                    if (payload.sessionId) remoteSessionId = payload.sessionId;
                     updateStatus("Connected to peer", "success");
                 }
             } catch (e) {
                 console.error("Error handling answer:", e);
-                updateStatus("Connection error", "error");
             }
         })
         .on('broadcast', { event: 'ice' }, async ({ payload }) => {
@@ -2321,28 +2348,39 @@ async function startCamera() {
         const localContainer = document.getElementById('localContainer');
         if (localContainer) localContainer.classList.add('video-muted');
 
-        localCameraController = new Camera(localVideo, {
-            onFrame: async () => {
-                if (!isCamOn || !localVideo.videoWidth || !localVideo.videoHeight) {
-                    return;
-                }
+        let stopLoop = false;
+        localCameraController = {
+            stop: () => { stopLoop = true; }
+        };
 
+        const processFrame = async () => {
+            if (stopLoop) return;
+            
+            if (isCamOn && localVideo.videoWidth && localVideo.videoHeight) {
                 const now = performance.now();
-                if (isHandInferencePending || (now - lastHandInferenceAt) < HAND_INFERENCE_INTERVAL_MS) {
-                    return;
+                if (!isHandInferencePending && (now - lastHandInferenceAt) >= HAND_INFERENCE_INTERVAL_MS) {
+                    isHandInferencePending = true;
+                    lastHandInferenceAt = now;
+                    try {
+                        await hands.send({ image: localVideo });
+                    } finally {
+                        isHandInferencePending = false;
+                    }
                 }
-
-                isHandInferencePending = true;
-                lastHandInferenceAt = now;
-
-                try {
-                    await hands.send({ image: localVideo });
-                } finally {
-                    isHandInferencePending = false;
-                }
-            },
-        });
-        await localCameraController.start();
+            }
+            
+            if (localVideo.requestVideoFrameCallback) {
+                localVideo.requestVideoFrameCallback(processFrame);
+            } else {
+                requestAnimationFrame(processFrame);
+            }
+        };
+        
+        if (localVideo.requestVideoFrameCallback) {
+            localVideo.requestVideoFrameCallback(processFrame);
+        } else {
+            requestAnimationFrame(processFrame);
+        }
         initAudioAnalysis(localStream);
     } catch (err) {
         isCameraStarted = false;
@@ -2997,26 +3035,16 @@ function saveToLocal() {
 // Peer logic refactored into Supabase Channel setup
 async function handlePeerJoined(id) {
     if (pc && (pc.connectionState === 'connected' || pc.connectionState === 'connecting')) {
-        console.log("Peer already connected/connecting. Skipping offer.");
+        console.log("Peer already connected/connecting. Skipping redundant trigger.");
         return;
     }
 
-    // Add a small jittered delay to avoid simultaneous offer collision
+    // Add a small jittered delay to avoid simultaneous initial connection collision
     await new Promise(r => setTimeout(r, Math.random() * 500 + 200));
 
+    // Simply create the connection. onnegotiationneeded will fire automatically 
+    // because addTrack is called inside createPeerConnection.
     createPeerConnection();
-    const offer = await pc.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-    });
-    offer.sdp = setMaxBitrate(offer.sdp, 1000);
-    await pc.setLocalDescription(offer);
-    console.log("Sending offer to peer...");
-    supabaseChannel.send({
-        type: 'broadcast',
-        event: 'offer',
-        payload: { sdp: offer, name: localName }
-    });
 }
 
 function processBufferedIceCandidates() {
@@ -3092,6 +3120,37 @@ function createPeerConnection() {
         }
     };
 
+    pc.onnegotiationneeded = async () => {
+        try {
+            makingOffer = true;
+            console.log("Negotiation needed. Creating offer...");
+            
+            const offer = await pc.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+            });
+            
+            offer.sdp = setMaxBitrate(offer.sdp, 1000);
+            await pc.setLocalDescription(offer);
+            
+            if (supabaseChannel) {
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'offer',
+                    payload: { 
+                        sdp: pc.localDescription,
+                        name: localName,
+                        sessionId: myPresenceKey 
+                    }
+                });
+            }
+        } catch (e) {
+            console.error("Error during negotiation:", e);
+        } finally {
+            makingOffer = false;
+        }
+    };
+
     // Update the meeting status bar
     pc.onconnectionstatechange = () => {
         const state = pc ? pc.connectionState : 'closed';
@@ -3101,9 +3160,25 @@ function createPeerConnection() {
             document.querySelector('.main-stage')?.classList.remove('is-connected');
         }
         if (state === 'connected') {
+            document.querySelector('.main-stage')?.classList.add('is-connected');
             showMeetingStatusToast('Connected', 'success');
         } else if (state === 'disconnected' || state === 'failed') {
             showMeetingStatusToast('Peer disconnected', 'error');
+            
+            // If connection failed, attempt an ICE restart
+            if (state === 'failed' && pc) {
+                console.log("ICE Connection failed. Attempting restart...");
+                try {
+                    if (pc.restartIce) {
+                        pc.restartIce();
+                    } else {
+                        // Fallback for browsers without restartIce()
+                        pc.onnegotiationneeded(); 
+                    }
+                } catch (e) {
+                    console.error("Failed to restart ICE:", e);
+                }
+            }
         } else if (state === 'connecting') {
             showMeetingStatusToast('Connecting...', 'info');
         }
