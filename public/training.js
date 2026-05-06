@@ -109,7 +109,9 @@ function openDataDrawer() {
 function closeDataDrawer() {
     if (!dataPanel) return;
     dataPanel.classList.remove('open');
-    if (drawerBackdrop) drawerBackdrop.classList.remove('active');
+    if (drawerBackdrop && (!signSetupModal || !signSetupModal.classList.contains('active'))) {
+        drawerBackdrop.classList.remove('active');
+    }
 }
 
 function normalizeLabel(label) {
@@ -516,7 +518,9 @@ function setupMobileSignSetup() {
 
     const closeSetupModal = () => {
         signSetupModal.classList.remove('active');
-        if (drawerBackdrop) drawerBackdrop.classList.remove('active');
+        if (drawerBackdrop && (!dataPanel || !dataPanel.classList.contains('open'))) {
+            drawerBackdrop.classList.remove('active');
+        }
     };
 
     const saveCurrentSetupToLocalStorage = () => {
