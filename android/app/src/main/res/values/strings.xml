@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SignLink</string>
+    <string name="title_activity_main">SignLink</string>
+    <string name="package_name">com.signlink.app</string>
+    <string name="custom_url_scheme">com.signlink.app</string>
+</resources>
