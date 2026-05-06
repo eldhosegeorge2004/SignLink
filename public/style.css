@@ -1056,14 +1056,14 @@ body.stt-active .caption-log-panel.visible {
     display: none;
 }
 
-.prediction-word-group {
+.caption-log-panel .prediction-word-group {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: flex-start;
     gap: 10px;
-    margin-right: 0;
-    padding-right: 0;
-    border-right: none;
+    margin-right: 24px;
+    padding-right: 10px;
+    border-right: 2px solid rgba(148, 163, 184, 0.15);
 }
 
 #remotePrediction {
