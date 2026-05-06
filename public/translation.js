@@ -44,6 +44,7 @@ let accumulatedWord = "";
 let lastLetterTime = 0;
 let lastAddedLetter = null;
 let spellingInterval = null;
+const WAITING_FOR_NEXT_LETTER_TEXT = "Waiting for next letter...";
 const SPELLING_IDLE_TIMEOUT_MS = 5000;
 
 // --- Model & State ---
@@ -930,14 +931,12 @@ function runPrediction(landmarks, detectedHandCount = 1) {
                     lastSpokenTime = Date.now();
                 }
             } else if (accumulatedWord.length > 0) {
-                // During spelling, suppress sttResult display entirely (only show spelling overlay)
-                setResultText('');
+                setResultText(WAITING_FOR_NEXT_LETTER_TEXT);
             }
         } else {
             // No confident prediction
             if (accumulatedWord.length > 0) {
-                // During spelling, clear sttResult to prevent competing displays
-                setResultText('');
+                setResultText(WAITING_FOR_NEXT_LETTER_TEXT);
             } else if (lastDisplayedPrediction) {
                 // Only show last prediction if not spelling
                 const last = lastDisplayedPrediction;
