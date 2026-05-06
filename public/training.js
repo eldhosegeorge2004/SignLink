@@ -37,10 +37,7 @@ const mobileSaveNextBtn = document.getElementById('mobileSaveNextBtn');
 const mobileRecordingCounter = document.getElementById('mobileRecordingCounter');
 const mobileBackBtn = document.getElementById('mobileBackBtn');
 const mobileClearSignBtn = document.getElementById('mobileClearSignBtn');
-const mobileUploadBtn = document.getElementById('mobileUploadBtn');
-const trainCollectedDataBtn = document.getElementById('trainCollectedDataBtn');
 const revertLatestBtn = document.getElementById('revertLatestBtn');
-const cloudSyncBtn = document.getElementById('cloudSyncBtn');
 const mobileRevertBtn = document.getElementById('mobileRevertBtn');
 const signSetupModal = document.getElementById('signSetupModal');
 const modalLabelInput = document.getElementById('modalLabelInput');
@@ -565,7 +562,7 @@ function setupMobileSignSetup() {
             modalLabelInput.value = '';
             const modalStatus = document.getElementById('modalSignCardStatus');
             if (modalStatus) modalStatus.textContent = '';
-            openSetupModal(3);
+            openSetupModal(1);
             modalLabelInput.focus();
         }
     };
@@ -701,7 +698,7 @@ function setupMobileSignSetup() {
 
     if (mobileBackBtn) {
         mobileBackBtn.addEventListener('click', () => {
-            resetMobileSignSetup(true);
+            resetMobileSignSetup(false);
         });
     }
 
@@ -734,6 +731,14 @@ function setupMobileSignSetup() {
                 await uploadTrainedModelsToCloud();
 
                 hideProcessingModal();
+
+                // Clear local sign data now that everything is safely on the cloud
+                collectedData = [];
+                sessionHistory = [];
+                clearLocalDraftDataForLanguage(currentLang);
+                await saveToServer(); // Push empty array to Supabase — deletes all training rows for this lang
+                renderDataList();
+                updateMobileRevertState();
                 updateMobileTrainSaveVisibility();
 
                 const successMsg = trainingResult?.alreadyTrained
@@ -765,49 +770,6 @@ function setupMobileSignSetup() {
         });
     }
 
-    if (trainCollectedDataBtn) {
-        trainCollectedDataBtn.addEventListener('click', async () => {
-            if (!hasCollectedData()) {
-                showToast("No collected data to train.", "warning");
-                return;
-            }
-
-            if (hasAllDataTrained()) {
-                showToast("All collected data is already trained.", "task_alt");
-                return;
-            }
-
-            trainCollectedDataBtn.disabled = true;
-
-            try {
-                showProcessingModal("Training Collected Data...", "Creating your local model for Live Translation and Video Call.");
-                const trainingResult = await runInternalTraining();
-
-                updateProcessingModal("Saving Model...", "Saving the trained model on this device...");
-                const savedAnyModel = await saveTrainedModelsToLocalStorage();
-                if (!savedAnyModel) {
-                    throw new Error("No trained model was available to save.");
-                }
-
-                updateProcessingModal("Saving Samples...", "Syncing training metadata...");
-                await saveToServer();
-
-                hideProcessingModal();
-
-                const successMsg = trainingResult?.alreadyTrained
-                    ? "Collected data was already trained locally."
-                    : "Collected data trained and saved locally.";
-                showToast(successMsg, 'task_alt');
-            } catch (err) {
-                console.error('Collected data training failed:', err);
-                hideProcessingModal();
-                showCustomAlert(`Could not train the collected data: ${err.message || 'Unknown error'}`);
-            } finally {
-                setTrainCollectedDataButtonState();
-                setUploadButtonState();
-            }
-        });
-    }
 
     async function uploadTrainedModelsToCloud() {
         if (!model) return;
@@ -1004,47 +966,79 @@ function getLastRevertableBatch() {
 
 function revertLatestBatch() {
     const revertTarget = getLastRevertableBatch();
-    if (!revertTarget) return false;
 
-    const { batch, index } = revertTarget;
-    const count = Number(batch.count || 0);
-    const normalizedLabel = normalizeLabel(batch.label);
-    if (!count || !normalizedLabel) return false;
+    if (revertTarget) {
+        // Normal path: session history has a matching batch
+        const { batch, index } = revertTarget;
+        const count = Number(batch.count || 0);
+        const normalizedLabel = normalizeLabel(batch.label);
+        if (!count || !normalizedLabel) return false;
 
-    collectedData.splice(-count, count);
-    sessionHistory.splice(index, 1);
+        collectedData.splice(-count, count);
+        sessionHistory.splice(index, 1);
+        lastRecordedBatchCount = 0;
+        persistCurrentTrainingDataLocally(currentLang);
+
+        const labelSummary = count === 1 ? '1 sample' : `${count} samples`;
+        showToast(`Reverted ${labelSummary} from "${normalizedLabel}"`, 'undo');
+
+        updateUIStats();
+        renderDataList();
+
+        if (mobileAddSignBtn && mobileAddSignBtn.dataset.setup === 'true' && normalizeLabel(labelInput.value) === normalizedLabel) {
+            const remainingSamples = collectedData.filter((sample) =>
+                sample.isTrained === false && normalizeLabel(sample.label) === normalizedLabel
+            ).length;
+            if (remainingSamples === 0) {
+                mobileAddSignBtn.disabled = true;
+            }
+        }
+
+        return true;
+    }
+
+    // Fallback: session history is empty (e.g. after Save & Next Sign) but
+    // untrained data still exists — revert the last MAX_STATIC_SAMPLES_PER_SESSION (100)
+    // untrained samples for the most recently recorded label.
+    const untrainedSamples = collectedData.filter(d => d.isTrained === false);
+    if (untrainedSamples.length === 0) return false;
+
+    const lastUntrainedLabel = normalizeLabel(untrainedSamples[untrainedSamples.length - 1].label);
+
+    // Gather indices of all untrained samples for that label, then cap to the last 100
+    const targetIndices = [];
+    collectedData.forEach((d, i) => {
+        if (normalizeLabel(d.label) === lastUntrainedLabel && d.isTrained === false) {
+            targetIndices.push(i);
+        }
+    });
+    const toRemove = new Set(targetIndices.slice(-MAX_STATIC_SAMPLES_PER_SESSION));
+    const countToRemove = toRemove.size;
+
+    collectedData = collectedData.filter((_, i) => !toRemove.has(i));
     lastRecordedBatchCount = 0;
     persistCurrentTrainingDataLocally(currentLang);
 
-    const labelSummary = count === 1 ? '1 sample' : `${count} samples`;
-    showToast(`Reverted ${labelSummary} from "${normalizedLabel}"`, 'undo');
+    const labelSummary = countToRemove === 1 ? '1 sample' : `${countToRemove} samples`;
+    showToast(`Reverted ${labelSummary} from "${lastUntrainedLabel}"`, 'undo');
 
     updateUIStats();
     renderDataList();
-
-    if (mobileAddSignBtn && mobileAddSignBtn.dataset.setup === 'true' && normalizeLabel(labelInput.value) === normalizedLabel) {
-        const remainingSamples = collectedData.filter((sample) =>
-            sample.isTrained === false && normalizeLabel(sample.label) === normalizedLabel
-        ).length;
-        if (remainingSamples === 0) {
-            mobileAddSignBtn.disabled = true;
-        }
-    }
 
     return true;
 }
 
 function updateMobileRevertState() {
-    const hasRevertableBatch = Boolean(getLastRevertableBatch());
+    const hasRevertable = Boolean(getLastRevertableBatch()) || getUntrainedSampleCount() > 0;
 
     if (mobileRevertBtn) {
         mobileRevertBtn.style.display = 'flex';
-        mobileRevertBtn.disabled = !hasRevertableBatch;
+        mobileRevertBtn.disabled = !hasRevertable;
         mobileRevertBtn.innerHTML = `<span class="material-icons" style="font-size: 14px;">undo</span>`;
     }
 
     if (revertLatestBtn) {
-        revertLatestBtn.disabled = !hasRevertableBatch;
+        revertLatestBtn.disabled = !hasRevertable;
     }
 }
 
@@ -1083,35 +1077,7 @@ function setTrainSaveButtonBusy(isBusy) {
         : '<span class="material-icons" style="font-size: 22px;">task_alt</span><span>Train &amp; Save</span>';
 }
 
-function setTrainCollectedDataButtonState() {
-    if (!trainCollectedDataBtn) return;
 
-    const hasData = hasCollectedData();
-    const untrainedCount = getUntrainedSampleCount();
-    const allTrained = hasData && untrainedCount === 0;
-
-    trainCollectedDataBtn.disabled = !hasData || allTrained;
-    trainCollectedDataBtn.title = !hasData
-        ? 'Record some signs first'
-        : allTrained
-            ? 'All collected data is already trained'
-            : 'Train all collected data locally';
-    trainCollectedDataBtn.innerHTML = allTrained
-        ? '<span class="material-icons" style="font-size: 20px;">check_circle</span>All Data Trained'
-        : '<span class="material-icons" style="font-size: 20px;">model_training</span>Train Collected Data';
-}
-
-function setUploadButtonState() {
-    if (!mobileUploadBtn) return;
-
-    const canUpload = hasAllDataTrained();
-    mobileUploadBtn.disabled = !canUpload;
-    mobileUploadBtn.title = !hasCollectedData()
-        ? 'Record some signs first'
-        : canUpload
-            ? 'Upload trained data, models, and sign cards to Supabase'
-            : 'Train all collected data locally before uploading to Supabase';
-}
 
 function updateMobileTrainSaveVisibility() {
     if (!mobileTrainSaveBtn) return;
@@ -1123,9 +1089,6 @@ function updateMobileTrainSaveVisibility() {
     if (shouldShow) {
         setTrainSaveButtonBusy(false);
     }
-
-    setTrainCollectedDataButtonState();
-    setUploadButtonState();
 }
 
 function updateMobileSessionActionState() {
@@ -1254,10 +1217,7 @@ async function checkForSavedModels() {
         if (dynamicLabels) modelInfo += "Dynamic 🔄";
         statusMsg.innerText = `✅ ${modelInfo}. You can use these in Live Translation!`;
         if (saveBtn) saveBtn.disabled = true;
-        if (cloudSyncBtn) {
-            cloudSyncBtn.disabled = false;
-            cloudSyncBtn.title = "Upload these models to Supabase Cloud";
-        }
+
     }
 }
 
@@ -1680,8 +1640,6 @@ function updateUIStats() {
     updateMobileRevertState();
     updateMobileTrainSaveVisibility();
     updateMobileSessionActionState();
-    setTrainCollectedDataButtonState();
-    setUploadButtonState();
     // Throttle rendering the list if data is huge
     if (Math.random() > 0.9) renderDataList();
 }
@@ -1699,8 +1657,6 @@ function renderDataList() {
     
     updateMobileRevertState();
     updateMobileSessionActionState();
-    setTrainCollectedDataButtonState();
-    setUploadButtonState();
 
     if (Object.keys(counts).length === 0) {
         dataList.innerHTML = `<div style="text-align: center; color: #484f58; margin-top: 50px;">No data collected.</div>`;
