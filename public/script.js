@@ -239,8 +239,14 @@ let localName = "You";
 let remoteName = "Remote User";
 let activeCaptionPanelView = 'captions';
 let lastSTTStartAt = 0;
+let sttRestartTimer = null;
+let sttPausedCallMic = false;
+let sttPausedMicWasOn = false;
+let sttPausedAudioSender = null;
 let isRemoteAudioEnabled = JSON.parse(localStorage.getItem('vc-remote-audio-enabled') ?? 'true');
 let isOverlayOn = JSON.parse(localStorage.getItem('vc-hand-overlay-enabled') ?? 'true');
+let makingOffer = false;
+let myPresenceKey = '';
 
 function applyRemoteAudioPreference() {
     if (!remoteVideo) return;
@@ -296,8 +302,17 @@ updateOptionsMenuUI();
 function disableSTTWithStatus(message) {
     isSTTOn = false;
     isRecognitionActive = false;
+    if (sttRestartTimer) {
+        clearTimeout(sttRestartTimer);
+        sttRestartTimer = null;
+    }
     updateSTTUI();
     document.body.classList.remove('stt-active');
+    if (sttPausedCallMic) {
+        restoreCallMicAfterNativeSTT().catch((error) => {
+            console.error('STT: Failed to restore microphone after disabling captions.', error);
+        });
+    }
     if (message) {
         const statusEl = document.getElementById('status');
         if (statusEl) {
@@ -305,6 +320,101 @@ function disableSTTWithStatus(message) {
             statusEl.style.color = '#ef4444';
         }
         console.log(`[Status] ${message}`);
+    }
+}
+
+function isAndroidNativeSTTCandidate() {
+    const capacitor = window.Capacitor;
+    return Boolean(
+        nativeSpeechBridge &&
+        nativeSpeechBridge.isSupportedCandidate &&
+        nativeSpeechBridge.isSupportedCandidate() &&
+        capacitor &&
+        typeof capacitor.getPlatform === 'function' &&
+        capacitor.getPlatform() === 'android'
+    );
+}
+
+async function releaseCallMicForNativeSTT() {
+    if (!isAndroidNativeSTTCandidate() || sttPausedCallMic || !localStream) return;
+
+    const audioTracks = localStream.getAudioTracks();
+    if (!audioTracks.length) return;
+
+    sttPausedMicWasOn = isMicOn;
+    sttPausedAudioSender = pc
+        ? pc.getSenders().find(sender => sender.track && sender.track.kind === 'audio')
+        : null;
+
+    try {
+        if (sttPausedAudioSender) {
+            await sttPausedAudioSender.replaceTrack(null);
+        }
+    } catch (error) {
+        console.warn('STT: Could not detach call mic track before native recognition.', error);
+    }
+
+    audioTracks.forEach(track => {
+        try {
+            track.stop();
+            localStream.removeTrack(track);
+        } catch (error) {
+            console.warn('STT: Could not stop call mic track before native recognition.', error);
+        }
+    });
+
+    sttPausedCallMic = true;
+    isMicOn = false;
+    if (localVolumeMeter) localVolumeMeter.innerText = 'mic_off';
+    if (micBtn) {
+        micBtn.innerHTML = `<span class="material-icons">mic_off</span>`;
+        micBtn.classList.add('red-btn');
+        micBtn.setAttribute('title', 'Microphone paused for speech-to-text');
+    }
+}
+
+async function restoreCallMicAfterNativeSTT() {
+    if (!sttPausedCallMic || !localStream) return;
+
+    sttPausedCallMic = false;
+
+    try {
+        const micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
+        });
+        const audioTrack = micStream.getAudioTracks()[0];
+        if (!audioTrack) throw new Error('No microphone track returned.');
+
+        audioTrack.enabled = sttPausedMicWasOn;
+        localStream.addTrack(audioTrack);
+
+        if (sttPausedAudioSender) {
+            await sttPausedAudioSender.replaceTrack(audioTrack);
+        } else if (pc) {
+            pc.addTrack(audioTrack, localStream);
+        }
+
+        isMicOn = sttPausedMicWasOn;
+        initAudioAnalysis(localStream);
+    } catch (error) {
+        console.error('STT: Failed to restore call microphone after native recognition.', error);
+        isMicOn = false;
+    } finally {
+        sttPausedAudioSender = null;
+        sttPausedMicWasOn = false;
+
+        if (micBtn) {
+            micBtn.innerHTML = `<span class="material-icons">${isMicOn ? 'mic' : 'mic_off'}</span>`;
+            micBtn.classList.toggle('red-btn', !isMicOn);
+            micBtn.setAttribute('title', isMicOn ? 'Turn off microphone' : 'Turn on microphone');
+        }
+        if (localVolumeMeter) {
+            localVolumeMeter.innerText = isMicOn ? 'graphic_eq' : 'mic_off';
+        }
     }
 }
 
@@ -586,6 +696,7 @@ let accumulatedWord = "";
 let lastLetterTime = 0;
 let lastAddedLetter = null; // Track the actual last ACCEPTED letter
 let spellingInterval = null;
+const WAITING_FOR_NEXT_LETTER_TEXT = "Waiting for next letter...";
 const SPELLING_IDLE_TIMEOUT_MS = 5000;
 
 // Accessibility Feature States
@@ -625,55 +736,67 @@ document.addEventListener('click', (event) => {
 });
 
 // Supabase connection handled during join-room
-
 const rtcConfig = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-        { urls: "stun:stun3.l.google.com:19302" },
-        { urls: "stun:stun4.l.google.com:19302" },
         { urls: "stun:stun.services.mozilla.com" },
-        // Expanded TURN servers with more protocols to bypass strict firewalls
+        { urls: "stun:stun.cloudflare.com:3478" },
+        { urls: "stun:global.stun.twilio.com:3478" },
         {
-            urls: [
-                "turn:openrelay.metered.ca:80",
-                "turn:openrelay.metered.ca:443",
-                "turn:openrelay.metered.ca:443?transport=tcp"
-            ],
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
             username: "openrelayproject",
             credential: "openrelayproject"
         }
     ],
     iceCandidatePoolSize: 10,
-    bundlePolicy: "max-bundle",
+    bundlePolicy: "balanced",
     rtcpMuxPolicy: "require",
     iceTransportPolicy: "all"
 };
 
 // Helper to limit bitrate in SDP (prevents "poor connection" lag)
 function setMaxBitrate(sdp, maxBitrateKbps) {
-    const lines = sdp.split('\r\n');
+    if (!sdp) return sdp;
+    // Use universal line splitter to handle \r\n vs \n
+    const lines = sdp.split(/\r?\n/);
     let lineIndex = -1;
     for (let i = 0; i < lines.length; i++) {
-        if (lines[i].indexOf('m=video') !== -1) {
+        if (lines[i].startsWith('m=video')) {
             lineIndex = i;
             break;
         }
     }
     if (lineIndex === -1) return sdp;
 
-    // Check if there's already a 'b=' line
-    lineIndex++;
-    while (lines[lineIndex] && (lines[lineIndex].indexOf('i=') === 0 || lines[lineIndex].indexOf('c=') === 0)) {
-        lineIndex++;
+    // Check if there's already a 'b=' line after m=video but before next media or end
+    let i = lineIndex + 1;
+    let foundB = false;
+    while (lines[i] && !lines[i].startsWith('m=')) {
+        if (lines[i].startsWith('b=AS:') || lines[i].startsWith('b=TIAS:')) {
+            lines[i] = 'b=AS:' + maxBitrateKbps;
+            foundB = true;
+            break;
+        }
+        i++;
     }
 
-    if (lines[lineIndex] && lines[lineIndex].indexOf('b=AS') === 0) {
-        lines[lineIndex] = 'b=AS:' + maxBitrateKbps;
-    } else {
-        lines.splice(lineIndex, 0, 'b=AS:' + maxBitrateKbps);
+    if (!foundB) {
+        // Insert it after the m= line
+        lines.splice(lineIndex + 1, 0, 'b=AS:' + maxBitrateKbps);
     }
+    
+    // Join back with standard \r\n for SDP
     return lines.join('\r\n');
 }
 
@@ -725,16 +848,44 @@ async function initSTT() {
         }
     };
 
-    const restartSTT = async () => {
-        if (!isSTTOn || !recognition) return;
+    let lastPartialSentText = '';
+    let lastPartialSentAt = 0;
+    const handlePartialTranscript = (partialTranscript) => {
+        const text = String(partialTranscript || '').trim();
+        if (!text || text.length < 10) return;
 
-        console.log("STT: Attempting auto-restart...");
-        try {
-            await recognition.start();
-        } catch (e) {
-            console.error("STT Restart Error:", e);
-        }
+        const now = Date.now();
+        const normalized = text.toLowerCase();
+        const isDuplicate = normalized === lastPartialSentText.toLowerCase();
+        const tooSoon = (now - lastPartialSentAt) < 2200;
+        if (isDuplicate || tooSoon) return;
+
+        lastPartialSentText = text;
+        lastPartialSentAt = now;
+        handleFinalTranscript(text);
     };
+
+    const scheduleSTTRestart = (delayMs = 450) => {
+        if (!isSTTOn || !recognition) return;
+        if (sttRestartTimer) {
+            clearTimeout(sttRestartTimer);
+            sttRestartTimer = null;
+        }
+
+        sttRestartTimer = setTimeout(async () => {
+            sttRestartTimer = null;
+            if (!isSTTOn || !recognition) return;
+
+            console.log("STT: Attempting auto-restart...");
+            try {
+                await recognition.start();
+            } catch (e) {
+                console.error("STT Restart Error:", e);
+            }
+        }, delayMs);
+    };
+
+    const restartSTT = async (delayMs = 450) => scheduleSTTRestart(delayMs);
 
     if (nativeSpeechBridge && nativeSpeechBridge.isSupportedCandidate()) {
         const nativeAvailable = await nativeSpeechBridge.isAvailable();
@@ -750,6 +901,9 @@ async function initSTT() {
                 onFinal: (data) => {
                     handleFinalTranscript(data && data.transcript);
                 },
+                onPartial: (data) => {
+                    handlePartialTranscript(data && data.transcript);
+                },
                 onError: (data) => {
                     const errorCode = data && data.error;
                     console.error("STT Error:", errorCode || (data && data.message));
@@ -758,23 +912,33 @@ async function initSTT() {
                         alert("Speech recognition permission denied.");
                         disableSTTWithStatus("Speech-to-text permission denied.");
                     } else if (errorCode === 'audio-capture') {
-                        disableSTTWithStatus("Speech-to-text could not access the microphone on this device.");
+                        disableSTTWithStatus("Speech-to-text could not access mic input for captions. On some phones, STT cannot run while call mic is active.");
                     } else if (errorCode === 'service-not-allowed') {
                         disableSTTWithStatus("Speech-to-text is not available on this device.");
+                    } else if (errorCode === 'busy') {
+                        restartSTT(1000);
+                    } else if (errorCode === 'no-match' || errorCode === 'no-speech') {
+                        restartSTT(300);
                     } else if (errorCode === 'aborted') {
                         const startedRecently = lastSTTStartAt && (Date.now() - lastSTTStartAt < 5000);
                         const hiddenTab = document.hidden;
                         if (hiddenTab || startedRecently) {
                             disableSTTWithStatus("Speech-to-text stopped in this tab. For local testing, use two different browsers or two devices.");
+                        } else {
+                            restartSTT(500);
                         }
                     } else if (errorCode === 'network') {
                         console.warn("STT Network error. Will attempt restart.");
+                        restartSTT(1200);
                     }
                 },
-                onEnd: () => {
+                onEnd: (data) => {
                     isRecognitionActive = false;
                     console.log("STT: Recognition ended.");
-                    restartSTT();
+                    const restartable = data && data.restartable !== false;
+                    if (restartable) {
+                        restartSTT(350);
+                    }
                 }
             });
 
@@ -789,6 +953,20 @@ async function initSTT() {
 
             return recognition;
         }
+
+        if (!SpeechRecognition) {
+            isSTTSupported = false;
+            updateSTTUI();
+            disableSTTWithStatus("Speech-to-text is not available on this phone.");
+            return null;
+        }
+    }
+
+    if (!SpeechRecognition) {
+        isSTTSupported = false;
+        updateSTTUI();
+        disableSTTWithStatus("Speech-to-text is not available in this browser.");
+        return null;
     }
 
     recognition = new SpeechRecognition();
@@ -824,14 +1002,21 @@ async function initSTT() {
             disableSTTWithStatus("Speech-to-text could not access the microphone in this tab.");
         } else if (event.error === 'service-not-allowed') {
             disableSTTWithStatus("Speech-to-text is not available in this browser tab.");
+        } else if (event.error === 'busy') {
+            restartSTT(1000);
+        } else if (event.error === 'no-speech' || event.error === 'no-match') {
+            restartSTT(300);
         } else if (event.error === 'aborted') {
             const startedRecently = lastSTTStartAt && (Date.now() - lastSTTStartAt < 5000);
             const hiddenTab = document.hidden;
             if (hiddenTab || startedRecently) {
                 disableSTTWithStatus("Speech-to-text stopped in this tab. For local testing, use two different browsers or two devices.");
+            } else {
+                restartSTT(500);
             }
         } else if (event.error === 'network') {
             console.warn("STT Network error. Will attempt restart.");
+            restartSTT(1200);
         }
     };
 
@@ -899,24 +1084,37 @@ function startSTTSession() {
         if (!recognition || isRecognitionActive) return;
 
         try {
+            await releaseCallMicForNativeSTT();
             await recognition.start();
             hideVCSignCards();
         } catch (e) {
             console.error("Failed to start Recognition:", e);
-            isSTTOn = false;
-            updateSTTUI();
-            document.body.classList.remove('stt-active');
+            await restoreCallMicAfterNativeSTT();
+            const reason = e && (e.message || String(e));
+            disableSTTWithStatus(`Speech-to-text could not start${reason ? `: ${reason}` : '.'}`);
         }
     })();
 }
 
 function stopSTTSession() {
     isSTTOn = false;
+    if (sttRestartTimer) {
+        clearTimeout(sttRestartTimer);
+        sttRestartTimer = null;
+    }
     updateSTTUI();
     document.body.classList.remove('stt-active');
     if (recognition && isRecognitionActive) {
         Promise.resolve(recognition.stop()).catch((error) => {
             console.error("Failed to stop Recognition:", error);
+        }).finally(() => {
+            restoreCallMicAfterNativeSTT().catch((error) => {
+                console.error('STT: Failed to restore microphone after stopping captions.', error);
+            });
+        });
+    } else {
+        restoreCallMicAfterNativeSTT().catch((error) => {
+            console.error('STT: Failed to restore microphone after stopping captions.', error);
         });
     }
     hideVCSignCards();
@@ -1497,6 +1695,14 @@ joinBtn.addEventListener('click', async (e) => {
     roomName = startRoomInput.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
     if (!roomName) return;
 
+    // Warm up remote video for mobile autoplay
+    if (remoteVideo) {
+        remoteVideo.play().catch(() => {
+            // Silently fail, it's just a warm-up to tell the browser
+            // we intend to play video on this element after a user gesture.
+        });
+    }
+
     lobbyStatus.innerText = "Joining...";
 
 
@@ -1560,31 +1766,13 @@ joinBtn.addEventListener('click', async (e) => {
     const localNameSpan = document.getElementById('localUserName');
     if (localNameSpan) localNameSpan.innerText = localName + " (You)";
 
-    // Bitrate Utility Function
-    function setMaxBitrate(sdp, bitrate) {
-        const lines = sdp.split('\n');
-        let line = -1;
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].indexOf('m=video') === 0) {
-                line = i;
-                break;
-            }
-        }
-        if (line === -1) return sdp;
-        line++;
-        while (lines[line].indexOf('i=') === 0 || lines[line].indexOf('c=') === 0) {
-            line++;
-        }
-        if (lines[line].indexOf('b') === 0) {
-            lines[line] = 'b=AS:' + bitrate;
-            return lines.join('\n');
-        }
-        lines.splice(line, 0, 'b=AS:' + bitrate);
-        return lines.join('\n');
-    }
-
     // Supabase Channel Setup
-    const myPresenceKey = 'user-' + Math.random().toString(36).substring(7);
+    myPresenceKey = 'user-' + Math.random().toString(36).substring(7);
+    let remoteSessionId = null;
+    makingOffer = false;
+    let ignoreOffer = false;
+    let isSettingRemoteDescription = false;
+
     supabaseChannel = window.supabaseClient.channel(roomName, {
         config: {
             broadcast: { self: false },
@@ -1654,47 +1842,74 @@ joinBtn.addEventListener('click', async (e) => {
             }
         })
         .on('broadcast', { event: 'offer' }, async ({ payload }) => {
-            console.log("Offer received from peer. Name:", payload.name);
-            if (payload.name) {
-                setRemoteName(payload.name);
-            }
+            console.log("Offer received. Name:", payload.name);
+            const polite = !isCreatingMeeting;
+            
             try {
+                if (payload.sessionId && payload.sessionId !== remoteSessionId) {
+                    console.log("New session ID detected. Resetting for re-join.");
+                    remoteSessionId = payload.sessionId;
+                    if (pc) {
+                        pc.close();
+                        pc = null;
+                    }
+                }
+
                 if (!pc) createPeerConnection();
-                if (pc.signalingState !== "stable") {
-                    console.log("Signaling state not stable, ignoring offer (might be a collision)");
+
+                const description = new RTCSessionDescription(payload.sdp);
+                const readyForOffer = !makingOffer && (pc.signalingState === "stable" || isSettingRemoteDescription);
+                const offerCollision = !readyForOffer;
+
+                ignoreOffer = !polite && offerCollision;
+                if (ignoreOffer) {
+                    console.log("Collision detected, I am impolite. Ignoring offer.");
                     return;
                 }
-                await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+
+                isSettingRemoteDescription = true;
+                if (offerCollision) {
+                    console.log("Collision detected, I am polite. Rolling back.");
+                    await Promise.all([
+                        pc.setLocalDescription({ type: "rollback" }),
+                        pc.setRemoteDescription(description)
+                    ]);
+                } else {
+                    await pc.setRemoteDescription(description);
+                }
+                
                 processBufferedIceCandidates();
                 const answer = await pc.createAnswer();
                 answer.sdp = setMaxBitrate(answer.sdp, 1000);
                 await pc.setLocalDescription(answer);
+                
                 console.log("Sending answer...");
                 supabaseChannel.send({
                     type: 'broadcast',
                     event: 'answer',
-                    payload: { sdp: answer, name: localName }
+                    payload: { sdp: answer, name: localName, sessionId: myPresenceKey }
                 });
+                
+                if (payload.name) setRemoteName(payload.name);
                 updateStatus("Connected to peer", "success");
             } catch (e) {
                 console.error("Error handling offer:", e);
-                updateStatus("Connection failed: " + e.message, "error");
+            } finally {
+                isSettingRemoteDescription = false;
             }
         })
         .on('broadcast', { event: 'answer' }, async ({ payload }) => {
-            console.log("Answer received from peer. Name:", payload.name);
-            if (payload.name) {
-                setRemoteName(payload.name);
-            }
+            console.log("Answer received. Name:", payload.name);
             try {
                 if (pc) {
                     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
                     processBufferedIceCandidates();
+                    if (payload.name) setRemoteName(payload.name);
+                    if (payload.sessionId) remoteSessionId = payload.sessionId;
                     updateStatus("Connected to peer", "success");
                 }
             } catch (e) {
                 console.error("Error handling answer:", e);
-                updateStatus("Connection error", "error");
             }
         })
         .on('broadcast', { event: 'ice' }, async ({ payload }) => {
@@ -2251,28 +2466,39 @@ async function startCamera() {
         const localContainer = document.getElementById('localContainer');
         if (localContainer) localContainer.classList.add('video-muted');
 
-        localCameraController = new Camera(localVideo, {
-            onFrame: async () => {
-                if (!isCamOn || !localVideo.videoWidth || !localVideo.videoHeight) {
-                    return;
-                }
+        let stopLoop = false;
+        localCameraController = {
+            stop: () => { stopLoop = true; }
+        };
 
+        const processFrame = async () => {
+            if (stopLoop) return;
+            
+            if (isCamOn && localVideo.videoWidth && localVideo.videoHeight) {
                 const now = performance.now();
-                if (isHandInferencePending || (now - lastHandInferenceAt) < HAND_INFERENCE_INTERVAL_MS) {
-                    return;
+                if (!isHandInferencePending && (now - lastHandInferenceAt) >= HAND_INFERENCE_INTERVAL_MS) {
+                    isHandInferencePending = true;
+                    lastHandInferenceAt = now;
+                    try {
+                        await hands.send({ image: localVideo });
+                    } finally {
+                        isHandInferencePending = false;
+                    }
                 }
-
-                isHandInferencePending = true;
-                lastHandInferenceAt = now;
-
-                try {
-                    await hands.send({ image: localVideo });
-                } finally {
-                    isHandInferencePending = false;
-                }
-            },
-        });
-        await localCameraController.start();
+            }
+            
+            if (localVideo.requestVideoFrameCallback) {
+                localVideo.requestVideoFrameCallback(processFrame);
+            } else {
+                requestAnimationFrame(processFrame);
+            }
+        };
+        
+        if (localVideo.requestVideoFrameCallback) {
+            localVideo.requestVideoFrameCallback(processFrame);
+        } else {
+            requestAnimationFrame(processFrame);
+        }
         initAudioAnalysis(localStream);
     } catch (err) {
         isCameraStarted = false;
@@ -2737,8 +2963,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
         if (candidates.length === 0) {
             // No confident prediction
             if (accumulatedWord.length > 0) {
-                // During spelling, clear display to prevent competing outputs
-                setPredictionText('');
+                setPredictionText(WAITING_FOR_NEXT_LETTER_TEXT);
             } else if (lastDisplayedPrediction) {
                 // Only show last prediction if not spelling
                 const last = lastDisplayedPrediction;
@@ -2772,8 +2997,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             }
             setPredictionText(`Sign: ${outputLabel} (${Math.round(best.conf * 100)}%)`);
         } else if (accumulatedWord.length > 0) {
-            // During spelling, suppress prediction display (only show spelling overlay)
-            setPredictionText('');
+            setPredictionText(WAITING_FOR_NEXT_LETTER_TEXT);
         } else {
             const displayText = best.isDynamic ? `${outputLabel} 🔄` : outputLabel;
             setPredictionText(`Sign: ${displayText} (${Math.round(best.conf * 100)}%)`);
@@ -2927,26 +3151,16 @@ function saveToLocal() {
 // Peer logic refactored into Supabase Channel setup
 async function handlePeerJoined(id) {
     if (pc && (pc.connectionState === 'connected' || pc.connectionState === 'connecting')) {
-        console.log("Peer already connected/connecting. Skipping offer.");
+        console.log("Peer already connected/connecting. Skipping redundant trigger.");
         return;
     }
 
-    // Add a small jittered delay to avoid simultaneous offer collision
+    // Add a small jittered delay to avoid simultaneous initial connection collision
     await new Promise(r => setTimeout(r, Math.random() * 500 + 200));
 
+    // Simply create the connection. onnegotiationneeded will fire automatically 
+    // because addTrack is called inside createPeerConnection.
     createPeerConnection();
-    const offer = await pc.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-    });
-    offer.sdp = setMaxBitrate(offer.sdp, 1000);
-    await pc.setLocalDescription(offer);
-    console.log("Sending offer to peer...");
-    supabaseChannel.send({
-        type: 'broadcast',
-        event: 'offer',
-        payload: { sdp: offer, name: localName }
-    });
 }
 
 function processBufferedIceCandidates() {
@@ -2967,6 +3181,9 @@ function createPeerConnection() {
         pc.close();
         pc = null;
     }
+    
+    // Clear any stale buffered candidates from previous attempts
+    iceCandidatesBuffer = [];
 
     pc = new RTCPeerConnection(rtcConfig);
     console.log("RTCPeerConnection created.");
@@ -3022,6 +3239,37 @@ function createPeerConnection() {
         }
     };
 
+    pc.onnegotiationneeded = async () => {
+        try {
+            makingOffer = true;
+            console.log("Negotiation needed. Creating offer...");
+            
+            const offer = await pc.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+            });
+            
+            offer.sdp = setMaxBitrate(offer.sdp, 1000);
+            await pc.setLocalDescription(offer);
+            
+            if (supabaseChannel) {
+                supabaseChannel.send({
+                    type: 'broadcast',
+                    event: 'offer',
+                    payload: { 
+                        sdp: pc.localDescription,
+                        name: localName,
+                        sessionId: myPresenceKey 
+                    }
+                });
+            }
+        } catch (e) {
+            console.error("Error during negotiation:", e);
+        } finally {
+            makingOffer = false;
+        }
+    };
+
     // Update the meeting status bar
     pc.onconnectionstatechange = () => {
         const state = pc ? pc.connectionState : 'closed';
@@ -3031,9 +3279,25 @@ function createPeerConnection() {
             document.querySelector('.main-stage')?.classList.remove('is-connected');
         }
         if (state === 'connected') {
+            document.querySelector('.main-stage')?.classList.add('is-connected');
             showMeetingStatusToast('Connected', 'success');
         } else if (state === 'disconnected' || state === 'failed') {
             showMeetingStatusToast('Peer disconnected', 'error');
+            
+            // If connection failed, attempt an ICE restart
+            if (state === 'failed' && pc) {
+                console.log("ICE Connection failed. Attempting restart...");
+                try {
+                    if (pc.restartIce) {
+                        pc.restartIce();
+                    } else {
+                        // Fallback for browsers without restartIce()
+                        pc.onnegotiationneeded(); 
+                    }
+                } catch (e) {
+                    console.error("Failed to restart ICE:", e);
+                }
+            }
         } else if (state === 'connecting') {
             showMeetingStatusToast('Connecting...', 'info');
         }
@@ -3142,7 +3406,16 @@ if (ttsBtn) {
     ttsBtn.addEventListener('click', () => {
         isTTSOn = !isTTSOn;
         updateTTSUI();
-        if (!isTTSOn) {
+        if (isTTSOn) {
+            if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+                 window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+            } else if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+                const initUtterance = new SpeechSynthesisUtterance(" ");
+                initUtterance.lang = 'en-US';
+                window.speechSynthesis.speak(initUtterance);
+            }
+        } else {
             if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
                 window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
             } else if (window.speechSynthesis) {
@@ -3156,7 +3429,16 @@ if (ttsToggleBtn) {
     ttsToggleBtn.addEventListener('click', () => {
         isTTSOn = !isTTSOn;
         updateTTSUI();
-        if (!isTTSOn) {
+        if (isTTSOn) {
+            if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
+                 window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
+            } else if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+                const initUtterance = new SpeechSynthesisUtterance(" ");
+                initUtterance.lang = 'en-US';
+                window.speechSynthesis.speak(initUtterance);
+            }
+        } else {
             if (window.capacitorTextToSpeech && window.capacitorTextToSpeech.TextToSpeech) {
                 window.capacitorTextToSpeech.TextToSpeech.stop().catch(e => console.error(e));
             } else if (window.speechSynthesis) {
