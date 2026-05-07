@@ -569,7 +569,7 @@ function setupMobileSignSetup() {
 
     mobileAddSignBtn.addEventListener('click', () => {
         if (mobileAddSignBtn.dataset.setup === 'true') return; // Don't open modal if we are in "Finish" mode
-        openSetupModal(hasRecordedSignInSession ? 3 : 1);
+        openSetupModal(1);
     });
 
     nextStepBtns.forEach(btn => {
@@ -1832,69 +1832,64 @@ async function ensureTrainingModelsLoaded() {
     if (!model) model = {};
 
     if (!model.static) {
-        let savedStaticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
         let localModelKey = `localstorage://${STORAGE_KEYS[currentLang].model}-static`;
 
-        if (!savedStaticLabels) {
-            console.log("Local static labels missing. Checking cloud for incremental base...");
-            const cloudData = await fetchCloudModel('static', currentLang);
-            if (cloudData) {
-                model.static = cloudData.model;
-                model.staticLabels = cloudData.labels;
-                ensureModelCompiled(model.static, 'static model');
-                console.log("Loaded static base from cloud.");
-                return;
-            }
+        let cloudData = null;
+        if (navigator.onLine) {
+            cloudData = await fetchCloudModel('static', currentLang);
         }
 
-        if (savedStaticLabels) {
+        if (cloudData) {
+            model.static = cloudData.model;
+            model.staticLabels = cloudData.labels;
+            ensureModelCompiled(model.static, 'static model');
+            console.log("Loaded static base from cloud.");
             try {
-                model.static = await tf.loadLayersModel(localModelKey);
-                model.staticLabels = JSON.parse(savedStaticLabels);
-                ensureModelCompiled(model.static, 'static model');
-            } catch (err) {
-                console.warn('Unable to load saved static model from LocalStorage. Checking cloud...');
-                const cloudData = await fetchCloudModel('static', currentLang);
-                if (cloudData) {
-                    model.static = cloudData.model;
-                    model.staticLabels = cloudData.labels;
+                await model.static.save(localModelKey);
+                localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-static`, JSON.stringify(model.staticLabels));
+            } catch (e) {}
+        } else {
+            let savedStaticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
+            if (savedStaticLabels) {
+                try {
+                    model.static = await tf.loadLayersModel(localModelKey);
+                    model.staticLabels = JSON.parse(savedStaticLabels);
                     ensureModelCompiled(model.static, 'static model');
+                } catch (err) {
+                    model.static = null;
                 }
             }
         }
     }
 
     if (!model.dynamic) {
-        let savedDynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
-        
-        if (!savedDynamicLabels) {
-            console.log("Local dynamic labels missing. Checking cloud for incremental base...");
-            const cloudData = await fetchCloudModel('dynamic', currentLang);
-            if (cloudData) {
-                model.dynamic = cloudData.model;
-                model.dynamicLabels = cloudData.labels;
-                model.dynamicHandRequirements = cloudData.handReqs || {};
-                ensureModelCompiled(model.dynamic, 'dynamic model');
-                console.log("Loaded dynamic base from cloud.");
-                return;
-            }
+        let cloudData = null;
+        if (navigator.onLine) {
+            cloudData = await fetchCloudModel('dynamic', currentLang);
         }
 
-        if (savedDynamicLabels) {
+        if (cloudData) {
+            model.dynamic = cloudData.model;
+            model.dynamicLabels = cloudData.labels;
+            model.dynamicHandRequirements = cloudData.handReqs || {};
+            ensureModelCompiled(model.dynamic, 'dynamic model');
+            console.log("Loaded dynamic base from cloud.");
             try {
-                model.dynamic = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
-                model.dynamicLabels = JSON.parse(savedDynamicLabels);
-                const handReqRaw = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`);
-                model.dynamicHandRequirements = handReqRaw ? JSON.parse(handReqRaw) : {};
-                ensureModelCompiled(model.dynamic, 'dynamic model');
-            } catch (err) {
-                console.warn('Unable to load saved dynamic model from LocalStorage. Checking cloud...');
-                const cloudData = await fetchCloudModel('dynamic', currentLang);
-                if (cloudData) {
-                    model.dynamic = cloudData.model;
-                    model.dynamicLabels = cloudData.labels;
-                    model.dynamicHandRequirements = cloudData.handReqs || {};
+                await model.dynamic.save(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
+                localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`, JSON.stringify(model.dynamicLabels));
+                localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`, JSON.stringify(model.dynamicHandRequirements));
+            } catch (e) {}
+        } else {
+            let savedDynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
+            if (savedDynamicLabels) {
+                try {
+                    model.dynamic = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
+                    model.dynamicLabels = JSON.parse(savedDynamicLabels);
+                    const handReqRaw = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`);
+                    model.dynamicHandRequirements = handReqRaw ? JSON.parse(handReqRaw) : {};
                     ensureModelCompiled(model.dynamic, 'dynamic model');
+                } catch (err) {
+                    model.dynamic = null;
                 }
             }
         }

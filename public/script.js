@@ -2291,31 +2291,31 @@ async function loadModelsAndLabels() {
 
     // load local static model if available
     try {
-        const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
-        if (!localLabelData) {
-            const cloudData = await fetchCloudModel('static', currentMode);
-            if (cloudData) {
-                uniqueLabels = cloudData.labels;
-                model = cloudData.model;
-                console.log(`Cloud static model loaded (${uniqueLabels.length} labels)`);
-            }
-        } else {
-            const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
-            uniqueLabels = normalizedLocalLabels.labels;
-            if (normalizedLocalLabels.changed) {
-                localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
-            }
+        let cloudData = null;
+        if (navigator.onLine) {
+            cloudData = await fetchCloudModel('static', currentMode);
+        }
+
+        if (cloudData) {
+            uniqueLabels = cloudData.labels;
+            model = cloudData.model;
+            console.log(`Cloud static model loaded (${uniqueLabels.length} labels)`);
             try {
-                model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
-                console.log(`Local static model loaded (${uniqueLabels.length} labels)`);
-            } catch (e) {
-                console.warn('Local static model weights not found in localStorage. Checking cloud...');
-                const cloudData = await fetchCloudModel('static', currentMode);
-                if (cloudData) {
-                    uniqueLabels = cloudData.labels;
-                    model = cloudData.model;
-                    console.log(`Cloud static model loaded (${uniqueLabels.length} labels)`);
-                } else {
+                await model.save(`localstorage://${localStorageModelKey}-static`);
+                localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
+            } catch (e) {}
+        } else {
+            const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
+            if (localLabelData) {
+                const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
+                uniqueLabels = normalizedLocalLabels.labels;
+                if (normalizedLocalLabels.changed) {
+                    localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
+                }
+                try {
+                    model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
+                    console.log(`Local static model loaded (${uniqueLabels.length} labels)`);
+                } catch (e) {
                     model = null;
                 }
             }
@@ -2326,39 +2326,39 @@ async function loadModelsAndLabels() {
 
     // load local dynamic model if available
     try {
-        const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
-        if (!dynamicLabelData) {
-            const cloudData = await fetchCloudModel('dynamic', currentMode);
-            if (cloudData) {
-                uniqueLabelsDynamic = cloudData.labels;
-                modelDynamic = cloudData.model;
-                dynamicLabelHandRequirements = cloudData.handReqs || {};
-                console.log(`Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
-            }
-        } else {
-            const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
-            uniqueLabelsDynamic = normalizedDynamicLabels.labels;
-            if (normalizedDynamicLabels.changed) {
-                localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
-            }
-            const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
-            const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
-            dynamicLabelHandRequirements = normalizedHandReqs.map;
-            if (normalizedHandReqs.changed) {
-                localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-            }
+        let cloudData = null;
+        if (navigator.onLine) {
+            cloudData = await fetchCloudModel('dynamic', currentMode);
+        }
+
+        if (cloudData) {
+            uniqueLabelsDynamic = cloudData.labels;
+            modelDynamic = cloudData.model;
+            dynamicLabelHandRequirements = cloudData.handReqs || {};
+            console.log(`Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
             try {
-                modelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
-                console.log(`Local dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
-            } catch (e) {
-                console.warn('Local dynamic model weights not found in localStorage. Checking cloud...');
-                const cloudData = await fetchCloudModel('dynamic', currentMode);
-                if (cloudData) {
-                    uniqueLabelsDynamic = cloudData.labels;
-                    modelDynamic = cloudData.model;
-                    dynamicLabelHandRequirements = cloudData.handReqs || {};
-                    console.log(`Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
-                } else {
+                await modelDynamic.save(`localstorage://${localStorageModelKey}-dynamic`);
+                localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
+                localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
+            } catch (e) {}
+        } else {
+            const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
+            if (dynamicLabelData) {
+                const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
+                uniqueLabelsDynamic = normalizedDynamicLabels.labels;
+                if (normalizedDynamicLabels.changed) {
+                    localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
+                }
+                const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
+                const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
+                dynamicLabelHandRequirements = normalizedHandReqs.map;
+                if (normalizedHandReqs.changed) {
+                    localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
+                }
+                try {
+                    modelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
+                    console.log(`Local dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
+                } catch (e) {
                     modelDynamic = null;
                 }
             }
