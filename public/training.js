@@ -33,6 +33,7 @@ const mobileAddButtonWrap = document.getElementById('mobileAddButtonWrap');
 const mobileAddSignBtn = document.getElementById('mobileAddSignBtn');
 const mobileRecordingActions = document.getElementById('mobileRecordingActions');
 const mobileTrainSaveBtn = document.getElementById('mobileTrainSaveBtn');
+const sidebarTrainSaveBtn = document.getElementById('sidebarTrainSaveBtn');
 const mobileSaveNextBtn = document.getElementById('mobileSaveNextBtn');
 const mobileRecordingCounter = document.getElementById('mobileRecordingCounter');
 const mobileBackBtn = document.getElementById('mobileBackBtn');
@@ -198,6 +199,21 @@ function clearLocalDraftDataForLanguage(lang = currentLang) {
 
     const signCardKeys = getStoredSignCardKeys(lang);
     signCardKeys.forEach((key) => localStorage.removeItem(key));
+}
+
+function loadLocalDraftData(lang = currentLang) {
+    const keys = STORAGE_KEYS[lang];
+    if (!keys) return [];
+
+    const raw = localStorage.getItem(keys.data);
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+        return [];
+    }
 }
 
 function toCloudSignLabel(label) {
@@ -757,6 +773,62 @@ function setupMobileSignSetup() {
         });
     }
 
+    if (sidebarTrainSaveBtn) {
+        sidebarTrainSaveBtn.addEventListener('click', async () => {
+            if (!isTrainSaveEnabled()) {
+                showToast("No untrained data available to train.", "warning");
+                return;
+            }
+
+            setTrainSaveButtonBusy(true);
+
+            try {
+                showProcessingModal("Training & Saving...", "Training all newly added signs for Live Translation and Video Call.");
+                const trainingResult = await runInternalTraining();
+
+                updateProcessingModal("Saving Model...", "Saving the trained model on this device...");
+                const savedAnyModel = await saveTrainedModelsToLocalStorage();
+                if (!savedAnyModel) {
+                    throw new Error("No trained model was available to save.");
+                }
+
+                updateProcessingModal("Uploading Details...", "Uploading sign cards and reference images...");
+                await uploadAllPendingSignCards();
+
+                updateProcessingModal("Syncing Data...", "Saving hand landmarks to the cloud database...");
+                await saveToServer();
+
+                updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
+                await uploadTrainedModelsToCloud();
+
+                hideProcessingModal();
+
+                // Clear local sign data now that everything is safely on the cloud
+                collectedData = [];
+                sessionHistory = [];
+                clearLocalDraftDataForLanguage(currentLang);
+                await saveToServer(); // Push empty array to Supabase — deletes all training rows for this lang
+                renderDataList();
+                updateMobileRevertState();
+                updateMobileTrainSaveVisibility();
+                updateSidebarTrainSaveState();
+
+                const successMsg = trainingResult?.alreadyTrained
+                    ? "All recorded signs were already trained and saved to cloud."
+                    : "All recorded signs trained and saved to cloud.";
+                showToast(successMsg, 'task_alt');
+            } catch (err) {
+                console.error('Train & save failed:', err);
+                hideProcessingModal();
+                showCustomAlert(`Could not train and save the model: ${err.message || 'Unknown error'}`);
+                setTrainSaveButtonBusy(false);
+                return;
+            }
+
+            setTrainSaveButtonBusy(false);
+        });
+    }
+
     // Sign Card Image from Modal
     if (modalSignCardBtn) {
         modalSignCardBtn.addEventListener('click', () => {
@@ -1069,15 +1141,47 @@ function getCurrentLabelStaticSampleCount() {
     return collectedData.filter(sample => isStaticSample(sample) && normalizeLabel(sample.label) === currentLabel).length;
 }
 
+function getUntrainedLocalDraftCount(lang = currentLang) {
+    const keys = STORAGE_KEYS[lang];
+    if (!keys) return 0;
+    const rawData = localStorage.getItem(keys.data);
+    if (!rawData) return 0;
+
+    try {
+        const parsed = JSON.parse(rawData);
+        if (!Array.isArray(parsed)) return 0;
+        return parsed.filter(sample => sample && sample.isTrained === false).length;
+    } catch (err) {
+        return 0;
+    }
+}
+
+function isTrainSaveEnabled() {
+    return getUntrainedSampleCount() > 0 || getUntrainedLocalDraftCount() > 0;
+}
+
 function setTrainSaveButtonBusy(isBusy) {
-    if (!mobileTrainSaveBtn) return;
-    mobileTrainSaveBtn.disabled = isBusy;
-    mobileTrainSaveBtn.innerHTML = isBusy
-        ? '<span class="material-icons" style="font-size: 22px;">sync</span><span>Training...</span>'
-        : '<span class="material-icons" style="font-size: 22px;">task_alt</span><span>Train &amp; Save</span>';
+    if (mobileTrainSaveBtn) {
+        mobileTrainSaveBtn.disabled = isBusy;
+        mobileTrainSaveBtn.innerHTML = isBusy
+            ? '<span class="material-icons" style="font-size: 22px;">sync</span><span>Training...</span>'
+            : '<span class="material-icons" style="font-size: 22px;">task_alt</span><span>Train &amp; Upload</span>';
+    }
+
+    if (sidebarTrainSaveBtn) {
+        sidebarTrainSaveBtn.disabled = isBusy;
+        sidebarTrainSaveBtn.innerHTML = isBusy
+            ? '<span class="material-icons" style="font-size: 22px;">sync</span><span>Training...</span>'
+            : '<span class="material-icons" style="font-size: 22px;">task_alt</span><span>Train &amp; Save</span>';
+    }
 }
 
 
+
+function updateSidebarTrainSaveState() {
+    if (!sidebarTrainSaveBtn) return;
+    sidebarTrainSaveBtn.disabled = !isTrainSaveEnabled();
+}
 
 function updateMobileTrainSaveVisibility() {
     if (!mobileTrainSaveBtn) return;
@@ -1602,12 +1706,21 @@ async function loadDataFromServer() {
         collectedData = normalizedData.normalized;
         sessionHistory = [];
 
+        const localDraft = normalizeDatasetLabels(loadLocalDraftData(currentLang)).normalized;
+        const existingKeys = new Set(collectedData.map((sample) => `${sample.label}|${sample.type}|${sample.recordedAt}`));
+        localDraft.forEach((sample) => {
+            const key = `${sample.label}|${sample.type}|${sample.recordedAt}`;
+            if (!existingKeys.has(key)) {
+                collectedData.push(sample);
+            }
+        });
+
         if (normalizedData.changed) {
             await saveToServer();
         }
     } catch (err) {
         console.error('Failed to load training data from Supabase:', err);
-        collectedData = [];
+        collectedData = normalizeDatasetLabels(loadLocalDraftData(currentLang)).normalized;
     } finally {
         renderDataList();
     }
@@ -1639,6 +1752,7 @@ function updateUIStats() {
     totalSamplesBadge.innerText = collectedData.length;
     updateMobileRevertState();
     updateMobileTrainSaveVisibility();
+    updateSidebarTrainSaveState();
     updateMobileSessionActionState();
     // Throttle rendering the list if data is huge
     if (Math.random() > 0.9) renderDataList();
@@ -1656,6 +1770,7 @@ function renderDataList() {
     totalSamplesBadge.innerText = collectedData.length;
     
     updateMobileRevertState();
+    updateSidebarTrainSaveState();
     updateMobileSessionActionState();
 
     if (Object.keys(counts).length === 0) {
