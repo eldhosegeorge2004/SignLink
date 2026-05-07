@@ -33,14 +33,12 @@ const mobileAddButtonWrap = document.getElementById('mobileAddButtonWrap');
 const mobileAddSignBtn = document.getElementById('mobileAddSignBtn');
 const mobileRecordingActions = document.getElementById('mobileRecordingActions');
 const mobileTrainSaveBtn = document.getElementById('mobileTrainSaveBtn');
+const sidebarTrainSaveBtn = document.getElementById('sidebarTrainSaveBtn');
 const mobileSaveNextBtn = document.getElementById('mobileSaveNextBtn');
 const mobileRecordingCounter = document.getElementById('mobileRecordingCounter');
 const mobileBackBtn = document.getElementById('mobileBackBtn');
 const mobileClearSignBtn = document.getElementById('mobileClearSignBtn');
-const mobileUploadBtn = document.getElementById('mobileUploadBtn');
-const trainCollectedDataBtn = document.getElementById('trainCollectedDataBtn');
 const revertLatestBtn = document.getElementById('revertLatestBtn');
-const cloudSyncBtn = document.getElementById('cloudSyncBtn');
 const mobileRevertBtn = document.getElementById('mobileRevertBtn');
 const signSetupModal = document.getElementById('signSetupModal');
 const modalLabelInput = document.getElementById('modalLabelInput');
@@ -201,6 +199,21 @@ function clearLocalDraftDataForLanguage(lang = currentLang) {
 
     const signCardKeys = getStoredSignCardKeys(lang);
     signCardKeys.forEach((key) => localStorage.removeItem(key));
+}
+
+function loadLocalDraftData(lang = currentLang) {
+    const keys = STORAGE_KEYS[lang];
+    if (!keys) return [];
+
+    const raw = localStorage.getItem(keys.data);
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+        return [];
+    }
 }
 
 function toCloudSignLabel(label) {
@@ -565,14 +578,14 @@ function setupMobileSignSetup() {
             modalLabelInput.value = '';
             const modalStatus = document.getElementById('modalSignCardStatus');
             if (modalStatus) modalStatus.textContent = '';
-            openSetupModal(3);
+            openSetupModal(1);
             modalLabelInput.focus();
         }
     };
 
     mobileAddSignBtn.addEventListener('click', () => {
         if (mobileAddSignBtn.dataset.setup === 'true') return; // Don't open modal if we are in "Finish" mode
-        openSetupModal(hasRecordedSignInSession ? 3 : 1);
+        openSetupModal(1);
     });
 
     nextStepBtns.forEach(btn => {
@@ -701,7 +714,7 @@ function setupMobileSignSetup() {
 
     if (mobileBackBtn) {
         mobileBackBtn.addEventListener('click', () => {
-            resetMobileSignSetup(true);
+            resetMobileSignSetup(false);
         });
     }
 
@@ -734,7 +747,71 @@ function setupMobileSignSetup() {
                 await uploadTrainedModelsToCloud();
 
                 hideProcessingModal();
+
+                // Clear local sign data now that everything is safely on the cloud
+                collectedData = [];
+                sessionHistory = [];
+                clearLocalDraftDataForLanguage(currentLang);
+                await saveToServer(); // Push empty array to Supabase — deletes all training rows for this lang
+                renderDataList();
+                updateMobileRevertState();
                 updateMobileTrainSaveVisibility();
+
+                const successMsg = trainingResult?.alreadyTrained
+                    ? "All recorded signs were already trained and saved to cloud."
+                    : "All recorded signs trained and saved to cloud.";
+                showToast(successMsg, 'task_alt');
+            } catch (err) {
+                console.error('Train & save failed:', err);
+                hideProcessingModal();
+                showCustomAlert(`Could not train and save the model: ${err.message || 'Unknown error'}`);
+                setTrainSaveButtonBusy(false);
+                return;
+            }
+
+            setTrainSaveButtonBusy(false);
+        });
+    }
+
+    if (sidebarTrainSaveBtn) {
+        sidebarTrainSaveBtn.addEventListener('click', async () => {
+            if (!isTrainSaveEnabled()) {
+                showToast("No untrained data available to train.", "warning");
+                return;
+            }
+
+            setTrainSaveButtonBusy(true);
+
+            try {
+                showProcessingModal("Training & Saving...", "Training all newly added signs for Live Translation and Video Call.");
+                const trainingResult = await runInternalTraining();
+
+                updateProcessingModal("Saving Model...", "Saving the trained model on this device...");
+                const savedAnyModel = await saveTrainedModelsToLocalStorage();
+                if (!savedAnyModel) {
+                    throw new Error("No trained model was available to save.");
+                }
+
+                updateProcessingModal("Uploading Details...", "Uploading sign cards and reference images...");
+                await uploadAllPendingSignCards();
+
+                updateProcessingModal("Syncing Data...", "Saving hand landmarks to the cloud database...");
+                await saveToServer();
+
+                updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
+                await uploadTrainedModelsToCloud();
+
+                hideProcessingModal();
+
+                // Clear local sign data now that everything is safely on the cloud
+                collectedData = [];
+                sessionHistory = [];
+                clearLocalDraftDataForLanguage(currentLang);
+                await saveToServer(); // Push empty array to Supabase — deletes all training rows for this lang
+                renderDataList();
+                updateMobileRevertState();
+                updateMobileTrainSaveVisibility();
+                updateSidebarTrainSaveState();
 
                 const successMsg = trainingResult?.alreadyTrained
                     ? "All recorded signs were already trained and saved to cloud."
@@ -765,49 +842,6 @@ function setupMobileSignSetup() {
         });
     }
 
-    if (trainCollectedDataBtn) {
-        trainCollectedDataBtn.addEventListener('click', async () => {
-            if (!hasCollectedData()) {
-                showToast("No collected data to train.", "warning");
-                return;
-            }
-
-            if (hasAllDataTrained()) {
-                showToast("All collected data is already trained.", "task_alt");
-                return;
-            }
-
-            trainCollectedDataBtn.disabled = true;
-
-            try {
-                showProcessingModal("Training Collected Data...", "Creating your local model for Live Translation and Video Call.");
-                const trainingResult = await runInternalTraining();
-
-                updateProcessingModal("Saving Model...", "Saving the trained model on this device...");
-                const savedAnyModel = await saveTrainedModelsToLocalStorage();
-                if (!savedAnyModel) {
-                    throw new Error("No trained model was available to save.");
-                }
-
-                updateProcessingModal("Saving Samples...", "Syncing training metadata...");
-                await saveToServer();
-
-                hideProcessingModal();
-
-                const successMsg = trainingResult?.alreadyTrained
-                    ? "Collected data was already trained locally."
-                    : "Collected data trained and saved locally.";
-                showToast(successMsg, 'task_alt');
-            } catch (err) {
-                console.error('Collected data training failed:', err);
-                hideProcessingModal();
-                showCustomAlert(`Could not train the collected data: ${err.message || 'Unknown error'}`);
-            } finally {
-                setTrainCollectedDataButtonState();
-                setUploadButtonState();
-            }
-        });
-    }
 
     async function uploadTrainedModelsToCloud() {
         if (!model) return;
@@ -1004,47 +1038,79 @@ function getLastRevertableBatch() {
 
 function revertLatestBatch() {
     const revertTarget = getLastRevertableBatch();
-    if (!revertTarget) return false;
 
-    const { batch, index } = revertTarget;
-    const count = Number(batch.count || 0);
-    const normalizedLabel = normalizeLabel(batch.label);
-    if (!count || !normalizedLabel) return false;
+    if (revertTarget) {
+        // Normal path: session history has a matching batch
+        const { batch, index } = revertTarget;
+        const count = Number(batch.count || 0);
+        const normalizedLabel = normalizeLabel(batch.label);
+        if (!count || !normalizedLabel) return false;
 
-    collectedData.splice(-count, count);
-    sessionHistory.splice(index, 1);
+        collectedData.splice(-count, count);
+        sessionHistory.splice(index, 1);
+        lastRecordedBatchCount = 0;
+        persistCurrentTrainingDataLocally(currentLang);
+
+        const labelSummary = count === 1 ? '1 sample' : `${count} samples`;
+        showToast(`Reverted ${labelSummary} from "${normalizedLabel}"`, 'undo');
+
+        updateUIStats();
+        renderDataList();
+
+        if (mobileAddSignBtn && mobileAddSignBtn.dataset.setup === 'true' && normalizeLabel(labelInput.value) === normalizedLabel) {
+            const remainingSamples = collectedData.filter((sample) =>
+                sample.isTrained === false && normalizeLabel(sample.label) === normalizedLabel
+            ).length;
+            if (remainingSamples === 0) {
+                mobileAddSignBtn.disabled = true;
+            }
+        }
+
+        return true;
+    }
+
+    // Fallback: session history is empty (e.g. after Save & Next Sign) but
+    // untrained data still exists — revert the last MAX_STATIC_SAMPLES_PER_SESSION (100)
+    // untrained samples for the most recently recorded label.
+    const untrainedSamples = collectedData.filter(d => d.isTrained === false);
+    if (untrainedSamples.length === 0) return false;
+
+    const lastUntrainedLabel = normalizeLabel(untrainedSamples[untrainedSamples.length - 1].label);
+
+    // Gather indices of all untrained samples for that label, then cap to the last 100
+    const targetIndices = [];
+    collectedData.forEach((d, i) => {
+        if (normalizeLabel(d.label) === lastUntrainedLabel && d.isTrained === false) {
+            targetIndices.push(i);
+        }
+    });
+    const toRemove = new Set(targetIndices.slice(-MAX_STATIC_SAMPLES_PER_SESSION));
+    const countToRemove = toRemove.size;
+
+    collectedData = collectedData.filter((_, i) => !toRemove.has(i));
     lastRecordedBatchCount = 0;
     persistCurrentTrainingDataLocally(currentLang);
 
-    const labelSummary = count === 1 ? '1 sample' : `${count} samples`;
-    showToast(`Reverted ${labelSummary} from "${normalizedLabel}"`, 'undo');
+    const labelSummary = countToRemove === 1 ? '1 sample' : `${countToRemove} samples`;
+    showToast(`Reverted ${labelSummary} from "${lastUntrainedLabel}"`, 'undo');
 
     updateUIStats();
     renderDataList();
-
-    if (mobileAddSignBtn && mobileAddSignBtn.dataset.setup === 'true' && normalizeLabel(labelInput.value) === normalizedLabel) {
-        const remainingSamples = collectedData.filter((sample) =>
-            sample.isTrained === false && normalizeLabel(sample.label) === normalizedLabel
-        ).length;
-        if (remainingSamples === 0) {
-            mobileAddSignBtn.disabled = true;
-        }
-    }
 
     return true;
 }
 
 function updateMobileRevertState() {
-    const hasRevertableBatch = Boolean(getLastRevertableBatch());
+    const hasRevertable = Boolean(getLastRevertableBatch()) || getUntrainedSampleCount() > 0;
 
     if (mobileRevertBtn) {
         mobileRevertBtn.style.display = 'flex';
-        mobileRevertBtn.disabled = !hasRevertableBatch;
+        mobileRevertBtn.disabled = !hasRevertable;
         mobileRevertBtn.innerHTML = `<span class="material-icons" style="font-size: 14px;">undo</span>`;
     }
 
     if (revertLatestBtn) {
-        revertLatestBtn.disabled = !hasRevertableBatch;
+        revertLatestBtn.disabled = !hasRevertable;
     }
 }
 
@@ -1075,42 +1141,46 @@ function getCurrentLabelStaticSampleCount() {
     return collectedData.filter(sample => isStaticSample(sample) && normalizeLabel(sample.label) === currentLabel).length;
 }
 
+function getUntrainedLocalDraftCount(lang = currentLang) {
+    const keys = STORAGE_KEYS[lang];
+    if (!keys) return 0;
+    const rawData = localStorage.getItem(keys.data);
+    if (!rawData) return 0;
+
+    try {
+        const parsed = JSON.parse(rawData);
+        if (!Array.isArray(parsed)) return 0;
+        return parsed.filter(sample => sample && sample.isTrained === false).length;
+    } catch (err) {
+        return 0;
+    }
+}
+
+function isTrainSaveEnabled() {
+    return getUntrainedSampleCount() > 0 || getUntrainedLocalDraftCount() > 0;
+}
+
 function setTrainSaveButtonBusy(isBusy) {
-    if (!mobileTrainSaveBtn) return;
-    mobileTrainSaveBtn.disabled = isBusy;
-    mobileTrainSaveBtn.innerHTML = isBusy
-        ? '<span class="material-icons" style="font-size: 22px;">sync</span><span>Training...</span>'
-        : '<span class="material-icons" style="font-size: 22px;">task_alt</span><span>Train &amp; Save</span>';
+    if (mobileTrainSaveBtn) {
+        mobileTrainSaveBtn.disabled = isBusy;
+        mobileTrainSaveBtn.innerHTML = isBusy
+            ? '<span class="material-icons" style="font-size: 22px;">sync</span><span>Training...</span>'
+            : '<span class="material-icons" style="font-size: 22px;">task_alt</span><span>Train &amp; Upload</span>';
+    }
+
+    if (sidebarTrainSaveBtn) {
+        sidebarTrainSaveBtn.disabled = isBusy;
+        sidebarTrainSaveBtn.innerHTML = isBusy
+            ? '<span class="material-icons" style="font-size: 22px;">sync</span><span>Training...</span>'
+            : '<span class="material-icons" style="font-size: 22px;">task_alt</span><span>Train &amp; Save</span>';
+    }
 }
 
-function setTrainCollectedDataButtonState() {
-    if (!trainCollectedDataBtn) return;
 
-    const hasData = hasCollectedData();
-    const untrainedCount = getUntrainedSampleCount();
-    const allTrained = hasData && untrainedCount === 0;
 
-    trainCollectedDataBtn.disabled = !hasData || allTrained;
-    trainCollectedDataBtn.title = !hasData
-        ? 'Record some signs first'
-        : allTrained
-            ? 'All collected data is already trained'
-            : 'Train all collected data locally';
-    trainCollectedDataBtn.innerHTML = allTrained
-        ? '<span class="material-icons" style="font-size: 20px;">check_circle</span>All Data Trained'
-        : '<span class="material-icons" style="font-size: 20px;">model_training</span>Train Collected Data';
-}
-
-function setUploadButtonState() {
-    if (!mobileUploadBtn) return;
-
-    const canUpload = hasAllDataTrained();
-    mobileUploadBtn.disabled = !canUpload;
-    mobileUploadBtn.title = !hasCollectedData()
-        ? 'Record some signs first'
-        : canUpload
-            ? 'Upload trained data, models, and sign cards to Supabase'
-            : 'Train all collected data locally before uploading to Supabase';
+function updateSidebarTrainSaveState() {
+    if (!sidebarTrainSaveBtn) return;
+    sidebarTrainSaveBtn.disabled = !isTrainSaveEnabled();
 }
 
 function updateMobileTrainSaveVisibility() {
@@ -1123,9 +1193,6 @@ function updateMobileTrainSaveVisibility() {
     if (shouldShow) {
         setTrainSaveButtonBusy(false);
     }
-
-    setTrainCollectedDataButtonState();
-    setUploadButtonState();
 }
 
 function updateMobileSessionActionState() {
@@ -1254,10 +1321,7 @@ async function checkForSavedModels() {
         if (dynamicLabels) modelInfo += "Dynamic 🔄";
         statusMsg.innerText = `✅ ${modelInfo}. You can use these in Live Translation!`;
         if (saveBtn) saveBtn.disabled = true;
-        if (cloudSyncBtn) {
-            cloudSyncBtn.disabled = false;
-            cloudSyncBtn.title = "Upload these models to Supabase Cloud";
-        }
+
     }
 }
 
@@ -1642,12 +1706,21 @@ async function loadDataFromServer() {
         collectedData = normalizedData.normalized;
         sessionHistory = [];
 
+        const localDraft = normalizeDatasetLabels(loadLocalDraftData(currentLang)).normalized;
+        const existingKeys = new Set(collectedData.map((sample) => `${sample.label}|${sample.type}|${sample.recordedAt}`));
+        localDraft.forEach((sample) => {
+            const key = `${sample.label}|${sample.type}|${sample.recordedAt}`;
+            if (!existingKeys.has(key)) {
+                collectedData.push(sample);
+            }
+        });
+
         if (normalizedData.changed) {
             await saveToServer();
         }
     } catch (err) {
         console.error('Failed to load training data from Supabase:', err);
-        collectedData = [];
+        collectedData = normalizeDatasetLabels(loadLocalDraftData(currentLang)).normalized;
     } finally {
         renderDataList();
     }
@@ -1679,9 +1752,8 @@ function updateUIStats() {
     totalSamplesBadge.innerText = collectedData.length;
     updateMobileRevertState();
     updateMobileTrainSaveVisibility();
+    updateSidebarTrainSaveState();
     updateMobileSessionActionState();
-    setTrainCollectedDataButtonState();
-    setUploadButtonState();
     // Throttle rendering the list if data is huge
     if (Math.random() > 0.9) renderDataList();
 }
@@ -1698,9 +1770,8 @@ function renderDataList() {
     totalSamplesBadge.innerText = collectedData.length;
     
     updateMobileRevertState();
+    updateSidebarTrainSaveState();
     updateMobileSessionActionState();
-    setTrainCollectedDataButtonState();
-    setUploadButtonState();
 
     if (Object.keys(counts).length === 0) {
         dataList.innerHTML = `<div style="text-align: center; color: #484f58; margin-top: 50px;">No data collected.</div>`;
@@ -1876,69 +1947,64 @@ async function ensureTrainingModelsLoaded() {
     if (!model) model = {};
 
     if (!model.static) {
-        let savedStaticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
         let localModelKey = `localstorage://${STORAGE_KEYS[currentLang].model}-static`;
 
-        if (!savedStaticLabels) {
-            console.log("Local static labels missing. Checking cloud for incremental base...");
-            const cloudData = await fetchCloudModel('static', currentLang);
-            if (cloudData) {
-                model.static = cloudData.model;
-                model.staticLabels = cloudData.labels;
-                ensureModelCompiled(model.static, 'static model');
-                console.log("Loaded static base from cloud.");
-                return;
-            }
+        let cloudData = null;
+        if (navigator.onLine) {
+            cloudData = await fetchCloudModel('static', currentLang);
         }
 
-        if (savedStaticLabels) {
+        if (cloudData) {
+            model.static = cloudData.model;
+            model.staticLabels = cloudData.labels;
+            ensureModelCompiled(model.static, 'static model');
+            console.log("Loaded static base from cloud.");
             try {
-                model.static = await tf.loadLayersModel(localModelKey);
-                model.staticLabels = JSON.parse(savedStaticLabels);
-                ensureModelCompiled(model.static, 'static model');
-            } catch (err) {
-                console.warn('Unable to load saved static model from LocalStorage. Checking cloud...');
-                const cloudData = await fetchCloudModel('static', currentLang);
-                if (cloudData) {
-                    model.static = cloudData.model;
-                    model.staticLabels = cloudData.labels;
+                await model.static.save(localModelKey);
+                localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-static`, JSON.stringify(model.staticLabels));
+            } catch (e) {}
+        } else {
+            let savedStaticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
+            if (savedStaticLabels) {
+                try {
+                    model.static = await tf.loadLayersModel(localModelKey);
+                    model.staticLabels = JSON.parse(savedStaticLabels);
                     ensureModelCompiled(model.static, 'static model');
+                } catch (err) {
+                    model.static = null;
                 }
             }
         }
     }
 
     if (!model.dynamic) {
-        let savedDynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
-        
-        if (!savedDynamicLabels) {
-            console.log("Local dynamic labels missing. Checking cloud for incremental base...");
-            const cloudData = await fetchCloudModel('dynamic', currentLang);
-            if (cloudData) {
-                model.dynamic = cloudData.model;
-                model.dynamicLabels = cloudData.labels;
-                model.dynamicHandRequirements = cloudData.handReqs || {};
-                ensureModelCompiled(model.dynamic, 'dynamic model');
-                console.log("Loaded dynamic base from cloud.");
-                return;
-            }
+        let cloudData = null;
+        if (navigator.onLine) {
+            cloudData = await fetchCloudModel('dynamic', currentLang);
         }
 
-        if (savedDynamicLabels) {
+        if (cloudData) {
+            model.dynamic = cloudData.model;
+            model.dynamicLabels = cloudData.labels;
+            model.dynamicHandRequirements = cloudData.handReqs || {};
+            ensureModelCompiled(model.dynamic, 'dynamic model');
+            console.log("Loaded dynamic base from cloud.");
             try {
-                model.dynamic = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
-                model.dynamicLabels = JSON.parse(savedDynamicLabels);
-                const handReqRaw = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`);
-                model.dynamicHandRequirements = handReqRaw ? JSON.parse(handReqRaw) : {};
-                ensureModelCompiled(model.dynamic, 'dynamic model');
-            } catch (err) {
-                console.warn('Unable to load saved dynamic model from LocalStorage. Checking cloud...');
-                const cloudData = await fetchCloudModel('dynamic', currentLang);
-                if (cloudData) {
-                    model.dynamic = cloudData.model;
-                    model.dynamicLabels = cloudData.labels;
-                    model.dynamicHandRequirements = cloudData.handReqs || {};
+                await model.dynamic.save(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
+                localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`, JSON.stringify(model.dynamicLabels));
+                localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`, JSON.stringify(model.dynamicHandRequirements));
+            } catch (e) {}
+        } else {
+            let savedDynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
+            if (savedDynamicLabels) {
+                try {
+                    model.dynamic = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
+                    model.dynamicLabels = JSON.parse(savedDynamicLabels);
+                    const handReqRaw = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`);
+                    model.dynamicHandRequirements = handReqRaw ? JSON.parse(handReqRaw) : {};
                     ensureModelCompiled(model.dynamic, 'dynamic model');
+                } catch (err) {
+                    model.dynamic = null;
                 }
             }
         }

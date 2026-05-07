@@ -136,6 +136,19 @@
             box-shadow: none;
         }
 
+        #sidebarTrainSaveBtn {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            border-color: rgba(34, 197, 94, 0.4);
+        }
+
+        #sidebarTrainSaveBtn:disabled {
+            background: #14532d;
+            border-color: #166534;
+            color: #d7f4d7;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
         .secondary-btn {
             background: rgba(15, 23, 42, 0.78);
             color: var(--studio-text);
@@ -1284,8 +1297,8 @@
                 </div>
                 <div id="mobileRecordingActions" class="mobile-recording-actions">
                     <button id="mobileTrainSaveBtn" class="mobile-train-save-btn" type="button">
-                        <span class="material-icons" style="font-size: 22px;">task_alt</span>
-                        <span>Train &amp; Save</span>
+                        <span class="material-icons" style="font-size: 22px;">cloud_upload</span>
+                        <span>Train &amp; Upload</span>
                     </button>
                     <button id="mobileSaveNextBtn" class="mobile-session-btn" type="button" disabled>
                         <span class="material-icons" style="font-size: 20px;">playlist_add</span>
@@ -1330,11 +1343,11 @@
                     <span class="material-icons" style="font-size: 20px;">undo</span>
                     Revert Latest Change
                 </button>
-                <button id="trainCollectedDataBtn" class="secondary-btn" type="button" title="Train all collected data locally before uploading"
-                    style="width: 100%; justify-content: center; display: flex; align-items: center; gap: 8px;">
-                    <span class="material-icons" style="font-size: 20px;">model_training</span>
-                    Train Collected Data
+                <button id="sidebarTrainSaveBtn" class="primary-btn" type="button" disabled style="width: 100%; justify-content: center; display: flex; align-items: center; gap: 8px;">
+                    <span class="material-icons" style="font-size: 20px;">cloud_upload</span>
+                    Train &amp; Save
                 </button>
+
                 <div style="display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
                     <button id="clearAllBtn" class="secondary-btn" title="Clear All Data"
                         style="color: #fecaca; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.2); display: flex; justify-content: center; align-items: center; width: 44px; height: 44px; border-radius: 50%; padding: 0;">

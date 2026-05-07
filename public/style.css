@@ -963,7 +963,7 @@ body.stt-active .caption-log-panel.visible {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    max-height: 0;
+    max-height: min(18vh, 220px);
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
