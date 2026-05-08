@@ -83,40 +83,92 @@
             grid-template-columns: 1fr;
         }
 
-        .back-btn {
+        .mobile-app-header {
+            display: flex !important;
+            align-items: center;
+            justify-content: space-between;
+            padding: calc(10px + env(safe-area-inset-top)) 14px 0 14px;
+            background: transparent;
             position: fixed;
-            top: 14px;
-            left: 14px;
-            padding: 0;
-            border-radius: 50%;
-            gap: 0;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .mobile-app-header > * {
+            pointer-events: all;
+        }
+        .app-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #e6edf3;
+            margin: 0;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-icon-btn {
             background: rgba(13, 20, 36, 0.7);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
-            backdrop-filter: blur(12px);
+            color: #e6edf3;
             width: 44px;
             height: 44px;
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 200;
+            cursor: pointer;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
             text-decoration: none;
-            color: white;
             transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
         }
 
-        .back-btn .back-symbol {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-            color: #fff;
-        }
-
-        .back-btn:hover {
+        .header-icon-btn:hover {
             background: rgba(30, 41, 59, 0.9);
             border-color: rgba(191, 219, 254, 0.24);
             transform: translateY(-1px);
+        }
+
+        .header-title-pill {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            padding: 11px 16px;
+            border-radius: 999px;
+            background: rgba(13, 20, 36, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #e6edf3;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+        }
+
+        .header-title-pill .material-icons {
+            color: #7dd3fc;
+            font-size: 20px;
+        }
+
+        .header-title-text {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .header-kicker {
+            color: #94a3b8;
+            font-size: 0.62rem;
+            font-weight: 700;
+            line-height: 1;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
         }
 
         /* Video Container - Full Screen */
@@ -438,35 +490,7 @@
                 flex: 0 0 42vh;
             }
 
-            /* Back button: icon-only circle */
-            .back-btn {
-                top: 14px;
-                left: 14px;
-                padding: 0;
-                border-radius: 50%;
-                gap: 0;
-                background: rgba(31, 41, 55, 0.68);
-                backdrop-filter: blur(6px);
-                width: 44px;
-                height: 44px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .back-btn::before {
-                content: none;
-            }
-            .back-btn span:last-child {
-                display: none;
-            }
-            .back-btn .back-symbol {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: #fff;
-                font-size: 28px;
-                line-height: 1;
-            }
+            /* Removed old back-btn overrides */
 
             /* Translation result strip — compact */
             .result-overlay {
@@ -687,14 +711,11 @@
                 min-width: 90px;
             }
 
-            .back-btn {
+            /* Header icon resizing */
+            .header-icon-btn {
                 width: 40px;
                 height: 40px;
                 padding: 0;
-            }
-
-            .back-btn .back-symbol {
-                font-size: 28px;
             }
 
             .speech-caption-log {
@@ -723,9 +744,19 @@
 
 <body>
 
-    <a href="index.html?mode=translation" class="back-btn" aria-label="Back to Home">
-        <span class="material-icons back-symbol" style="font-size: 28px;">chevron_left</span>
-    </a>
+    <div class="mobile-app-header">
+        <a href="index.html?mode=translation" class="header-icon-btn" aria-label="Back to home">
+            <span class="material-icons" style="font-size: 28px; margin-right: 2px;">chevron_left</span>
+        </a>
+        <div class="header-title-pill">
+            <span class="material-icons">translate</span>
+            <div class="header-title-text">
+                <span class="header-kicker">SignLink</span>
+                <h1 class="app-title">Live Translation</h1>
+            </div>
+        </div>
+        <div class="header-actions" style="min-width: 44px;"></div>
+    </div>
 
     <div class="translation-container">
 
