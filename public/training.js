@@ -721,6 +721,18 @@ function setupMobileSignSetup() {
                 return;
             }
 
+            const normalized = normalizeLabel(label);
+            
+            // Clear existing samples for this label to ensure we "replace" rather than "add one more"
+            // as requested by the user.
+            const existingCount = collectedData.filter(d => normalizeLabel(d.label) === normalized).length;
+            if (existingCount > 0) {
+                console.log(`Replacing existing data for "${normalized}" (${existingCount} samples).`);
+                collectedData = collectedData.filter(d => normalizeLabel(d.label) !== normalized);
+                persistCurrentTrainingDataLocally(currentLang);
+                renderDataList();
+            }
+
             // 1. Prepare for recording
             labelInput.value = label;
             isInSetupMode = true;
@@ -1407,6 +1419,15 @@ function startDynamicRecording() {
     }
     labelInput.value = label;
 
+    // Clear existing samples for this label to ensure we "replace" rather than "add one more"
+    const existingCount = collectedData.filter(d => normalizeLabel(d.label) === label).length;
+    if (existingCount > 0) {
+        console.log(`Replacing existing data for "${label}" (${existingCount} samples).`);
+        collectedData = collectedData.filter(d => normalizeLabel(d.label) !== label);
+        persistCurrentTrainingDataLocally(currentLang);
+        renderDataList();
+    }
+
     isDynamicRecording = true;
     dynamicFrameBuffer = [];
     lastFrameCaptureTime = 0;
@@ -1611,6 +1632,15 @@ function startStaticCollection() {
     }
     labelInput.value = label;
 
+    // Clear existing samples for this label to ensure we "replace" rather than "add one more"
+    const existingCount = collectedData.filter(d => normalizeLabel(d.label) === label).length;
+    if (existingCount > 0) {
+        console.log(`Replacing existing data for "${label}" (${existingCount} samples).`);
+        collectedData = collectedData.filter(d => normalizeLabel(d.label) !== label);
+        persistCurrentTrainingDataLocally(currentLang);
+        renderDataList();
+    }
+
     isCollecting = true;
     staticSessionSampleCount = 0;
     lastRecordedBatchCount = 0; // Start new batch tracking
@@ -1762,8 +1792,9 @@ function updateUIStats() {
 function renderDataList() {
     const groups = {};
     collectedData.forEach((sample) => {
-        if (!groups[sample.label]) groups[sample.label] = [];
-        groups[sample.label].push(sample);
+        const lbl = normalizeLabel(sample.label);
+        if (!groups[lbl]) groups[lbl] = [];
+        groups[lbl].push(sample);
     });
 
     // Always update total counts even if list is empty
@@ -1778,53 +1809,20 @@ function renderDataList() {
         return;
     }
 
-    const pendingReplacementSample = pendingReplacementSampleId
-        ? collectedData.find((sample) => sample.id === pendingReplacementSampleId)
-        : null;
-    const replacementBanner = pendingReplacementSample
-        ? `<div style="margin-bottom:12px; padding:12px 14px; border-radius:14px; background:rgba(59,130,246,0.14); border:1px solid rgba(96,165,250,0.35); display:flex; justify-content:space-between; gap:12px; align-items:center;">
-            <div style="display:flex; flex-direction:column; gap:3px;">
-                <span style="font-weight:700; color:var(--studio-text);">Replacement mode active</span>
-                <span style="font-size:0.78rem; color:var(--studio-text-muted);">Record a new sample to replace "${pendingReplacementSample.label}".</span>
-            </div>
-            <button class="secondary-btn" style="width:auto; padding:8px 10px;" onclick="cancelTrainingSampleReplacement()">Cancel</button>
-        </div>`
-        : '';
-
-    dataList.innerHTML = `${replacementBanner}${Object.entries(groups).map(([label, samples]) => {
+    dataList.innerHTML = Object.entries(groups).map(([label, samples]) => {
         const firstType = samples[0]?.type || 'static';
         const typeIcon = firstType === 'dynamic' ? '🔄' : '✋';
-        const typeLabel = firstType === 'dynamic' ? 'Dynamic' : 'Static';
         return `
-        <div class="data-item" style="flex-direction: column; align-items: stretch; gap: 10px;">
-            <div class="data-item-info" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-                <div style="display:flex; flex-direction:column; gap:4px;">
-                    <span class="data-label">${typeIcon} ${label}</span>
-                    <span class="data-count">${samples.length} samples • ${typeLabel}</span>
-                </div>
-                <button class="delete-btn" onclick="deleteLabel('${label}')" title="Delete all samples for ${label}">
-                    <span class="material-icons" style="font-size:18px;">delete_forever</span>
-                </button>
+        <div class="data-item">
+            <div class="data-item-info">
+                <span class="data-label">${typeIcon} ${label}</span>
+                <span class="data-count">${samples.length} samples</span>
             </div>
-            <div style="display:flex; flex-direction:column; gap:8px; margin-left:2px;">
-                ${samples.map((sample, index) => {
-                    const isPendingReplace = pendingReplacementSampleId === sample.id;
-                    return `
-                        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:12px; background:${isPendingReplace ? 'rgba(59,130,246,0.14)' : 'rgba(15,23,42,0.35)'}; border:1px solid ${isPendingReplace ? 'rgba(96,165,250,0.45)' : 'rgba(148,163,184,0.12)'};">
-                            <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-                                <span style="font-size:0.82rem; color:var(--studio-text); font-weight:600;">Sample ${index + 1}${isPendingReplace ? ' • replacing' : ''}</span>
-                                <span style="font-size:0.72rem; color:var(--studio-text-muted);">${sample.type === 'dynamic' ? 'Dynamic' : 'Static'}${sample.handCount ? ` • ${sample.handCount} hand(s)` : ''}${sample.recordedAt ? ` • ${new Date(sample.recordedAt).toLocaleString()}` : ''}</span>
-                            </div>
-                            <div style="display:flex; gap:8px; flex-shrink:0;">
-                                <button class="secondary-btn" style="width:auto; padding:8px 10px;" onclick="replaceTrainingSample('${sample.id}')">Replace</button>
-                                <button class="secondary-btn" style="width:auto; padding:8px 10px;" onclick="deleteTrainingSample('${sample.id}')">Delete</button>
-                            </div>
-                        </div>
-                    `;
-                }).join('')}
-            </div>
+            <button class="delete-btn" onclick="deleteLabel('${label}')" title="Delete all samples for ${label}">
+                <span class="material-icons" style="font-size:18px;">delete_forever</span>
+            </button>
         </div>
-    `}).join('')}`;
+    `}).join('');
 }
 
 window.replaceTrainingSample = (sampleId) => {
