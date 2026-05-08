@@ -178,34 +178,10 @@ async function loadSavedModelAndLabels() {
 
         const promises = [];
 
-        // 1. Load Server Model
-        const serverLoad = async () => {
-            console.log("Attempting to load Server Model...");
-            try {
-                const isASL = localStorageModelKey === 'my-asl-model';
-                const modelPath = isASL ? 'model/asl/model.json' : 'model/model.json';
-                const labelsPath = isASL ? 'model/asl/labels.json' : 'labels.json';
-
-                const response = await fetch(labelsPath);
-                if (response.ok) {
-                    serverLabels = normalizeLabelList(await response.json()).labels;
-                    try {
-                        serverModel = await tf.loadLayersModel(modelPath);
-                        console.log(`Server Model loaded (${serverLabels.length} labels from ${labelsPath})`);
-                    } catch (tfErr) {
-                        console.error("TFJS Server Model Load Error:", tfErr);
-                        serverModel = null;
-                    }
-                } else {
-                    console.warn(`${labelsPath} not found.`);
-                }
-            } catch (e) {
-                console.error("Server model load failed fatally:", e);
-                serverModel = null;
-            }
-            return Promise.resolve();
-        };
-        promises.push(serverLoad());
+        // 1. Skip Server Model - only use trained models from training_data.json
+        // Do not load pre-trained bundled models
+        serverModel = null;
+        serverLabels = [];
 
         // 2. Load Local Static Model
         const localLoad = async () => {
