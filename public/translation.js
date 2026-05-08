@@ -189,33 +189,18 @@ async function loadSavedModelAndLabels() {
             try {
                 let localModelKey = `localstorage://${localStorageModelKey}-static`;
 
-                let cloudData = null;
-                if (navigator.onLine) {
-                    cloudData = await fetchCloudModel('static', langSelect.value);
-                }
-
-                if (cloudData) {
-                    localLabels = cloudData.labels;
-                    localModel = cloudData.model;
-                    console.log("Loaded static model from Cloud.");
-                    try {
-                        await localModel.save(localModelKey);
+                let localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
+                if (localLabelData) {
+                    const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
+                    localLabels = normalizedLocalLabels.labels;
+                    if (normalizedLocalLabels.changed) {
                         localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(localLabels));
-                    } catch (e) {}
-                } else {
-                    let localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
-                    if (localLabelData) {
-                        const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
-                        localLabels = normalizedLocalLabels.labels;
-                        if (normalizedLocalLabels.changed) {
-                            localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(localLabels));
-                        }
-                        try {
-                            localModel = await tf.loadLayersModel(localModelKey);
-                            console.log(`Local Static Model loaded from LocalStorage (${localLabels.length} labels)`);
-                        } catch (e) {
-                            localModel = null;
-                        }
+                    }
+                    try {
+                        localModel = await tf.loadLayersModel(localModelKey);
+                        console.log(`Local Static Model loaded from LocalStorage (${localLabels.length} labels)`);
+                    } catch (e) {
+                        localModel = null;
                     }
                 }
             } catch (e) {
@@ -229,41 +214,25 @@ async function loadSavedModelAndLabels() {
         const dynamicLoad = async () => {
             console.log("Attempting to load Local Dynamic Model...");
             try {
-                let cloudData = null;
-                if (navigator.onLine) {
-                    cloudData = await fetchCloudModel('dynamic', langSelect.value);
-                }
 
-                if (cloudData) {
-                    localLabelsDynamic = cloudData.labels;
-                    localModelDynamic = cloudData.model;
-                    dynamicLabelHandRequirements = cloudData.handReqs || {};
-                    console.log("Loaded dynamic model from Cloud.");
-                    try {
-                        await localModelDynamic.save(`localstorage://${localStorageModelKey}-dynamic`);
+                let dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
+                if (dynamicLabelData) {
+                    const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
+                    localLabelsDynamic = normalizedDynamicLabels.labels;
+                    if (normalizedDynamicLabels.changed) {
                         localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(localLabelsDynamic));
+                    }
+                    const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
+                    const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
+                    dynamicLabelHandRequirements = normalizedHandReqs.map;
+                    if (normalizedHandReqs.changed) {
                         localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-                    } catch (e) {}
-                } else {
-                    let dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
-                    if (dynamicLabelData) {
-                        const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
-                        localLabelsDynamic = normalizedDynamicLabels.labels;
-                        if (normalizedDynamicLabels.changed) {
-                            localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(localLabelsDynamic));
-                        }
-                        const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
-                        const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
-                        dynamicLabelHandRequirements = normalizedHandReqs.map;
-                        if (normalizedHandReqs.changed) {
-                            localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-                        }
-                        try {
-                            localModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
-                            console.log(`Local Dynamic Model loaded from LocalStorage (${localLabelsDynamic.length} labels)`);
-                        } catch (e) {
-                            localModelDynamic = null;
-                        }
+                    }
+                    try {
+                        localModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
+                        console.log(`Local Dynamic Model loaded from LocalStorage (${localLabelsDynamic.length} labels)`);
+                    } catch (e) {
+                        localModelDynamic = null;
                     }
                 }
             } catch (e) {
@@ -489,6 +458,15 @@ function preprocessLandmarks(landmarks, mirrorX = false) {
     }
 
     return normalized;
+}
+
+function padLandmarksTo126(landmarks) {
+    // Pad single-hand landmarks (63 values) to two-hand format (126 values)
+    if (landmarks.length === 126) return landmarks;
+    if (landmarks.length === 63) {
+        return [...landmarks, ...new Array(63).fill(0)];
+    }
+    return landmarks;
 }
 
 function getSmoothedPrediction(predLabel) {
@@ -769,7 +747,7 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             holdStartTime = 0;
         }
 
-        const tensorNormal = tf.tensor2d([flatNormal]);
+        const tensorNormal = tf.tensor2d([padLandmarksTo126(flatNormal)]);
 
         // Collect candidates from all available models
         let candidates = [];
@@ -782,7 +760,7 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             }
 
             if (pNorm.conf < 0.7) {
-                const tensorFlipped = tf.tensor2d([preprocessLandmarks(landmarks, true)]);
+                const tensorFlipped = tf.tensor2d([padLandmarksTo126(preprocessLandmarks(landmarks, true))]);
                 const pFlip = predictSingleModel(serverModel, serverLabels, tensorFlipped);
                 if (!shouldSkipStaticLabel(pFlip.label)) {
                     candidates.push({ ...pFlip, source: 'Server(M)' });
@@ -820,7 +798,7 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             // Wait at least 1 second to analyze motion before predicting dynamic signs
             if (dynamicFrameBuffer.length >= 1 && dynamicReady) {
                 // Pad to MAX_DYNAMIC_FRAMES
-                const paddedFrames = [...dynamicFrameBuffer];
+                const paddedFrames = dynamicFrameBuffer.map(frame => padLandmarksTo126(frame));
                 const lastFrame = paddedFrames[paddedFrames.length - 1];
                 while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
                     paddedFrames.push(lastFrame);

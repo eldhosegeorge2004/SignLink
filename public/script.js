@@ -2311,40 +2311,25 @@ async function loadModelsAndLabels() {
 
     // load local static model if available
     try {
-        let cloudData = null;
-        if (navigator.onLine) {
-            cloudData = await fetchCloudModel('static', currentMode);
-        }
-
-        if (cloudData) {
-            uniqueLabels = cloudData.labels;
-            model = cloudData.model;
-            console.log(`Cloud static model loaded (${uniqueLabels.length} labels)`);
-            try {
-                await model.save(`localstorage://${localStorageModelKey}-static`);
+        const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
+        if (localLabelData) {
+            const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
+            uniqueLabels = normalizedLocalLabels.labels;
+            if (normalizedLocalLabels.changed) {
                 localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
-            } catch (e) {}
-        } else {
-            const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
-            if (localLabelData) {
-                const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
-                uniqueLabels = normalizedLocalLabels.labels;
-                if (normalizedLocalLabels.changed) {
-                    localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
-                }
-                try {
-                    model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
-                    console.log(`Local static model loaded (${uniqueLabels.length} labels)`);
-                } catch (e) {
-                    model = null;
-                }
-                const staticReqData = localStorage.getItem(`${localStorageLabelKey}-static-hand-req`);
-                if (staticReqData) {
-                    const normalizedStaticHandReqs = normalizeHandRequirementMap(JSON.parse(staticReqData));
-                    staticLabelHandRequirements = normalizedStaticHandReqs.map;
-                    if (normalizedStaticHandReqs.changed) {
-                        localStorage.setItem(`${localStorageLabelKey}-static-hand-req`, JSON.stringify(staticLabelHandRequirements));
-                    }
+            }
+            try {
+                model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
+                console.log(`Local static model loaded (${uniqueLabels.length} labels)`);
+            } catch (e) {
+                model = null;
+            }
+            const staticReqData = localStorage.getItem(`${localStorageLabelKey}-static-hand-req`);
+            if (staticReqData) {
+                const normalizedStaticHandReqs = normalizeHandRequirementMap(JSON.parse(staticReqData));
+                staticLabelHandRequirements = normalizedStaticHandReqs.map;
+                if (normalizedStaticHandReqs.changed) {
+                    localStorage.setItem(`${localStorageLabelKey}-static-hand-req`, JSON.stringify(staticLabelHandRequirements));
                 }
             }
         }
@@ -2354,41 +2339,24 @@ async function loadModelsAndLabels() {
 
     // load local dynamic model if available
     try {
-        let cloudData = null;
-        if (navigator.onLine) {
-            cloudData = await fetchCloudModel('dynamic', currentMode);
-        }
-
-        if (cloudData) {
-            uniqueLabelsDynamic = cloudData.labels;
-            modelDynamic = cloudData.model;
-            dynamicLabelHandRequirements = cloudData.handReqs || {};
-            console.log(`Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
-            try {
-                await modelDynamic.save(`localstorage://${localStorageModelKey}-dynamic`);
+        const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
+        if (dynamicLabelData) {
+            const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
+            uniqueLabelsDynamic = normalizedDynamicLabels.labels;
+            if (normalizedDynamicLabels.changed) {
                 localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
+            }
+            const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
+            const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
+            dynamicLabelHandRequirements = normalizedHandReqs.map;
+            if (normalizedHandReqs.changed) {
                 localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-            } catch (e) {}
-        } else {
-            const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
-            if (dynamicLabelData) {
-                const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
-                uniqueLabelsDynamic = normalizedDynamicLabels.labels;
-                if (normalizedDynamicLabels.changed) {
-                    localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
-                }
-                const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
-                const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
-                dynamicLabelHandRequirements = normalizedHandReqs.map;
-                if (normalizedHandReqs.changed) {
-                    localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-                }
-                try {
-                    modelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
-                    console.log(`Local dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
-                } catch (e) {
-                    modelDynamic = null;
-                }
+            }
+            try {
+                modelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
+                console.log(`Local dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
+            } catch (e) {
+                modelDynamic = null;
             }
         }
     } catch (e) {
@@ -2572,6 +2540,15 @@ function preprocessLandmarks(handLandmarks) {
     return normalized;
 }
 
+function padLandmarksTo126(landmarks) {
+    // Pad single-hand landmarks (63 values) to two-hand format (126 values)
+    if (landmarks.length === 126) return landmarks;
+    if (landmarks.length === 63) {
+        return [...landmarks, ...new Array(63).fill(0)];
+    }
+    return landmarks;
+}
+
 function getSmoothedPrediction(predLabel) {
     predictionBuffer.push(predLabel);
     if (predictionBuffer.length > 15) predictionBuffer.shift();
@@ -2674,6 +2651,7 @@ function onResults(results) {
 
         // Preprocess for AI (Normalization is Scale/Translation invariant)
         const flatLandmarks = preprocessLandmarks(handLandmarks);
+        const paddedLandmarks = padLandmarksTo126(flatLandmarks);
 
         const detectedHandCount = Math.min(2, handLandmarks.length);
 
@@ -2681,7 +2659,7 @@ function onResults(results) {
         if (isCollecting) {
             // Collection disabled
         } else {
-            runPrediction(flatLandmarks, detectedHandCount);
+            runPrediction(paddedLandmarks, detectedHandCount);
         }
     } else {
         // If hand disappears while spelling, finalize immediately
@@ -2931,8 +2909,8 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             holdStartTime = 0;
         }
 
-        const input126 = tf.tensor2d([flatLandmarks]);
-        const input63 = tf.tensor2d([flatLandmarks.slice(0, 63)]);
+        const input126 = tf.tensor2d([padLandmarksTo126(flatLandmarks)]);
+        const input63 = tf.tensor2d([padLandmarksTo126(flatLandmarks).slice(0, 63)]);
         let candidates = [];
 
         // server predictions (ISL only, only when hand is still)
@@ -2961,7 +2939,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 dynamicBufferStartTime = Date.now();
             }
 
-            dynamicFrameBuffer.push(flatLandmarks);
+            dynamicFrameBuffer.push(padLandmarksTo126(flatLandmarks));
 
             if (dynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
                 dynamicFrameBuffer.shift();
