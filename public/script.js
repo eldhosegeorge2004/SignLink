@@ -223,6 +223,7 @@ let isMicOn = true;
 let isCamOn = true;
 let isTTSOn = false;
 let isSTTOn = false;
+let isRemoteSTTRequested = false;
 let lastSpokenTime = 0;
 let lastRemoteSpokenTime = 0;
 let lastRemoteVolumeActiveTime = 0;
@@ -300,14 +301,12 @@ applyRemoteAudioPreference();
 updateOptionsMenuUI();
 
 function disableSTTWithStatus(message) {
-    isSTTOn = false;
+    isRemoteSTTRequested = false;
     isRecognitionActive = false;
     if (sttRestartTimer) {
         clearTimeout(sttRestartTimer);
         sttRestartTimer = null;
     }
-    updateSTTUI();
-    document.body.classList.remove('stt-active');
     if (sttPausedCallMic) {
         restoreCallMicAfterNativeSTT().catch((error) => {
             console.error('STT: Failed to restore microphone after disabling captions.', error);
@@ -836,9 +835,6 @@ async function initSTT() {
 
         const capitalized = finalTranscript.trim();
 
-        appendCaptionLog("You", capitalized);
-        displayVCSignCards(capitalized);
-
         if (supabaseChannel) {
             supabaseChannel.send({
                 type: 'broadcast',
@@ -866,7 +862,7 @@ async function initSTT() {
     };
 
     const scheduleSTTRestart = (delayMs = 450) => {
-        if (!isSTTOn || !recognition) return;
+        if (!isRemoteSTTRequested || !recognition) return;
         if (sttRestartTimer) {
             clearTimeout(sttRestartTimer);
             sttRestartTimer = null;
@@ -874,7 +870,7 @@ async function initSTT() {
 
         sttRestartTimer = setTimeout(async () => {
             sttRestartTimer = null;
-            if (!isSTTOn || !recognition) return;
+            if (!isRemoteSTTRequested || !recognition) return;
 
             console.log("STT: Attempting auto-restart...");
             try {
@@ -1072,38 +1068,64 @@ function updateTTSUI() {
 updateTTSUI(); // Sync at startup
 
 function startSTTSession() {
-    if (!isSTTSupported) return;
     isSTTOn = true;
     updateSTTUI();
     document.body.classList.add('stt-active');
 
-    (async () => {
-        if (!recognition) {
-            await initSTT();
-        }
-        if (!recognition || isRecognitionActive) return;
+    if (captionLogList) {
+        captionLogList.innerHTML = '';
+        ensureCaptionPlaceholder();
+    }
+    setCaptionLogCollapsed(false);
 
-        try {
-            await releaseCallMicForNativeSTT();
-            await recognition.start();
-            hideVCSignCards();
-        } catch (e) {
-            console.error("Failed to start Recognition:", e);
-            await restoreCallMicAfterNativeSTT();
-            const reason = e && (e.message || String(e));
-            disableSTTWithStatus(`Speech-to-text could not start${reason ? `: ${reason}` : '.'}`);
-        }
-    })();
+    if (supabaseChannel) {
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'stt-request',
+            payload: { enabled: true }
+        });
+    }
 }
 
 function stopSTTSession() {
     isSTTOn = false;
+    updateSTTUI();
+    document.body.classList.remove('stt-active');
+    hideVCSignCards();
+
+    if (supabaseChannel) {
+        supabaseChannel.send({
+            type: 'broadcast',
+            event: 'stt-request',
+            payload: { enabled: false }
+        });
+    }
+}
+
+async function startBackgroundSTT() {
+    if (!isSTTSupported) return;
+    if (!recognition) {
+        await initSTT();
+    }
+    if (!recognition || isRecognitionActive) return;
+
+    try {
+        await releaseCallMicForNativeSTT();
+        await recognition.start();
+        console.log("Background STT started for remote peer");
+    } catch (e) {
+        console.error("Failed to start Recognition:", e);
+        await restoreCallMicAfterNativeSTT();
+        const reason = e && (e.message || String(e));
+        disableSTTWithStatus(`Speech-to-text could not start${reason ? `: ${reason}` : '.'}`);
+    }
+}
+
+function stopBackgroundSTT() {
     if (sttRestartTimer) {
         clearTimeout(sttRestartTimer);
         sttRestartTimer = null;
     }
-    updateSTTUI();
-    document.body.classList.remove('stt-active');
     if (recognition && isRecognitionActive) {
         Promise.resolve(recognition.stop()).catch((error) => {
             console.error("Failed to stop Recognition:", error);
@@ -1117,7 +1139,6 @@ function stopSTTSession() {
             console.error('STT: Failed to restore microphone after stopping captions.', error);
         });
     }
-    hideVCSignCards();
 }
 
 if (sttToggleBtn) {
@@ -1965,8 +1986,16 @@ joinBtn.addEventListener('click', async (e) => {
                 }
             }
         })
+        .on('broadcast', { event: 'stt-request' }, data => {
+            const payload = data.payload || data;
+            isRemoteSTTRequested = !!payload.enabled;
+            if (isRemoteSTTRequested) {
+                startBackgroundSTT();
+            } else {
+                stopBackgroundSTT();
+            }
+        })
         .on('broadcast', { event: 'speech-message' }, data => {
-            // Note: isSTTOn check removed to allow one-way translation (everyone sees remote captions)
             const payload = data.payload || data;
             if (payload.text && payload.text.trim()) {
                 if (payload.name) setRemoteName(payload.name);
@@ -1976,8 +2005,10 @@ joinBtn.addEventListener('click', async (e) => {
                 lastRemoteSpokenText = remoteText;
                 lastRemoteSpokenTime = Date.now();
 
-                appendCaptionLog(remoteName, remoteText);
-                displayVCSignCards(remoteText);
+                if (isSTTOn) {
+                    appendCaptionLog(remoteName, remoteText);
+                    displayVCSignCards(remoteText);
+                }
             }
         })
         .on('broadcast', { event: 'chat-message' }, (data) => {
