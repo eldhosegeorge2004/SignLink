@@ -138,92 +138,41 @@ async function migrateLocalDataToSupabase() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/training-data — read training data from Supabase
+// GET /api/training-data — read training data from local file
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/training-data', async (req, res) => {
     try {
-        const { data, error } = await supabase
-            .from('training_data')
-            .select('*')
-            .order('id', { ascending: true });
+        let data = { ISL: [], ASL: [] };
 
-        if (error) throw error;
-
-        // Group by lang and reshape back to the format the client expects
-        const result = { ISL: [], ASL: [] };
-        for (const row of data) {
-            const sample = {
-                label: row.label,
-                type: row.type,
-                isTrained: row.is_trained,
-                recordedAt: row.recorded_at,
-                trainedAt: row.trained_at,
-            };
-            if (row.type === 'dynamic') {
-                sample.frames = row.frames;
-                sample.handCount = row.hand_count;
-                sample.frameCount = row.frames ? row.frames.length : 0;
-            } else {
-                sample.landmarks = row.landmarks;
-            }
-            if (!result[row.lang]) result[row.lang] = [];
-            result[row.lang].push(sample);
+        if (fs.existsSync(TRAINING_DATA_FILE)) {
+            const raw = fs.readFileSync(TRAINING_DATA_FILE, 'utf8');
+            data = JSON.parse(raw);
         }
 
-        res.json(result);
+        res.json(data);
     } catch (err) {
-        console.error('Error reading training data from Supabase:', err.message);
+        console.error('Error reading training data from local file:', err.message);
         res.status(500).json({ error: 'Failed to read training data' });
     }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/training-data — save training data to Supabase
+// POST /api/training-data — save training data to local file
 // Replaces ALL data for the language(s) in the payload (same as before)
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/training-data', async (req, res) => {
     try {
-        const allData = req.body; // { ISL: [...], ASL: [...] }
+        const allData = req.body || { ISL: [], ASL: [] };
 
-        for (const lang of Object.keys(allData)) {
-            const samples = allData[lang] || [];
+        const dataToSave = {
+            ISL: Array.isArray(allData.ISL) ? allData.ISL : [],
+            ASL: Array.isArray(allData.ASL) ? allData.ASL : []
+        };
 
-            // Delete existing rows for this language
-            const { error: deleteErr } = await supabase
-                .from('training_data')
-                .delete()
-                .eq('lang', lang);
-
-            if (deleteErr) throw deleteErr;
-
-            if (samples.length === 0) continue;
-
-            // Insert in batches of 500
-            const BATCH = 500;
-            for (let i = 0; i < samples.length; i += BATCH) {
-                const batch = samples.slice(i, i + BATCH).map(s => ({
-                    lang,
-                    label: s.label,
-                    type: s.type || 'static',
-                    landmarks: s.landmarks || null,
-                    frames: s.frames || null,
-                    hand_count: s.handCount || null,
-                    is_trained: s.isTrained !== undefined ? s.isTrained : false,
-                    recorded_at: s.recordedAt || null,
-                    trained_at: s.trainedAt || null
-                }));
-
-                const { error: insertErr } = await supabase
-                    .from('training_data')
-                    .insert(batch);
-
-                if (insertErr) throw insertErr;
-            }
-        }
-
+        fs.writeFileSync(TRAINING_DATA_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
         res.json({ success: true });
     } catch (err) {
-        console.error('Error saving training data to Supabase:', err.message);
+        console.error('Error saving training data to local file:', err.message);
         res.status(500).json({ error: 'Failed to save training data' });
     }
 });

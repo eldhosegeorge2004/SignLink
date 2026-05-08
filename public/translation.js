@@ -159,7 +159,7 @@ if (ttsBtn) {
     ttsBtn.classList.remove('red-btn');
 }
 
-// Load Models and Labels (Hybrid)
+// Load Models and Labels — uses training_data.json exclusively (no Supabase, no localStorage)
 async function loadSavedModelAndLabels() {
     try {
         // Reset State
@@ -178,7 +178,7 @@ async function loadSavedModelAndLabels() {
 
         const promises = [];
 
-        // 1. Load Server Model
+        // 1. Load bundled server model (pre-trained, shipped with the app)
         const serverLoad = async () => {
             console.log("Attempting to load Server Model...");
             try {
@@ -203,114 +203,48 @@ async function loadSavedModelAndLabels() {
                 console.error("Server model load failed fatally:", e);
                 serverModel = null;
             }
-            return Promise.resolve();
         };
         promises.push(serverLoad());
 
-        // 2. Load Local Static Model
+        // 2. Build local static + dynamic models from training_data.json only
         const localLoad = async () => {
-            console.log("Attempting to load Local Static Model...");
+            console.log("Building local models from training_data.json...");
             try {
-                let localModelKey = `localstorage://${localStorageModelKey}-static`;
+                const lang = localStorageModelKey === 'my-asl-model' ? 'ASL' : 'ISL';
+                const result = await window.loadModelsFromTrainingData(lang);
 
-                let cloudData = null;
-                if (navigator.onLine) {
-                    cloudData = await fetchCloudModel('static', langSelect.value);
+                if (result.staticModel) {
+                    localModel  = result.staticModel;
+                    localLabels = result.staticLabels;
+                    console.log(`Local Static Model ready (${localLabels.length} labels from training_data.json)`);
                 }
-
-                if (cloudData) {
-                    localLabels = cloudData.labels;
-                    localModel = cloudData.model;
-                    console.log("Loaded static model from Cloud.");
-                    try {
-                        await localModel.save(localModelKey);
-                        localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(localLabels));
-                    } catch (e) {}
-                } else {
-                    let localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
-                    if (localLabelData) {
-                        const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
-                        localLabels = normalizedLocalLabels.labels;
-                        if (normalizedLocalLabels.changed) {
-                            localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(localLabels));
-                        }
-                        try {
-                            localModel = await tf.loadLayersModel(localModelKey);
-                            console.log(`Local Static Model loaded from LocalStorage (${localLabels.length} labels)`);
-                        } catch (e) {
-                            localModel = null;
-                        }
-                    }
+                if (result.dynamicModel) {
+                    localModelDynamic          = result.dynamicModel;
+                    localLabelsDynamic         = result.dynamicLabels;
+                    dynamicLabelHandRequirements = result.handReqs || {};
+                    console.log(`Local Dynamic Model ready (${localLabelsDynamic.length} labels from training_data.json)`);
                 }
             } catch (e) {
-                console.warn("Local static model load failed:", e);
-                localModel = null;
+                console.warn("Local model build from training_data.json failed:", e);
+                localModel        = null;
+                localModelDynamic = null;
             }
         };
         promises.push(localLoad());
 
-        // 3. Load Local Dynamic Model
-        const dynamicLoad = async () => {
-            console.log("Attempting to load Local Dynamic Model...");
-            try {
-                let cloudData = null;
-                if (navigator.onLine) {
-                    cloudData = await fetchCloudModel('dynamic', langSelect.value);
-                }
-
-                if (cloudData) {
-                    localLabelsDynamic = cloudData.labels;
-                    localModelDynamic = cloudData.model;
-                    dynamicLabelHandRequirements = cloudData.handReqs || {};
-                    console.log("Loaded dynamic model from Cloud.");
-                    try {
-                        await localModelDynamic.save(`localstorage://${localStorageModelKey}-dynamic`);
-                        localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(localLabelsDynamic));
-                        localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-                    } catch (e) {}
-                } else {
-                    let dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
-                    if (dynamicLabelData) {
-                        const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
-                        localLabelsDynamic = normalizedDynamicLabels.labels;
-                        if (normalizedDynamicLabels.changed) {
-                            localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(localLabelsDynamic));
-                        }
-                        const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
-                        const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
-                        dynamicLabelHandRequirements = normalizedHandReqs.map;
-                        if (normalizedHandReqs.changed) {
-                            localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-                        }
-                        try {
-                            localModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
-                            console.log(`Local Dynamic Model loaded from LocalStorage (${localLabelsDynamic.length} labels)`);
-                        } catch (e) {
-                            localModelDynamic = null;
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn("Local dynamic model load failed:", e);
-            }
-        };
-        promises.push(dynamicLoad());
-
-        // Wait for all promises (use allSettled so one failure doesn't kill others)
+        // Wait for both loads
         await Promise.allSettled(promises);
 
-        // 4. UI Feedback - only show error if no models found
+        // 3. UI Feedback
         const loadedModels = [];
-        if (serverModel) loadedModels.push("Server");
-        if (localModel) loadedModels.push("Local Static");
+        if (serverModel)       loadedModels.push("Server");
+        if (localModel)        loadedModels.push("Local Static");
         if (localModelDynamic) loadedModels.push("Local Dynamic");
 
-        // Don't show models loaded message - keep display clear
         if (loadedModels.length === 0) {
             setResultText("No models found. Please train in AI Training mode.");
         }
 
-        // "Go to Training" button if absolutely nothing
         if (!serverModel && !localModel && !localModelDynamic) {
             if (!document.getElementById('goto-training-btn')) {
                 const btn = document.createElement('button');
@@ -330,52 +264,6 @@ async function loadSavedModelAndLabels() {
     } catch (e) {
         console.error("Error in hybrid load:", e);
         setResultText("Error loading systems.");
-    }
-}
-async function fetchCloudModel(type, lang) {
-    try {
-        const langLower = lang.toLowerCase();
-        const candidates = await window.getStorageBucketCandidates('models');
-        
-        for (const modelsBucket of candidates) {
-            // 1. Get Public URLs for labels and model
-            const { data: labelsUrlData } = window.supabaseClient.storage
-                .from(modelsBucket)
-                .getPublicUrl(`${langLower}/${type}/labels.json`);
-                
-            const { data: modelUrlData } = window.supabaseClient.storage
-                .from(modelsBucket)
-                .getPublicUrl(`${langLower}/${type}/model.json`);
-
-            // 2. Load Labels
-            const labelsRes = await fetch(labelsUrlData.publicUrl);
-            if (!labelsRes.ok) {
-                continue;
-            }
-
-            const labels = normalizeLabelList(await labelsRes.json()).labels;
-            
-            // 3. Load Model
-            const model = await tf.loadLayersModel(modelUrlData.publicUrl);
-            
-            let handReqs = null;
-            if (type === 'dynamic') {
-                const { data: handReqsUrlData } = window.supabaseClient.storage
-                    .from(modelsBucket)
-                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
-                const reqRes = await fetch(handReqsUrlData.publicUrl);
-                if (reqRes.ok) {
-                    handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
-                }
-            }
-            
-            return { model, labels, handReqs };
-        }
-
-        return null;
-    } catch (err) {
-        console.warn(`Cloud model fetch failed for ${type}:`, err);
-        return null;
     }
 }
 

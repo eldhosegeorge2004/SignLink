@@ -98,6 +98,7 @@ let isInSetupMode = false;
 let lastRecordedBatchCount = 0;
 let sessionHistory = [];
 let lastTrainSaveState = { lang: '', label: '', sampleCount: 0 };
+let pendingReplacementSampleId = null;
 
 function openDataDrawer() {
     if (!dataPanel) return;
@@ -215,6 +216,56 @@ function loadLocalDraftData(lang = currentLang) {
     } catch (err) {
         return [];
     }
+}
+
+function generateSampleId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+    }
+
+    return `sample_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function ensureSampleIds(samples) {
+    return (samples || []).map((sample) => ({
+        ...sample,
+        id: sample.id || generateSampleId()
+    }));
+}
+
+function setPendingReplacement(sampleId) {
+    pendingReplacementSampleId = sampleId || null;
+    renderDataList();
+    updateMobileTrainSaveVisibility();
+}
+
+function clearPendingReplacement() {
+    pendingReplacementSampleId = null;
+    renderDataList();
+    updateMobileTrainSaveVisibility();
+}
+
+function upsertTrainingSample(sample) {
+    const nextSample = {
+        ...sample,
+        id: sample.id || pendingReplacementSampleId || generateSampleId(),
+        isTrained: false,
+        trainedAt: null
+    };
+
+    const replaceIndex = pendingReplacementSampleId
+        ? collectedData.findIndex((entry) => entry.id === pendingReplacementSampleId)
+        : -1;
+
+    if (replaceIndex >= 0) {
+        collectedData[replaceIndex] = nextSample;
+    } else {
+        collectedData.push(nextSample);
+    }
+
+    pendingReplacementSampleId = null;
+    persistCurrentTrainingDataLocally(currentLang);
+    return nextSample;
 }
 
 function toCloudSignLabel(label) {
@@ -736,24 +787,15 @@ function setupMobileSignSetup() {
                 showProcessingModal("Training & Saving...", "Training all newly added signs for Live Translation and Video Call.");
                 const trainingResult = await runInternalTraining();
 
-                updateProcessingModal("Saving Model...", "Saving the trained model on this device...");
-                const savedAnyModel = await saveTrainedModelsToLocalStorage();
-                if (!savedAnyModel) {
-                    throw new Error("No trained model was available to save.");
-                }
-
                 updateProcessingModal("Uploading Details...", "Uploading sign cards and reference images...");
                 await uploadAllPendingSignCards();
 
-                updateProcessingModal("Syncing Data...", "Saving hand landmarks to the cloud database...");
+                updateProcessingModal("Saving Data...", "Saving hand landmarks to training_data.json...");
                 await saveToServer();
-
-                updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
-                await uploadTrainedModelsToCloud();
 
                 hideProcessingModal();
 
-                // Clear local sign data now that everything is safely on the cloud
+                // Clear local sign data now that everything is safely saved to training_data.json
                 collectedData = [];
                 sessionHistory = [];
                 clearLocalDraftDataForLanguage(currentLang);
@@ -762,8 +804,8 @@ function setupMobileSignSetup() {
                 updateMobileTrainSaveVisibility();
 
                 const successMsg = trainingResult?.alreadyTrained
-                    ? "All recorded signs were already trained and saved to cloud."
-                    : "All recorded signs trained and saved to cloud.";
+                    ? "All recorded signs were already trained and saved to training_data.json."
+                    : "All recorded signs trained and saved to training_data.json.";
                 showToast(successMsg, 'task_alt');
             } catch (err) {
                 console.error('Train & save failed:', err);
@@ -790,24 +832,15 @@ function setupMobileSignSetup() {
                 showProcessingModal("Training & Saving...", "Training all newly added signs for Live Translation and Video Call.");
                 const trainingResult = await runInternalTraining();
 
-                updateProcessingModal("Saving Model...", "Saving the trained model on this device...");
-                const savedAnyModel = await saveTrainedModelsToLocalStorage();
-                if (!savedAnyModel) {
-                    throw new Error("No trained model was available to save.");
-                }
-
                 updateProcessingModal("Uploading Details...", "Uploading sign cards and reference images...");
                 await uploadAllPendingSignCards();
 
-                updateProcessingModal("Syncing Data...", "Saving hand landmarks to the cloud database...");
+                updateProcessingModal("Saving Data...", "Saving hand landmarks to training_data.json...");
                 await saveToServer();
-
-                updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
-                await uploadTrainedModelsToCloud();
 
                 hideProcessingModal();
 
-                // Clear local sign data now that everything is safely on the cloud
+                // Clear local sign data now that everything is safely saved to training_data.json
                 collectedData = [];
                 sessionHistory = [];
                 clearLocalDraftDataForLanguage(currentLang);
@@ -817,8 +850,8 @@ function setupMobileSignSetup() {
                 updateSidebarTrainSaveState();
 
                 const successMsg = trainingResult?.alreadyTrained
-                    ? "All recorded signs were already trained and saved to cloud."
-                    : "All recorded signs trained and saved to cloud.";
+                    ? "All recorded signs were already trained and saved to training_data.json."
+                    : "All recorded signs trained and saved to training_data.json.";
                 showToast(successMsg, 'task_alt');
             } catch (err) {
                 console.error('Train & save failed:', err);
@@ -1214,24 +1247,12 @@ function updateMobileSessionActionState() {
     mobileSaveNextBtn.disabled = !shouldShow || sampleCount === 0;
 }
 
+// saveTrainedModelsToLocalStorage removed — model weights are ephemeral.
+// Training data (landmarks) is the source of truth, stored in training_data.json.
+// Models are rebuilt at runtime by model-loader.js from training_data.json.
 async function saveTrainedModelsToLocalStorage() {
-    const keys = STORAGE_KEYS[currentLang];
-    let savedAnyModel = false;
-
-    if (model?.static && model.staticLabels) {
-        await model.static.save(`localstorage://${keys.model}-static`);
-        localStorage.setItem(`${keys.labels}-static`, JSON.stringify(model.staticLabels));
-        savedAnyModel = true;
-    }
-
-    if (model?.dynamic && model.dynamicLabels) {
-        await model.dynamic.save(`localstorage://${keys.model}-dynamic`);
-        localStorage.setItem(`${keys.labels}-dynamic`, JSON.stringify(model.dynamicLabels));
-        localStorage.setItem(`${keys.labels}-dynamic-hand-req`, JSON.stringify(model.dynamicHandRequirements || {}));
-        savedAnyModel = true;
-    }
-
-    return savedAnyModel;
+    console.log('[training] Model weights not persisted — rebuilt from training_data.json at runtime.');
+    return true; // signal success so callers continue normally
 }
 
 function setMobileBottomBarMode(mode) {
@@ -1319,18 +1340,16 @@ function arrayBufferToBase64(buffer) {
     return btoa(binary);
 }
 
-// Check if models are already saved in localStorage
+// Check if training data exists (source of truth is training_data.json, not localStorage)
 async function checkForSavedModels() {
-    const staticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
-    const dynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
+    const staticCount  = collectedData.filter(s => s.type === 'static' || !s.type).length;
+    const dynamicCount = collectedData.filter(s => s.type === 'dynamic').length;
 
-    if (staticLabels || dynamicLabels) {
-        let modelInfo = "Saved models found: ";
-        if (staticLabels) modelInfo += "Static ✋ ";
-        if (dynamicLabels) modelInfo += "Dynamic 🔄";
-        statusMsg.innerText = `✅ ${modelInfo}. You can use these in Live Translation!`;
-        if (saveBtn) saveBtn.disabled = true;
-
+    if (staticCount > 0 || dynamicCount > 0) {
+        let modelInfo = 'Training data found: ';
+        if (staticCount  > 0) modelInfo += `Static ✋ (${staticCount} samples) `;
+        if (dynamicCount > 0) modelInfo += `Dynamic 🔄 (${dynamicCount} samples)`;
+        statusMsg.innerText = `✅ ${modelInfo}. Train to use in Live Translation!`;
     }
 }
 
@@ -1548,10 +1567,16 @@ function onResults(results) {
     canvasCtx.restore();
 }
 
-function saveDataPoint(label, landmarks, type = 'static') {
+function saveDataPoint(label, landmarks, type = 'static', handCount = 1) {
     const normalizedLabel = normalizeLabel(label);
     if (!normalizedLabel) return;
-    collectedData.push({ label: normalizedLabel, landmarks, type, isTrained: false, recordedAt: Date.now() });
+    upsertTrainingSample({
+        label: normalizedLabel,
+        landmarks,
+        type,
+        handCount,
+        recordedAt: Date.now()
+    });
     updateUIStats();
 }
 
@@ -1645,14 +1670,13 @@ async function saveDynamicSign(label, frames) {
     const normalizedLabel = normalizeLabel(label);
     if (!normalizedLabel) return;
 
-    collectedData.push({
+    upsertTrainingSample({
         label: normalizedLabel,
         type: 'dynamic',
         frames: frames,
         handCount: dynamicRecordingMaxHands,
         frameCount: frames.length,
-        recordedAt: Date.now(),
-        isTrained: false
+        recordedAt: Date.now()
     });
     sessionHistory.push({
         label: normalizedLabel,
@@ -1680,56 +1704,24 @@ async function saveDynamicSign(label, frames) {
 }
 
 // --- Data Management ---
+// Loads training data exclusively from the local training_data.json file via the server API.
 async function loadDataFromServer() {
     try {
-        const { data, error } = await window.supabaseClient
-            .from('training_data')
-            .select('*')
-            .order('id', { ascending: true });
+        const response = await fetch('/api/training-data');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-        if (error) throw error;
-
-        // Group by lang
-        const allData = { ISL: [], ASL: [] };
-        for (const row of data) {
-            const sample = {
-                label: row.label,
-                type: row.type,
-                isTrained: row.is_trained,
-                recordedAt: row.recorded_at,
-                trainedAt: row.trained_at,
-            };
-            if (row.type === 'dynamic') {
-                sample.frames = row.frames;
-                sample.handCount = row.hand_count;
-                sample.frameCount = row.frames ? row.frames.length : 0;
-            } else {
-                sample.landmarks = row.landmarks;
-            }
-            if (!allData[row.lang]) allData[row.lang] = [];
-            allData[row.lang].push(sample);
-        }
-
-        const loadedData = allData[currentLang] || [];
+        const json = await response.json();
+        const loadedData = json[currentLang] || [];
         const normalizedData = normalizeDatasetLabels(loadedData);
-        collectedData = normalizedData.normalized;
+        collectedData = ensureSampleIds(normalizedData.normalized);
         sessionHistory = [];
-
-        const localDraft = normalizeDatasetLabels(loadLocalDraftData(currentLang)).normalized;
-        const existingKeys = new Set(collectedData.map((sample) => `${sample.label}|${sample.type}|${sample.recordedAt}`));
-        localDraft.forEach((sample) => {
-            const key = `${sample.label}|${sample.type}|${sample.recordedAt}`;
-            if (!existingKeys.has(key)) {
-                collectedData.push(sample);
-            }
-        });
 
         if (normalizedData.changed) {
             await saveToServer();
         }
     } catch (err) {
-        console.error('Failed to load training data from Supabase:', err);
-        collectedData = normalizeDatasetLabels(loadLocalDraftData(currentLang)).normalized;
+        console.error('Failed to load training data from training_data.json:', err);
+        collectedData = [];
     } finally {
         renderDataList();
     }
@@ -1752,7 +1744,7 @@ async function saveToServer() {
         sessionHistory = [];
         updateMobileRevertState();
     } catch (err) {
-        console.error('Failed to save training data to Supabase:', err);
+        console.error('Failed to save training data to training_data.json:', err);
         throw err;
     }
 }
@@ -1768,11 +1760,10 @@ function updateUIStats() {
 }
 
 function renderDataList() {
-    const counts = {};
-    const types = {};
-    collectedData.forEach(d => {
-        counts[d.label] = (counts[d.label] || 0) + 1;
-        types[d.label] = d.type || 'static';
+    const groups = {};
+    collectedData.forEach((sample) => {
+        if (!groups[sample.label]) groups[sample.label] = [];
+        groups[sample.label].push(sample);
     });
 
     // Always update total counts even if list is empty
@@ -1782,27 +1773,100 @@ function renderDataList() {
     updateSidebarTrainSaveState();
     updateMobileSessionActionState();
 
-    if (Object.keys(counts).length === 0) {
+    if (Object.keys(groups).length === 0) {
         dataList.innerHTML = `<div style="text-align: center; color: #484f58; margin-top: 50px;">No data collected.</div>`;
         return;
     }
 
-    dataList.innerHTML = Object.entries(counts).map(([label, count]) => {
-        const type = types[label];
-        const typeIcon = type === 'dynamic' ? '🔄' : '✋';
-        const typeLabel = type === 'dynamic' ? 'Dynamic' : 'Static';
-        return `
-        <div class="data-item">
-            <div class="data-item-info">
-                <span class="data-label">${typeIcon} ${label}</span>
-                <span class="data-count">${count} samples • ${typeLabel}</span>
+    const pendingReplacementSample = pendingReplacementSampleId
+        ? collectedData.find((sample) => sample.id === pendingReplacementSampleId)
+        : null;
+    const replacementBanner = pendingReplacementSample
+        ? `<div style="margin-bottom:12px; padding:12px 14px; border-radius:14px; background:rgba(59,130,246,0.14); border:1px solid rgba(96,165,250,0.35); display:flex; justify-content:space-between; gap:12px; align-items:center;">
+            <div style="display:flex; flex-direction:column; gap:3px;">
+                <span style="font-weight:700; color:var(--studio-text);">Replacement mode active</span>
+                <span style="font-size:0.78rem; color:var(--studio-text-muted);">Record a new sample to replace "${pendingReplacementSample.label}".</span>
             </div>
-            <button class="delete-btn" onclick="deleteLabel('${label}')">
-                <span class="material-icons" style="font-size:18px;">delete</span>
-            </button>
+            <button class="secondary-btn" style="width:auto; padding:8px 10px;" onclick="cancelTrainingSampleReplacement()">Cancel</button>
+        </div>`
+        : '';
+
+    dataList.innerHTML = `${replacementBanner}${Object.entries(groups).map(([label, samples]) => {
+        const firstType = samples[0]?.type || 'static';
+        const typeIcon = firstType === 'dynamic' ? '🔄' : '✋';
+        const typeLabel = firstType === 'dynamic' ? 'Dynamic' : 'Static';
+        return `
+        <div class="data-item" style="flex-direction: column; align-items: stretch; gap: 10px;">
+            <div class="data-item-info" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    <span class="data-label">${typeIcon} ${label}</span>
+                    <span class="data-count">${samples.length} samples • ${typeLabel}</span>
+                </div>
+                <button class="delete-btn" onclick="deleteLabel('${label}')" title="Delete all samples for ${label}">
+                    <span class="material-icons" style="font-size:18px;">delete_forever</span>
+                </button>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-left:2px;">
+                ${samples.map((sample, index) => {
+                    const isPendingReplace = pendingReplacementSampleId === sample.id;
+                    return `
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:12px; background:${isPendingReplace ? 'rgba(59,130,246,0.14)' : 'rgba(15,23,42,0.35)'}; border:1px solid ${isPendingReplace ? 'rgba(96,165,250,0.45)' : 'rgba(148,163,184,0.12)'};">
+                            <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                                <span style="font-size:0.82rem; color:var(--studio-text); font-weight:600;">Sample ${index + 1}${isPendingReplace ? ' • replacing' : ''}</span>
+                                <span style="font-size:0.72rem; color:var(--studio-text-muted);">${sample.type === 'dynamic' ? 'Dynamic' : 'Static'}${sample.handCount ? ` • ${sample.handCount} hand(s)` : ''}${sample.recordedAt ? ` • ${new Date(sample.recordedAt).toLocaleString()}` : ''}</span>
+                            </div>
+                            <div style="display:flex; gap:8px; flex-shrink:0;">
+                                <button class="secondary-btn" style="width:auto; padding:8px 10px;" onclick="replaceTrainingSample('${sample.id}')">Replace</button>
+                                <button class="secondary-btn" style="width:auto; padding:8px 10px;" onclick="deleteTrainingSample('${sample.id}')">Delete</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
         </div>
-    `}).join('');
+    `}).join('')}`;
 }
+
+window.replaceTrainingSample = (sampleId) => {
+    const sample = collectedData.find((entry) => entry.id === sampleId);
+    if (!sample) return;
+
+    pendingReplacementSampleId = sampleId;
+    statusMsg.textContent = `Replacement mode: record a new ${sample.type === 'dynamic' ? 'dynamic' : 'static'} sample for "${sample.label}".`;
+    showToast(`Replace mode enabled for "${sample.label}"`, 'warning');
+    renderDataList();
+    updateMobileTrainSaveVisibility();
+};
+
+window.cancelTrainingSampleReplacement = () => {
+    clearPendingReplacement();
+    showToast('Replacement mode cancelled.', 'warning');
+};
+
+window.deleteTrainingSample = async (sampleId) => {
+    const sample = collectedData.find((entry) => entry.id === sampleId);
+    if (!sample) return;
+
+    const confirmed = await showCustomConfirm(`Delete this ${sample.type === 'dynamic' ? 'dynamic' : 'static'} sample for "${sample.label}"?`);
+    if (!confirmed) return;
+
+    collectedData = collectedData.filter((entry) => entry.id !== sampleId);
+    sessionHistory = sessionHistory.filter((batch) => batch.id !== sampleId);
+    if (pendingReplacementSampleId === sampleId) {
+        pendingReplacementSampleId = null;
+    }
+
+    persistCurrentTrainingDataLocally(currentLang);
+
+    try {
+        await saveToServer();
+        renderDataList();
+        showToast(`Deleted one sample for "${sample.label}"`, 'delete');
+    } catch (err) {
+        renderDataList();
+        showToast(`Deleted one sample locally, but save failed`, 'warning');
+    }
+};
 
 window.deleteLabel = async (label) => {
     const confirmed = await showCustomConfirm(`Delete all samples for "${label}"?`);
@@ -1815,6 +1879,9 @@ window.deleteLabel = async (label) => {
         // 2. Filter data and update local training set
         collectedData = collectedData.filter(d => normalizeLabel(d.label) !== normalizedLabel);
         sessionHistory = sessionHistory.filter(batch => normalizeLabel(batch?.label) !== normalizedLabel);
+        if (pendingReplacementSampleId && !collectedData.some((sample) => sample.id === pendingReplacementSampleId)) {
+            pendingReplacementSampleId = null;
+        }
         persistCurrentTrainingDataLocally(currentLang);
 
         try {
@@ -1952,120 +2019,26 @@ function normalizeLegacySamplesAsTrained(hasStaticModel, hasDynamicModel) {
     return changed;
 }
 
+// ensureTrainingModelsLoaded — no cloud, no localStorage.
+// The training page trains fresh from collectedData each session.
+// Persistence = training_data.json (landmarks only). Models are in-memory only.
 async function ensureTrainingModelsLoaded() {
     if (!model) model = {};
-
-    if (!model.static) {
-        let localModelKey = `localstorage://${STORAGE_KEYS[currentLang].model}-static`;
-
-        let cloudData = null;
-        if (navigator.onLine) {
-            cloudData = await fetchCloudModel('static', currentLang);
-        }
-
-        if (cloudData) {
-            model.static = cloudData.model;
-            model.staticLabels = cloudData.labels;
-            ensureModelCompiled(model.static, 'static model');
-            console.log("Loaded static base from cloud.");
-            try {
-                await model.static.save(localModelKey);
-                localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-static`, JSON.stringify(model.staticLabels));
-            } catch (e) {}
-        } else {
-            let savedStaticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
-            if (savedStaticLabels) {
-                try {
-                    model.static = await tf.loadLayersModel(localModelKey);
-                    model.staticLabels = JSON.parse(savedStaticLabels);
-                    ensureModelCompiled(model.static, 'static model');
-                } catch (err) {
-                    model.static = null;
-                }
-            }
-        }
-    }
-
-    if (!model.dynamic) {
-        let cloudData = null;
-        if (navigator.onLine) {
-            cloudData = await fetchCloudModel('dynamic', currentLang);
-        }
-
-        if (cloudData) {
-            model.dynamic = cloudData.model;
-            model.dynamicLabels = cloudData.labels;
-            model.dynamicHandRequirements = cloudData.handReqs || {};
-            ensureModelCompiled(model.dynamic, 'dynamic model');
-            console.log("Loaded dynamic base from cloud.");
-            try {
-                await model.dynamic.save(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
-                localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`, JSON.stringify(model.dynamicLabels));
-                localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`, JSON.stringify(model.dynamicHandRequirements));
-            } catch (e) {}
-        } else {
-            let savedDynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
-            if (savedDynamicLabels) {
-                try {
-                    model.dynamic = await tf.loadLayersModel(`localstorage://${STORAGE_KEYS[currentLang].model}-dynamic`);
-                    model.dynamicLabels = JSON.parse(savedDynamicLabels);
-                    const handReqRaw = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic-hand-req`);
-                    model.dynamicHandRequirements = handReqRaw ? JSON.parse(handReqRaw) : {};
-                    ensureModelCompiled(model.dynamic, 'dynamic model');
-                } catch (err) {
-                    model.dynamic = null;
-                }
-            }
-        }
-    }
+    // Model instances (model.static / model.dynamic) are built during runInternalTraining.
+    // No loading from localStorage or cloud is needed.
 }
 
+// fetchCloudModel removed — models are built exclusively from training_data.json.
+// Placeholder kept to prevent any missed call-sites from throwing.
 async function fetchCloudModel(type, lang) {
-    try {
-        const langLower = lang.toLowerCase();
-        const candidates = await window.getStorageBucketCandidates('models');
-
-        for (const modelsBucket of candidates) {
-            // 1. Get Public URLs for labels and model
-            const { data: labelsUrlData } = window.supabaseClient.storage
-                .from(modelsBucket)
-                .getPublicUrl(`${langLower}/${type}/labels.json`);
-                
-            const { data: modelUrlData } = window.supabaseClient.storage
-                .from(modelsBucket)
-                .getPublicUrl(`${langLower}/${type}/model.json`);
-
-            // 2. Load Labels
-            const labelsRes = await fetch(labelsUrlData.publicUrl);
-            if (!labelsRes.ok) {
-                continue;
-            }
-
-            const labels = normalizeLabelList(await labelsRes.json()).normalized;
-            
-            // 3. Load Model
-            const cloudModel = await tf.loadLayersModel(modelUrlData.publicUrl);
-            
-            let handReqs = null;
-            if (type === 'dynamic') {
-                const { data: handReqsUrlData } = window.supabaseClient.storage
-                    .from(modelsBucket)
-                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
-                const reqRes = await fetch(handReqsUrlData.publicUrl);
-                if (reqRes.ok) {
-                    handReqs = normalizeHandRequirementMap(await reqRes.json()).normalized;
-                }
-            }
-            
-            return { model: cloudModel, labels, handReqs };
-        }
-
-        return null;
-    } catch (err) {
-        console.warn(`Cloud model fetch failed for ${type}:`, err);
-        return null;
-    }
+    console.warn('[training] fetchCloudModel called but is disabled. Using training_data.json only.');
+    return null;
 }
+
+// ---- ghost block to satisfy old references ----
+const __fetchCloudModel_removed_placeholder = null;
+
+
 
 function createStaticModel(outputUnits) {
     const staticModel = tf.sequential();
