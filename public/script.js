@@ -828,9 +828,31 @@ async function initSTT() {
 
         // --- STT Echo Suppression Logic ---
         // If the local STT picks up the other participant's voice from the speakers,
-        // the text will match what was just broadcast. We ignore recent duplicates.
-        if (trimmed === lastRemoteSpokenText.toLowerCase() && (Date.now() - lastRemoteSpokenTime < 3000)) {
+        // the text will match what was just broadcast. We use normalization and a wider time window.
+        const normalizeText = (text) => (text || '').replace(/[^\w\s]/g, '').trim().toLowerCase();
+        const normLocal = normalizeText(finalTranscript);
+        const normRemote = normalizeText(lastRemoteSpokenText);
+        
+        // Calculate word match to catch partial misinterpretations
+        const localWords = normLocal.split(/\s+/).filter(w => w.length > 2);
+        const remoteWords = normRemote.split(/\s+/).filter(w => w.length > 2);
+        let matchCount = 0;
+        for (const lw of localWords) {
+            if (remoteWords.includes(lw)) matchCount++;
+        }
+        const hasSignificantOverlap = localWords.length > 0 && 
+            (matchCount / Math.max(localWords.length, remoteWords.length)) > 0.4;
+
+        const isMatch = (normLocal && normRemote && (normLocal === normRemote || normLocal.includes(normRemote) || normRemote.includes(normLocal) || hasSignificantOverlap));
+
+        if (isMatch && (Date.now() - lastRemoteSpokenTime < 6000)) {
             console.log("[STT Diagnostic] Suppressing local transcript echo matching remote speech.");
+            return;
+        }
+        
+        // Also suppress if the device TTS is currently speaking
+        if (window.speechSynthesis && window.speechSynthesis.speaking && (Date.now() - lastRemoteSpokenTime < 6000)) {
+            console.log("[STT Diagnostic] Suppressing local transcript because TTS is playing.");
             return;
         }
 
