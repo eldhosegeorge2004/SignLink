@@ -835,6 +835,11 @@ video {
 }
 
 .caption-log-panel.visible {
+    display: none;
+    visibility: hidden;
+}
+
+body.stt-active .caption-log-panel.visible {
     display: flex;
     visibility: visible;
 }
