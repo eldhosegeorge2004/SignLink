@@ -43,6 +43,7 @@ const mobileRevertBtn = document.getElementById('mobileRevertBtn');
 const signSetupModal = document.getElementById('signSetupModal');
 const modalLabelInput = document.getElementById('modalLabelInput');
 const modalSignCardBtn = document.getElementById('modalSignCardBtn');
+const modalSignCardFileName = document.getElementById('modalSignCardFileName');
 const startRecordingBtn = document.getElementById('startRecordingBtn');
 const nextStepBtns = document.querySelectorAll('.next-step');
 const prevStepBtns = document.querySelectorAll('.prev-step');
@@ -578,6 +579,10 @@ function setupMobileSignSetup() {
             modalLabelInput.value = '';
             const modalStatus = document.getElementById('modalSignCardStatus');
             if (modalStatus) modalStatus.textContent = '';
+            if (modalSignCardFileName) {
+                modalSignCardFileName.textContent = '';
+                modalSignCardFileName.style.display = 'none';
+            }
             openSetupModal(1);
             modalLabelInput.focus();
         }
@@ -752,7 +757,6 @@ function setupMobileSignSetup() {
                 collectedData = [];
                 sessionHistory = [];
                 clearLocalDraftDataForLanguage(currentLang);
-                await saveToServer(); // Push empty array to Supabase — deletes all training rows for this lang
                 renderDataList();
                 updateMobileRevertState();
                 updateMobileTrainSaveVisibility();
@@ -807,7 +811,6 @@ function setupMobileSignSetup() {
                 collectedData = [];
                 sessionHistory = [];
                 clearLocalDraftDataForLanguage(currentLang);
-                await saveToServer(); // Push empty array to Supabase — deletes all training rows for this lang
                 renderDataList();
                 updateMobileRevertState();
                 updateMobileTrainSaveVisibility();
@@ -832,11 +835,13 @@ function setupMobileSignSetup() {
     // Sign Card Image from Modal
     if (modalSignCardBtn) {
         modalSignCardBtn.addEventListener('click', () => {
-            const label = modalLabelInput.value.trim();
+            const label = normalizeLabel(modalLabelInput.value);
             if (!label) {
                 showCustomAlert("Please enter the details of the sign!");
                 return;
             }
+            modalLabelInput.value = label;
+            labelInput.value = label;
             // Trigger the hidden file input (re-using the main one)
             signCardInput.click();
         });
@@ -988,6 +993,10 @@ function resetMobileSignSetup(discard = false) {
     }
     const modalStatus = document.getElementById('modalSignCardStatus');
     if (modalStatus) modalStatus.textContent = '';
+    if (modalSignCardFileName) {
+        modalSignCardFileName.textContent = '';
+        modalSignCardFileName.style.display = 'none';
+    }
 
     if (signCardFileName) {
         signCardFileName.textContent = '';
@@ -2548,6 +2557,10 @@ if (signCardBtn && signCardInput) {
                 signCardFileName.textContent = '';
                 signCardFileName.style.display = 'none';
             }
+            if (modalSignCardFileName) {
+                modalSignCardFileName.textContent = '';
+                modalSignCardFileName.style.display = 'none';
+            }
         });
     }
 
@@ -2555,17 +2568,24 @@ if (signCardBtn && signCardInput) {
         const file = e.target.files[0];
         if (!file) return;
 
-        const label = normalizeLabel(labelInput.value);
+        const label = normalizeLabel(labelInput.value || modalLabelInput?.value);
         if (!label) {
             alert("Sign name is missing.");
             return;
         }
         labelInput.value = label;
+        if (modalLabelInput && signSetupModal?.classList.contains('active')) {
+            modalLabelInput.value = label;
+        }
 
         // Display selected filename
         if (signCardFileName) {
             signCardFileName.textContent = `Selected: ${file.name}`;
             signCardFileName.style.display = 'block';
+        }
+        if (modalSignCardFileName) {
+            modalSignCardFileName.textContent = file.name;
+            modalSignCardFileName.style.display = 'block';
         }
 
         // Get extension from filename
@@ -2598,7 +2618,7 @@ if (signCardBtn && signCardInput) {
                     signCardStatus.style.color = '#58a6ff';
                     const modalStatus = document.getElementById('modalSignCardStatus');
                     if (modalStatus) {
-                        modalStatus.textContent = `✅ Image attached`;
+                        modalStatus.textContent = '';
                         modalStatus.style.color = '#58a6ff';
                     }
                     return;
