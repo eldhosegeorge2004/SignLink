@@ -162,6 +162,8 @@ if (ttsBtn) {
 // Load Models and Labels (Hybrid)
 async function loadSavedModelAndLabels() {
     try {
+        const activeMode = localStorageModelKey === 'my-asl-model' ? 'ASL' : 'ISL';
+
         // Reset State
         serverModel = null;
         serverLabels = [];
@@ -176,73 +178,64 @@ async function loadSavedModelAndLabels() {
         lastDisplayedPrediction = null;
         lastDisplayedFrame = null;
 
-        const promises = [];
+        // Load labels and hand requirements from the saved JSON dataset only.
+        const response = await fetch('/api/training-data');
+        const allData = response.ok ? await response.json() : { ISL: [], ASL: [] };
+        const modeData = Array.isArray(allData[activeMode]) ? allData[activeMode] : [];
+        const staticSamples = modeData.filter((sample) => sample.type !== 'dynamic');
+        const dynamicSamples = modeData.filter((sample) => sample.type === 'dynamic');
 
-        // 1. Skip Server Model - only use trained models from training_data.json
-        // Do not load pre-trained bundled models
-        serverModel = null;
-        serverLabels = [];
+        localLabels = normalizeLabelList([...new Set(staticSamples.map((sample) => normalizeAlphabetLabel(sample.label)))])
+            .labels;
+        localLabelsDynamic = normalizeLabelList([...new Set(dynamicSamples.map((sample) => normalizeAlphabetLabel(sample.label)))])
+            .labels;
 
-        // 2. Load Local Static Model
+        const dynamicHandReqMap = {};
+        localLabelsDynamic.forEach((label) => {
+            const labelSamples = dynamicSamples.filter((sample) => normalizeAlphabetLabel(sample.label) === label);
+            const observed = new Set(
+                labelSamples
+                    .map((sample) => {
+                        const raw = Number(sample.handCount ?? sample.requiredHands);
+                        return raw === 1 || raw === 2 ? raw : null;
+                    })
+                    .filter((value) => value !== null)
+            );
+
+            dynamicHandReqMap[label] = observed.size === 1 ? [...observed][0] : 'any';
+        });
+        dynamicLabelHandRequirements = normalizeHandRequirementMap(dynamicHandReqMap).map;
+
+        // Load only trained models from localStorage, using labels from training_data.json.
         const localLoad = async () => {
-            console.log("Attempting to load Local Static Model...");
             try {
-                let localModelKey = `localstorage://${localStorageModelKey}-static`;
-
-                let localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
-                if (localLabelData) {
-                    const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
-                    localLabels = normalizedLocalLabels.labels;
-                    if (normalizedLocalLabels.changed) {
-                        localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(localLabels));
-                    }
-                    try {
-                        localModel = await tf.loadLayersModel(localModelKey);
-                        console.log(`Local Static Model loaded from LocalStorage (${localLabels.length} labels)`);
-                    } catch (e) {
-                        localModel = null;
-                    }
+                if (!localLabels.length) {
+                    localModel = null;
+                    return;
                 }
+
+                localModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
+                console.log(`Local Static Model loaded from LocalStorage (${localLabels.length} labels)`);
             } catch (e) {
-                console.warn("Local static model load failed:", e);
                 localModel = null;
             }
         };
-        promises.push(localLoad());
 
-        // 3. Load Local Dynamic Model
         const dynamicLoad = async () => {
-            console.log("Attempting to load Local Dynamic Model...");
             try {
-
-                let dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
-                if (dynamicLabelData) {
-                    const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
-                    localLabelsDynamic = normalizedDynamicLabels.labels;
-                    if (normalizedDynamicLabels.changed) {
-                        localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(localLabelsDynamic));
-                    }
-                    const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
-                    const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
-                    dynamicLabelHandRequirements = normalizedHandReqs.map;
-                    if (normalizedHandReqs.changed) {
-                        localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-                    }
-                    try {
-                        localModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
-                        console.log(`Local Dynamic Model loaded from LocalStorage (${localLabelsDynamic.length} labels)`);
-                    } catch (e) {
-                        localModelDynamic = null;
-                    }
+                if (!localLabelsDynamic.length) {
+                    localModelDynamic = null;
+                    return;
                 }
+
+                localModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
+                console.log(`Local Dynamic Model loaded from LocalStorage (${localLabelsDynamic.length} labels)`);
             } catch (e) {
-                console.warn("Local dynamic model load failed:", e);
+                localModelDynamic = null;
             }
         };
-        promises.push(dynamicLoad());
 
-        // Wait for all promises (use allSettled so one failure doesn't kill others)
-        await Promise.allSettled(promises);
+        await Promise.allSettled([localLoad(), dynamicLoad()]);
 
         // 4. UI Feedback - only show error if no models found
         const loadedModels = [];

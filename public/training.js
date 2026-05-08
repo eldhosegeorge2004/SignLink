@@ -1764,7 +1764,17 @@ async function loadDataFromServer() {
 
 async function saveToServer() {
     try {
-        const groupedData = { [currentLang]: collectedData || [] };
+        persistCurrentTrainingDataLocally(currentLang);
+
+        const existingData = await fetch('/api/training-data')
+            .then((response) => response.ok ? response.json() : { ISL: [], ASL: [] })
+            .catch(() => ({ ISL: [], ASL: [] }));
+
+        const groupedData = {
+            ISL: currentLang === 'ISL' ? collectedData : (existingData.ISL || loadLocalDraftData('ISL')),
+            ASL: currentLang === 'ASL' ? collectedData : (existingData.ASL || loadLocalDraftData('ASL'))
+        };
+
         const response = await fetch('/api/training-data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1779,7 +1789,7 @@ async function saveToServer() {
         sessionHistory = [];
         updateMobileRevertState();
     } catch (err) {
-        console.error('Failed to save training data to Supabase:', err);
+        console.error('Failed to save training data locally:', err);
         throw err;
     }
 }
