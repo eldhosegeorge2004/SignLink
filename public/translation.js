@@ -383,7 +383,7 @@ function stopSkeletonRenderer() {
 
 function preprocessLandmarks(multiHandLandmarks, mirrorX = false) {
     const processHand = (landmarks) => {
-        if (!landmarks) return new Array(63).fill(0);
+        if (!landmarks || !landmarks.length) return new Array(63).fill(0);
         const wrist = landmarks[0];
         const wristX = mirrorX ? 1 - wrist.x : wrist.x;
         const indexMCP = landmarks[5];
@@ -706,14 +706,14 @@ function runPrediction(handLandmarks, detectedHandCount = 1) {
         if (staticAllowed && serverModel && serverLabels.length) {
             const tensorNormal = tf.tensor2d([getFeaturesForModel(serverModel, false)]);
             const pNorm = predictSingleModel(serverModel, serverLabels, tensorNormal);
-            if (!shouldSkipStaticLabel(pNorm.label)) {
+            if (!shouldSkipStaticLabel(pNorm.label) && labelMatchesDetectedHands(pNorm.label, detectedHandCount, false)) {
                 candidates.push({ ...pNorm, source: 'Server' });
             }
 
             if (pNorm.conf < 0.7) {
                 const tensorFlipped = tf.tensor2d([getFeaturesForModel(serverModel, true)]);
                 const pFlip = predictSingleModel(serverModel, serverLabels, tensorFlipped);
-                if (!shouldSkipStaticLabel(pFlip.label)) {
+                if (!shouldSkipStaticLabel(pFlip.label) && labelMatchesDetectedHands(pFlip.label, detectedHandCount, false)) {
                     candidates.push({ ...pFlip, source: 'Server(M)' });
                 }
             }
@@ -862,8 +862,8 @@ function onResults(results) {
 
         updateSkeletonTargets(handLandmarks);
 
-        // Predict once from the primary hand to avoid duplicate/competing outputs.
-        runPrediction(handLandmarks[0], detectedHandCount);
+        // Predict (handles up to 2 hands)
+        runPrediction(handLandmarks, detectedHandCount);
     } else {
         // No hands detected - set timeout for "Waiting for hands"
         if (!noHandsTimeoutId) {

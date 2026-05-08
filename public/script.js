@@ -2438,7 +2438,7 @@ async function startCamera() {
 
 function preprocessLandmarks(multiHandLandmarks) {
     const processHand = (landmarks) => {
-        if (!landmarks) return new Array(63).fill(0);
+        if (!landmarks || !landmarks.length) return new Array(63).fill(0);
         const wrist = landmarks[0];
         const indexMCP = landmarks[5];
         const distance = Math.hypot(
@@ -2837,7 +2837,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             const input = tf.tensor2d([getFeaturesForModel(serverModel)]);
             const pred = serverModel.predict(input);
             const { conf, label } = getPredictionPeak(pred, serverLabels);
-            if (!shouldSkipStaticLabel(label)) {
+            if (!shouldSkipStaticLabel(label) && labelMatchesDetectedHands(label, detectedHandCount, false)) {
                 candidates.push({ label, conf, source: 'server' });
             }
         }

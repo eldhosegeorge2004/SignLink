@@ -124,12 +124,31 @@ function normalizeLabel(label) {
 function normalizeDatasetLabels(samples) {
     let changed = false;
     const normalized = samples.map((sample) => {
+        let updated = false;
         const normalizedLabel = normalizeLabel(sample.label);
+        let s = { ...sample };
+
         if (normalizedLabel !== sample.label) {
-            changed = true;
-            return { ...sample, label: normalizedLabel };
+            s.label = normalizedLabel;
+            updated = true;
         }
-        return sample;
+
+        // Padding Logic: Upgrade 63 features to 126
+        if (s.type === 'dynamic' && Array.isArray(s.frames)) {
+            const firstFrame = s.frames[0];
+            if (firstFrame && firstFrame.length === 63) {
+                s.frames = s.frames.map(f => f.length === 63 ? [...f, ...new Array(63).fill(0)] : f);
+                updated = true;
+            }
+        } else if ((s.type === 'static' || !s.type) && Array.isArray(s.landmarks)) {
+            if (s.landmarks.length === 63) {
+                s.landmarks = [...s.landmarks, ...new Array(63).fill(0)];
+                updated = true;
+            }
+        }
+
+        if (updated) changed = true;
+        return s;
     });
     return { normalized, changed };
 }
@@ -1512,7 +1531,7 @@ async function startCamera() {
 // --- Logic ---
 function preprocessLandmarks(multiHandLandmarks) {
     const processHand = (landmarks) => {
-        if (!landmarks) return new Array(63).fill(0);
+        if (!landmarks || !landmarks.length) return new Array(63).fill(0);
         const wrist = landmarks[0];
         const indexMCP = landmarks[5];
         const distance = Math.hypot(
@@ -2090,7 +2109,7 @@ function ensureModelCompiled(modelInstance, modelType = 'model') {
     console.log(`Recompiled ${modelType} for incremental training.`);
 }
 
-function computeDynamicHandRequirements(trainingData, labels) {
+function computeHandRequirements(trainingData, labels) {
     const handRequirementMap = {};
     labels.forEach((label) => {
         if (label.startsWith(DUMMY_LABEL_PREFIX)) {
@@ -2098,7 +2117,7 @@ function computeDynamicHandRequirements(trainingData, labels) {
             return;
         }
 
-        const labelSamples = trainingData.filter(d => d.label === label);
+        const labelSamples = trainingData.filter(d => normalizeLabel(d.label) === normalizeLabel(label));
         const observed = new Set(
             labelSamples
                 .map(d => {
@@ -2224,8 +2243,12 @@ async function trainStaticModel(staticData, newStaticData) {
                     }
                 }
             });
+            const handRequirementMap = computeHandRequirements(trainingData, trainingLabels);
             model.static = staticModel;
             model.staticLabels = toPublicLabels(trainingLabels);
+            model.staticHandRequirements = Object.fromEntries(
+                Object.entries(handRequirementMap).filter(([label]) => !label.startsWith(DUMMY_LABEL_PREFIX))
+            );
             return { trained: true };
         } finally {
             xs.dispose();
@@ -2311,8 +2334,12 @@ async function trainStaticModel(staticData, newStaticData) {
                 }
             }
         });
+        const handRequirementMap = computeHandRequirements(trainingData, trainingLabels);
         model.static = rebuiltStaticModel;
         model.staticLabels = toPublicLabels(trainingLabels);
+        model.staticHandRequirements = Object.fromEntries(
+            Object.entries(handRequirementMap).filter(([label]) => !label.startsWith(DUMMY_LABEL_PREFIX))
+        );
         return { trained: true };
     } finally {
         xs.dispose();
@@ -2334,7 +2361,7 @@ async function trainDynamicModel(dynamicData, newDynamicData) {
         const labelMap = {};
         trainingLabels.forEach((label, index) => { labelMap[label] = index; });
 
-        const handRequirementMap = computeDynamicHandRequirements(trainingData, trainingLabels);
+        const handRequirementMap = computeHandRequirements(trainingData, trainingLabels);
 
         const padFeatures = (f) => f.length === 63 ? [...f, ...new Array(63).fill(0)] : f;
         const paddedSequences = trainingData.map(d => {
@@ -2423,7 +2450,7 @@ async function trainDynamicModel(dynamicData, newDynamicData) {
                 }
             });
 
-            const handReqFromNew = computeDynamicHandRequirements(newDynamicData, existingLabels);
+            const handReqFromNew = computeHandRequirements(newDynamicData, existingLabels);
             model.dynamicHandRequirements = {
                 ...(model.dynamicHandRequirements || {}),
                 ...Object.fromEntries(
@@ -2452,7 +2479,7 @@ async function trainDynamicModel(dynamicData, newDynamicData) {
     const labelMap = {};
     trainingLabels.forEach((label, index) => { labelMap[label] = index; });
 
-    const handRequirementMap = computeDynamicHandRequirements(trainingData, trainingLabels);
+    const handRequirementMap = computeHandRequirements(trainingData, trainingLabels);
 
     const padFeatures = (f) => f.length === 63 ? [...f, ...new Array(63).fill(0)] : f;
     const paddedSequences = trainingData.map(d => {
