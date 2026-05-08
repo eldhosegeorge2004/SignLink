@@ -412,7 +412,7 @@ async function restoreCallMicAfterNativeSTT() {
             micBtn.setAttribute('title', isMicOn ? 'Turn off microphone' : 'Turn on microphone');
         }
         if (localVolumeMeter) {
-            localVolumeMeter.innerText = isMicOn ? 'graphic_eq' : 'mic_off';
+            localVolumeMeter.innerText = isMicOn ? 'mic' : 'mic_off';
         }
     }
 }
