@@ -1221,6 +1221,7 @@ async function saveTrainedModelsToLocalStorage() {
     if (model?.static && model.staticLabels) {
         await model.static.save(`localstorage://${keys.model}-static`);
         localStorage.setItem(`${keys.labels}-static`, JSON.stringify(model.staticLabels));
+        localStorage.setItem(`${keys.labels}-static-hand-req`, JSON.stringify(model.staticHandRequirements || {}));
         savedAnyModel = true;
     }
 
@@ -1470,12 +1471,31 @@ async function startCamera() {
 }
 
 // --- Logic ---
-function preprocessLandmarks(landmarks) {
-    const wrist = landmarks[0];
-    let shifted = landmarks.map(p => ({ x: p.x - wrist.x, y: p.y - wrist.y, z: p.z - wrist.z }));
-    const indexMCP = shifted[5];
-    const distance = Math.sqrt(Math.pow(indexMCP.x, 2) + Math.pow(indexMCP.y, 2) + Math.pow(indexMCP.z, 2)) || 1e-6;
-    return shifted.flatMap(p => [p.x / distance, p.y / distance, p.z / distance]);
+function preprocessLandmarks(handLandmarks) {
+    const handsToProcess = Math.min(2, handLandmarks.length);
+    const normalized = new Array(126).fill(0);
+
+    for (let h = 0; h < handsToProcess; h++) {
+        const landmarks = handLandmarks[h];
+        const wrist = landmarks[0];
+        const indexMCP = landmarks[5];
+        const distance = Math.hypot(
+            indexMCP.x - wrist.x,
+            indexMCP.y - wrist.y,
+            indexMCP.z - wrist.z
+        ) || 1e-6;
+
+        const handOffset = h * 63;
+        for (let index = 0; index < landmarks.length; index += 1) {
+            const point = landmarks[index];
+            const base = handOffset + (index * 3);
+            normalized[base] = (point.x - wrist.x) / distance;
+            normalized[base + 1] = (point.y - wrist.y) / distance;
+            normalized[base + 2] = (point.z - wrist.z) / distance;
+        }
+    }
+
+    return normalized;
 }
 
 function onResults(results) {
@@ -1499,18 +1519,16 @@ function onResults(results) {
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
+        }
 
-            // Static mode recording
-            if (isCollecting && recordingMode === 'static') {
-                const label = normalizeLabel(labelInput.value);
-                if (label) {
-                    labelInput.value = label;
-                    const flatLandmarks = preprocessLandmarks(landmarks);
-                    const shouldContinue = captureStaticSample(label, flatLandmarks);
-                    if (!shouldContinue) break;
-                }
+        // Static mode recording
+        if (isCollecting && recordingMode === 'static') {
+            const label = normalizeLabel(labelInput.value);
+            if (label) {
+                labelInput.value = label;
+                const flatLandmarks = preprocessLandmarks(results.multiHandLandmarks);
+                captureStaticSample(label, flatLandmarks, detectedHands);
             }
-
         }
 
         // Dynamic mode recording: capture one frame per interval from primary hand,
@@ -1521,8 +1539,7 @@ function onResults(results) {
             const now = Date.now();
             const frameInterval = 1000 / TARGET_FPS;
             if (now - lastFrameCaptureTime >= frameInterval) {
-                const primaryLandmarks = results.multiHandLandmarks[0];
-                const flatLandmarks = preprocessLandmarks(primaryLandmarks);
+                const flatLandmarks = preprocessLandmarks(results.multiHandLandmarks);
                 dynamicFrameBuffer.push(flatLandmarks);
                 lastFrameCaptureTime = now;
 
@@ -1548,21 +1565,21 @@ function onResults(results) {
     canvasCtx.restore();
 }
 
-function saveDataPoint(label, landmarks, type = 'static') {
+function saveDataPoint(label, landmarks, type = 'static', handCount = 1) {
     const normalizedLabel = normalizeLabel(label);
     if (!normalizedLabel) return;
-    collectedData.push({ label: normalizedLabel, landmarks, type, isTrained: false, recordedAt: Date.now() });
+    collectedData.push({ label: normalizedLabel, landmarks, type, handCount, isTrained: false, recordedAt: Date.now() });
     updateUIStats();
 }
 
-function captureStaticSample(label, flatLandmarks) {
+function captureStaticSample(label, flatLandmarks, handCount = 1) {
     if (!isCollecting) return false;
     if (staticSessionSampleCount >= MAX_STATIC_SAMPLES_PER_SESSION) {
         stopStaticCollection('Auto-stopped at 100 samples.');
         return false;
     }
 
-    saveDataPoint(label, flatLandmarks, 'static');
+    saveDataPoint(label, flatLandmarks, 'static', handCount);
     staticSessionSampleCount += 1;
     lastRecordedBatchCount += 1;
     statusMsg.textContent = `Recording static sign: ${staticSessionSampleCount}/${MAX_STATIC_SAMPLES_PER_SESSION}`;
@@ -1682,35 +1699,45 @@ async function saveDynamicSign(label, frames) {
 // --- Data Management ---
 async function loadDataFromServer() {
     try {
-        const { data, error } = await window.supabaseClient
-            .from('training_data')
-            .select('*')
-            .order('id', { ascending: true });
+        // Fetch training data from local file via API endpoint
+        const response = await fetch('/api/training-data');
+        if (!response.ok) {
+            throw new Error(`Failed to fetch training data: ${response.statusText}`);
+        }
+        
+        const allData = await response.json(); // { ISL: [...], ASL: [...] }
 
-        if (error) throw error;
-
-        // Group by lang
-        const allData = { ISL: [], ASL: [] };
-        for (const row of data) {
-            const sample = {
-                label: row.label,
-                type: row.type,
-                isTrained: row.is_trained,
-                recordedAt: row.recorded_at,
-                trainedAt: row.trained_at,
-            };
-            if (row.type === 'dynamic') {
-                sample.frames = row.frames;
-                sample.handCount = row.hand_count;
-                sample.frameCount = row.frames ? row.frames.length : 0;
-            } else {
-                sample.landmarks = row.landmarks;
+        // Process the data (same format as before)
+        const processedData = { ISL: [], ASL: [] };
+        for (const lang of ['ISL', 'ASL']) {
+            const samples = allData[lang] || [];
+            for (const sample of samples) {
+                const processedSample = {
+                    label: sample.label,
+                    type: sample.type,
+                    isTrained: sample.isTrained,
+                    recordedAt: sample.recordedAt,
+                    trainedAt: sample.trainedAt,
+                };
+                if (sample.type === 'dynamic') {
+                    processedSample.frames = sample.frames;
+                    if (processedSample.frames) {
+                        processedSample.frames = processedSample.frames.map(f => f.length === 63 ? [...f, ...new Array(63).fill(0)] : f);
+                    }
+                    processedSample.handCount = sample.handCount;
+                    processedSample.frameCount = sample.frames ? sample.frames.length : 0;
+                } else {
+                    processedSample.landmarks = sample.landmarks;
+                    if (processedSample.landmarks && processedSample.landmarks.length === 63) {
+                        processedSample.landmarks = [...processedSample.landmarks, ...new Array(63).fill(0)];
+                    }
+                    processedSample.handCount = sample.handCount;
+                }
+                processedData[lang].push(processedSample);
             }
-            if (!allData[row.lang]) allData[row.lang] = [];
-            allData[row.lang].push(sample);
         }
 
-        const loadedData = allData[currentLang] || [];
+        const loadedData = processedData[currentLang] || [];
         const normalizedData = normalizeDatasetLabels(loadedData);
         collectedData = normalizedData.normalized;
         sessionHistory = [];
@@ -1728,7 +1755,7 @@ async function loadDataFromServer() {
             await saveToServer();
         }
     } catch (err) {
-        console.error('Failed to load training data from Supabase:', err);
+        console.error('Failed to load training data from server:', err);
         collectedData = normalizeDatasetLabels(loadLocalDraftData(currentLang)).normalized;
     } finally {
         renderDataList();
@@ -2069,7 +2096,7 @@ async function fetchCloudModel(type, lang) {
 
 function createStaticModel(outputUnits) {
     const staticModel = tf.sequential();
-    staticModel.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [63] }));
+    staticModel.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [126] }));
     staticModel.add(tf.layers.dropout({ rate: 0.2 }));
     staticModel.add(tf.layers.dense({ units: 32, activation: 'relu' }));
     staticModel.add(tf.layers.dense({ units: outputUnits, activation: 'softmax' }));
@@ -2082,7 +2109,7 @@ function createDynamicModel(outputUnits) {
     dynamicModel.add(tf.layers.lstm({
         units: 64,
         returnSequences: true,
-        inputShape: [MAX_DYNAMIC_FRAMES, 63],
+        inputShape: [MAX_DYNAMIC_FRAMES, 126],
         kernelInitializer: 'glorotUniform',
         recurrentInitializer: 'glorotUniform'
     }));
@@ -2110,7 +2137,7 @@ function ensureModelCompiled(modelInstance, modelType = 'model') {
     console.log(`Recompiled ${modelType} for incremental training.`);
 }
 
-function computeDynamicHandRequirements(trainingData, labels) {
+function computeHandRequirements(trainingData, labels) {
     const handRequirementMap = {};
     labels.forEach((label) => {
         if (label.startsWith(DUMMY_LABEL_PREFIX)) {
@@ -2245,6 +2272,7 @@ async function trainStaticModel(staticData, newStaticData) {
             });
             model.static = staticModel;
             model.staticLabels = toPublicLabels(trainingLabels);
+            model.staticHandRequirements = computeHandRequirements(staticData, model.staticLabels);
             return { trained: true };
         } finally {
             xs.dispose();
@@ -2287,6 +2315,7 @@ async function trainStaticModel(staticData, newStaticData) {
                     }
                 }
             });
+            model.staticHandRequirements = computeHandRequirements(staticData, model.staticLabels);
             return { trained: true };
         } finally {
             xs.dispose();
@@ -2330,6 +2359,7 @@ async function trainStaticModel(staticData, newStaticData) {
         });
         model.static = rebuiltStaticModel;
         model.staticLabels = toPublicLabels(trainingLabels);
+        model.staticHandRequirements = computeHandRequirements(rebuildData, model.staticLabels);
         return { trained: true };
     } finally {
         xs.dispose();
@@ -2351,12 +2381,12 @@ async function trainDynamicModel(dynamicData, newDynamicData) {
         const labelMap = {};
         trainingLabels.forEach((label, index) => { labelMap[label] = index; });
 
-        const handRequirementMap = computeDynamicHandRequirements(trainingData, trainingLabels);
+        const handRequirementMap = computeHandRequirements(trainingData, trainingLabels);
 
         const paddedSequences = trainingData.map(d => {
             const frames = d.frames || [];
             if (frames.length < MAX_DYNAMIC_FRAMES) {
-                const lastFrame = frames[frames.length - 1] || new Array(63).fill(0);
+                const lastFrame = frames[frames.length - 1] || new Array(126).fill(0);
                 return [...frames, ...Array(MAX_DYNAMIC_FRAMES - frames.length).fill(lastFrame)];
             }
             return frames.slice(0, MAX_DYNAMIC_FRAMES);
