@@ -43,11 +43,11 @@ function _toPublicLabels(labels) {
     return labels.filter(l => !l.startsWith(DUMMY_LABEL_PREFIX_ML));
 }
 
-function _computeDynamicHandReqs(trainingData, labels) {
+function _computeHandReqs(trainingData, labels) {
     const map = {};
     labels.forEach(label => {
         if (label.startsWith(DUMMY_LABEL_PREFIX_ML)) { map[label] = 'any'; return; }
-        const labelSamples = trainingData.filter(d => d.label === label);
+        const labelSamples = trainingData.filter(d => _normalizeLabel(d.label) === label);
         const observed = new Set(
             labelSamples
                 .map(d => {
@@ -61,11 +61,19 @@ function _computeDynamicHandReqs(trainingData, labels) {
     return map;
 }
 
+function _padFeatures(features) {
+    if (!Array.isArray(features)) return features;
+    if (features.length === 63) {
+        return [...features, ...new Array(63).fill(0)];
+    }
+    return features;
+}
+
 // ── model factories ──────────────────────────────────────────────────────────
 
 function _createStaticModel(outputUnits) {
     const m = tf.sequential();
-    m.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [63] }));
+    m.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [126] }));
     m.add(tf.layers.dropout({ rate: 0.2 }));
     m.add(tf.layers.dense({ units: 32, activation: 'relu' }));
     m.add(tf.layers.dense({ units: outputUnits, activation: 'softmax' }));
@@ -78,7 +86,7 @@ function _createDynamicModel(outputUnits) {
     m.add(tf.layers.lstm({
         units: 64,
         returnSequences: true,
-        inputShape: [MAX_DYNAMIC_FRAMES_ML, 63],
+        inputShape: [MAX_DYNAMIC_FRAMES_ML, 126],
         kernelInitializer: 'glorotUniform',
         recurrentInitializer: 'glorotUniform'
     }));
@@ -103,10 +111,9 @@ async function _trainStaticFromScratch(staticSamples) {
     const prepared   = _withDummyClass(staticSamples, baseLabels);
     const { trainingData, trainingLabels } = prepared;
 
-    const labelMap = {};
-    trainingLabels.forEach((lbl, idx) => { labelMap[lbl] = idx; });
+    const handReqs = _computeHandReqs(trainingData, trainingLabels);
 
-    const xs = tf.tensor2d(trainingData.map(d => d.landmarks));
+    const xs = tf.tensor2d(trainingData.map(d => _padFeatures(d.landmarks)));
     const ys = tf.oneHot(
         tf.tensor1d(trainingData.map(d => labelMap[_normalizeLabel(d.label)]), 'int32'),
         trainingLabels.length
@@ -125,7 +132,16 @@ async function _trainStaticFromScratch(staticSamples) {
                 }
             }
         });
-        return { model: staticModel, labels: _toPublicLabels(trainingLabels) };
+
+        const publicHandReqs = Object.fromEntries(
+            Object.entries(handReqs).filter(([lbl]) => !lbl.startsWith(DUMMY_LABEL_PREFIX_ML))
+        );
+
+        return { 
+            model: staticModel, 
+            labels: _toPublicLabels(trainingLabels),
+            handReqs: publicHandReqs
+        };
     } finally {
         xs.dispose();
         ys.dispose();
@@ -142,12 +158,12 @@ async function _trainDynamicFromScratch(dynamicSamples) {
     const labelMap = {};
     trainingLabels.forEach((lbl, idx) => { labelMap[lbl] = idx; });
 
-    const handReqs = _computeDynamicHandReqs(trainingData, trainingLabels);
+    const handReqs = _computeHandReqs(trainingData, trainingLabels);
 
     const paddedSequences = trainingData.map(d => {
-        const frames = d.frames || [];
+        const frames = (d.frames || []).map(f => _padFeatures(f));
         if (frames.length < MAX_DYNAMIC_FRAMES_ML) {
-            const lastFrame = frames[frames.length - 1] || new Array(63).fill(0);
+            const lastFrame = frames[frames.length - 1] || new Array(126).fill(0);
             return [...frames, ...Array(MAX_DYNAMIC_FRAMES_ML - frames.length).fill(lastFrame)];
         }
         return frames.slice(0, MAX_DYNAMIC_FRAMES_ML);
@@ -207,9 +223,10 @@ window.loadModelsFromTrainingData = async function loadModelsFromTrainingData(la
     const result = {
         staticModel: null,
         staticLabels: [],
+        staticHandReqs: {},
         dynamicModel: null,
         dynamicLabels: [],
-        handReqs: {}
+        dynamicHandReqs: {}
     };
 
     try {
@@ -249,6 +266,7 @@ window.loadModelsFromTrainingData = async function loadModelsFromTrainingData(la
                 if (staticResult) {
                     result.staticModel  = staticResult.model;
                     result.staticLabels = staticResult.labels;
+                    result.staticHandReqs = staticResult.handReqs;
                     console.log(`[model-loader] Static model ready. Labels (${staticResult.labels.length}):`, staticResult.labels);
                 }
             } catch (err) {
@@ -266,7 +284,7 @@ window.loadModelsFromTrainingData = async function loadModelsFromTrainingData(la
                 if (dynamicResult) {
                     result.dynamicModel  = dynamicResult.model;
                     result.dynamicLabels = dynamicResult.labels;
-                    result.handReqs      = dynamicResult.handReqs;
+                    result.dynamicHandReqs = dynamicResult.handReqs;
                     console.log(`[model-loader] Dynamic model ready. Labels (${dynamicResult.labels.length}):`, dynamicResult.labels);
                 }
             } catch (err) {

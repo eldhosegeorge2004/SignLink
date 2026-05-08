@@ -2247,6 +2247,7 @@ async function loadModelsAndLabels() {
     modelDynamic = null;
     uniqueLabelsDynamic = [];
     dynamicLabelHandRequirements = {};
+    staticLabelHandRequirements  = {};
     predictionBuffer.length = 0;
     dynamicFrameBuffer = [];
     dynamicBufferStartTime = 0;
@@ -2277,12 +2278,13 @@ async function loadModelsAndLabels() {
         if (result.staticModel) {
             model        = result.staticModel;
             uniqueLabels = result.staticLabels;
-            console.log(`[VC] Local static model ready (${uniqueLabels.length} labels from training_data.json)`);
+            staticLabelHandRequirements = result.staticHandReqs || {};
+            console.log(`[VC] Local static model ready (${uniqueLabels.length} labels)`);
         }
         if (result.dynamicModel) {
             modelDynamic                 = result.dynamicModel;
             uniqueLabelsDynamic          = result.dynamicLabels;
-            dynamicLabelHandRequirements = result.handReqs || {};
+            dynamicLabelHandRequirements = result.dynamicHandReqs || {};
             console.log(`[VC] Local dynamic model ready (${uniqueLabelsDynamic.length} labels from training_data.json)`);
         }
     } catch (e) {
@@ -2434,25 +2436,32 @@ async function startCamera() {
     }
 }
 
-function preprocessLandmarks(landmarks) {
-    const wrist = landmarks[0];
-    const indexMCP = landmarks[5];
-    const distance = Math.hypot(
-        indexMCP.x - wrist.x,
-        indexMCP.y - wrist.y,
-        indexMCP.z - wrist.z
-    ) || 1e-6;
-    const normalized = new Array(landmarks.length * 3);
+function preprocessLandmarks(multiHandLandmarks) {
+    const processHand = (landmarks) => {
+        if (!landmarks) return new Array(63).fill(0);
+        const wrist = landmarks[0];
+        const indexMCP = landmarks[5];
+        const distance = Math.hypot(
+            indexMCP.x - wrist.x,
+            indexMCP.y - wrist.y,
+            indexMCP.z - wrist.z
+        ) || 1e-6;
+        const normalized = new Array(63);
 
-    for (let index = 0; index < landmarks.length; index += 1) {
-        const point = landmarks[index];
-        const base = index * 3;
-        normalized[base] = (point.x - wrist.x) / distance;
-        normalized[base + 1] = (point.y - wrist.y) / distance;
-        normalized[base + 2] = (point.z - wrist.z) / distance;
-    }
+        for (let i = 0; i < 21; i++) {
+            const point = landmarks[i];
+            const base = i * 3;
+            normalized[base] = (point.x - wrist.x) / distance;
+            normalized[base + 1] = (point.y - wrist.y) / distance;
+            normalized[base + 2] = (point.z - wrist.z) / distance;
+        }
+        return normalized;
+    };
 
-    return normalized;
+    const hand1 = multiHandLandmarks[0] || null;
+    const hand2 = multiHandLandmarks[1] || null;
+
+    return [...processHand(hand1), ...processHand(hand2)];
 }
 
 function getSmoothedPrediction(predLabel) {
@@ -2555,9 +2564,8 @@ function onResults(results) {
             overlayHadRenderedContent = true;
         }
 
-        // Preprocess for AI (Normalization is Scale/Translation invariant)
-        const flatLandmarks = preprocessLandmarks(landmarks);
-
+        // Preprocess for AI (handles up to 2 hands)
+        const flatLandmarks = preprocessLandmarks(handLandmarks);
         const detectedHandCount = Math.min(2, handLandmarks.length);
 
         // Handle Collection or Prediction
@@ -2607,8 +2615,9 @@ function normalizeHandRequirement(rawValue) {
     return 'any';
 }
 
-function labelMatchesDetectedHands(label, detectedHandCount) {
-    const requirement = normalizeHandRequirement(dynamicLabelHandRequirements[label]);
+function labelMatchesDetectedHands(label, detectedHandCount, isDynamic = true) {
+    const reqs = isDynamic ? dynamicLabelHandRequirements : staticLabelHandRequirements;
+    const requirement = normalizeHandRequirement(reqs[label]);
     return requirement === 'any' || requirement === detectedHandCount;
 }
 
@@ -2813,11 +2822,19 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             holdStartTime = 0;
         }
 
-        const input = tf.tensor2d([flatLandmarks]);
+        const features63 = flatLandmarks.slice(0, 63);
+        const getFeaturesForModel = (m) => {
+            if (!m) return features63;
+            const shape = m.inputs[0].shape;
+            const inputSize = shape[shape.length - 1];
+            return inputSize === 126 ? flatLandmarks : features63;
+        };
+
         let candidates = [];
 
-        // server predictions (ISL only, only when hand is still)
+        // server predictions
         if (staticAllowed && serverModel && serverLabels.length) {
+            const input = tf.tensor2d([getFeaturesForModel(serverModel)]);
             const pred = serverModel.predict(input);
             const { conf, label } = getPredictionPeak(pred, serverLabels);
             if (!shouldSkipStaticLabel(label)) {
@@ -2825,11 +2842,12 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             }
         }
 
-        // local static predictions (only when hand is still)
+        // local static predictions
         if (staticAllowed && model && uniqueLabels.length) {
+            const input = tf.tensor2d([getFeaturesForModel(model)]);
             const pred = model.predict(input);
             const { conf, label } = getPredictionPeak(pred, uniqueLabels);
-            if (!shouldSkipStaticLabel(label)) {
+            if (!shouldSkipStaticLabel(label) && labelMatchesDetectedHands(label, detectedHandCount, false)) {
                 candidates.push({ label, conf, source: 'local' });
             }
         }
@@ -2849,7 +2867,14 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             const dynamicReady = (Date.now() - dynamicBufferStartTime) >= DYNAMIC_ANALYZE_MS;
 
             if (dynamicFrameBuffer.length >= 1 && dynamicReady) {
-                const paddedFrames = [...dynamicFrameBuffer];
+                const shape = modelDynamic.inputs[0].shape;
+                const inputSize = shape[shape.length - 1];
+                
+                const processedBuffer = inputSize === 126 
+                    ? dynamicFrameBuffer 
+                    : dynamicFrameBuffer.map(f => f.slice(0, 63));
+
+                const paddedFrames = [...processedBuffer];
                 const lastFrame = paddedFrames[paddedFrames.length - 1];
                 while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
                     paddedFrames.push(lastFrame);
@@ -2859,11 +2884,11 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 const predDynamic = modelDynamic.predict(tensorDynamic);
                 const { conf, label: predictedDynamicLabel } = getPredictionPeak(predDynamic, uniqueLabelsDynamic);
 
-                // Boost confidence for dynamic signs to compete with static scores
                 const boostedConf = Math.min(conf * 1.2, 1.0);
                 const allowDynamicDuringSpelling = accumulatedWord.length === 0 || isASLDynamicSpellingLetter(predictedDynamicLabel);
                 const strongEnoughForZ = hasStrongASLZMotion(predictedDynamicLabel, conf, paddedFrames);
-                if (allowDynamicDuringSpelling && strongEnoughForZ && labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
+                
+                if (allowDynamicDuringSpelling && strongEnoughForZ && labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount, true)) {
                     candidates.push({
                         label: predictedDynamicLabel,
                         conf: boostedConf,
@@ -2871,9 +2896,6 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                         isDynamic: true
                     });
                 }
-
-                tensorDynamic.dispose();
-                predDynamic.dispose();
             }
         }
 

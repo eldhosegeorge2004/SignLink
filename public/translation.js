@@ -167,9 +167,10 @@ async function loadSavedModelAndLabels() {
         serverLabels = [];
         localModel = null;
         localLabels = [];
-        localModelDynamic = null;
-        localLabelsDynamic = [];
+        localModelDynamic          = null;
+        localLabelsDynamic         = [];
         dynamicLabelHandRequirements = {};
+        staticLabelHandRequirements  = {};
         predictionBuffer.length = 0;
         dynamicFrameBuffer = [];
         dynamicBufferStartTime = 0;
@@ -216,12 +217,13 @@ async function loadSavedModelAndLabels() {
                 if (result.staticModel) {
                     localModel  = result.staticModel;
                     localLabels = result.staticLabels;
+                    staticLabelHandRequirements = result.staticHandReqs || {};
                     console.log(`Local Static Model ready (${localLabels.length} labels from training_data.json)`);
                 }
                 if (result.dynamicModel) {
                     localModelDynamic          = result.dynamicModel;
                     localLabelsDynamic         = result.dynamicLabels;
-                    dynamicLabelHandRequirements = result.handReqs || {};
+                    dynamicLabelHandRequirements = result.dynamicHandReqs || {};
                     console.log(`Local Dynamic Model ready (${localLabelsDynamic.length} labels from training_data.json)`);
                 }
             } catch (e) {
@@ -379,28 +381,35 @@ function stopSkeletonRenderer() {
     clearSkeletonTargets();
 }
 
-function preprocessLandmarks(landmarks, mirrorX = false) {
-    const wrist = landmarks[0];
-    const wristX = mirrorX ? 1 - wrist.x : wrist.x;
-    const indexMCP = landmarks[5];
-    const indexX = mirrorX ? 1 - indexMCP.x : indexMCP.x;
-    const distance = Math.hypot(
-        indexX - wristX,
-        indexMCP.y - wrist.y,
-        indexMCP.z - wrist.z
-    ) || 1e-6;
-    const normalized = new Array(landmarks.length * 3);
+function preprocessLandmarks(multiHandLandmarks, mirrorX = false) {
+    const processHand = (landmarks) => {
+        if (!landmarks) return new Array(63).fill(0);
+        const wrist = landmarks[0];
+        const wristX = mirrorX ? 1 - wrist.x : wrist.x;
+        const indexMCP = landmarks[5];
+        const indexX = mirrorX ? 1 - indexMCP.x : indexMCP.x;
+        const distance = Math.hypot(
+            indexX - wristX,
+            indexMCP.y - wrist.y,
+            indexMCP.z - wrist.z
+        ) || 1e-6;
+        const normalized = new Array(63);
 
-    for (let index = 0; index < landmarks.length; index += 1) {
-        const point = landmarks[index];
-        const pointX = mirrorX ? 1 - point.x : point.x;
-        const base = index * 3;
-        normalized[base] = (pointX - wristX) / distance;
-        normalized[base + 1] = (point.y - wrist.y) / distance;
-        normalized[base + 2] = (point.z - wrist.z) / distance;
-    }
+        for (let i = 0; i < 21; i++) {
+            const point = landmarks[i];
+            const pointX = mirrorX ? 1 - point.x : point.x;
+            const base = i * 3;
+            normalized[base] = (pointX - wristX) / distance;
+            normalized[base + 1] = (point.y - wrist.y) / distance;
+            normalized[base + 2] = (point.z - wrist.z) / distance;
+        }
+        return normalized;
+    };
 
-    return normalized;
+    const hand1 = multiHandLandmarks[0] || null;
+    const hand2 = multiHandLandmarks[1] || null;
+
+    return [...processHand(hand1), ...processHand(hand2)];
 }
 
 function getSmoothedPrediction(predLabel) {
@@ -615,8 +624,9 @@ function hasStrongASLZMotion(label, confidence, frameBuffer) {
     return hasDirectionOrCurvature;
 }
 
-function labelMatchesDetectedHands(label, detectedHandCount) {
-    const requirement = normalizeHandRequirement(dynamicLabelHandRequirements[label]);
+function labelMatchesDetectedHands(label, detectedHandCount, isDynamic = true) {
+    const reqs = isDynamic ? dynamicLabelHandRequirements : staticLabelHandRequirements;
+    const requirement = normalizeHandRequirement(reqs[label]);
     return requirement === 'any' || requirement === detectedHandCount;
 }
 
@@ -665,13 +675,13 @@ function chooseBestCandidateWithLocalPriority(candidates) {
     return bestLocal || bestServer || null;
 }
 
-function runPrediction(landmarks, detectedHandCount = 1) {
+function runPrediction(handLandmarks, detectedHandCount = 1) {
     // We need at least one model
     if (!serverModel && !localModel && !localModelDynamic) return;
 
     tf.tidy(() => {
-        // Prepare Inputs for static models
-        const flatNormal = preprocessLandmarks(landmarks);
+        // Prepare Inputs
+        const flatNormal = preprocessLandmarks(handLandmarks);
         const motionState = updateMotionState(flatNormal);
         const staticAllowed = motionState.stillForMs >= STATIC_STILL_DURATION_MS;
 
@@ -681,20 +691,27 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             holdStartTime = 0;
         }
 
-        const tensorNormal = tf.tensor2d([flatNormal]);
+        const features63 = flatNormal.slice(0, 63);
+        const getFeaturesForModel = (m, mirror = false) => {
+            if (!m) return features63;
+            const shape = m.inputs[0].shape;
+            const inputSize = shape[shape.length - 1];
+            if (inputSize === 126) return mirror ? preprocessLandmarks(handLandmarks, true) : flatNormal;
+            return mirror ? preprocessLandmarks(handLandmarks, true).slice(0, 63) : features63;
+        };
 
-        // Collect candidates from all available models
         let candidates = [];
 
-        // 1. Query Server Model (Static only when hand is still)
+        // 1. Query Server Model
         if (staticAllowed && serverModel && serverLabels.length) {
+            const tensorNormal = tf.tensor2d([getFeaturesForModel(serverModel, false)]);
             const pNorm = predictSingleModel(serverModel, serverLabels, tensorNormal);
             if (!shouldSkipStaticLabel(pNorm.label)) {
                 candidates.push({ ...pNorm, source: 'Server' });
             }
 
             if (pNorm.conf < 0.7) {
-                const tensorFlipped = tf.tensor2d([preprocessLandmarks(landmarks, true)]);
+                const tensorFlipped = tf.tensor2d([getFeaturesForModel(serverModel, true)]);
                 const pFlip = predictSingleModel(serverModel, serverLabels, tensorFlipped);
                 if (!shouldSkipStaticLabel(pFlip.label)) {
                     candidates.push({ ...pFlip, source: 'Server(M)' });
@@ -702,37 +719,38 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             }
         }
 
-        // 2. Query Local Static Model (only when hand is still)
+        // 2. Query Local Static Model
         if (staticAllowed && localModel && localLabels.length) {
+            const tensorNormal = tf.tensor2d([getFeaturesForModel(localModel, false)]);
             const pNorm = predictSingleModel(localModel, localLabels, tensorNormal);
-            if (!shouldSkipStaticLabel(pNorm.label)) {
+            if (!shouldSkipStaticLabel(pNorm.label) && labelMatchesDetectedHands(pNorm.label, detectedHandCount, false)) {
                 candidates.push({ ...pNorm, source: 'Local' });
             }
-
-            // Keep local model non-mirrored to avoid unstable predictions from mirrored coordinates.
         }
 
-        // 3. Query Dynamic Model with frame buffer
-        // Skip dynamic detection if user is in the middle of spelling
+        // 3. Query Dynamic Model
         if (localModelDynamic && localLabelsDynamic.length) {
             if (dynamicBufferStartTime === 0) {
                 dynamicBufferStartTime = Date.now();
             }
 
-            // Add current frame to buffer
             dynamicFrameBuffer.push(flatNormal);
 
-            // Keep buffer at fixed size
             if (dynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
                 dynamicFrameBuffer.shift();
             }
 
             const dynamicReady = (Date.now() - dynamicBufferStartTime) >= DYNAMIC_ANALYZE_MS;
 
-            // Wait at least 1 second to analyze motion before predicting dynamic signs
             if (dynamicFrameBuffer.length >= 1 && dynamicReady) {
-                // Pad to MAX_DYNAMIC_FRAMES
-                const paddedFrames = [...dynamicFrameBuffer];
+                const shape = localModelDynamic.inputs[0].shape;
+                const inputSize = shape[shape.length - 1];
+                
+                const processedBuffer = inputSize === 126 
+                    ? dynamicFrameBuffer 
+                    : dynamicFrameBuffer.map(f => f.slice(0, 63));
+
+                const paddedFrames = [...processedBuffer];
                 const lastFrame = paddedFrames[paddedFrames.length - 1];
                 while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
                     paddedFrames.push(lastFrame);
@@ -742,11 +760,9 @@ function runPrediction(landmarks, detectedHandCount = 1) {
                 const predDynamic = localModelDynamic.predict(tensorDynamic);
                 const { conf, label: predictedDynamicLabel } = getPredictionFromTensor(predDynamic, localLabelsDynamic);
 
-                // Keep dynamic predictions unboosted to reduce false positives,
-                // but still enforce hand-count requirements when available.
                 const allowDynamicDuringSpelling = accumulatedWord.length === 0 || isASLDynamicSpellingLetter(predictedDynamicLabel);
                 const strongEnoughForZ = hasStrongASLZMotion(predictedDynamicLabel, conf, paddedFrames);
-                if (allowDynamicDuringSpelling && strongEnoughForZ && labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
+                if (allowDynamicDuringSpelling && strongEnoughForZ && labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount, true)) {
                     candidates.push({
                         label: predictedDynamicLabel,
                         conf: conf,
@@ -754,8 +770,6 @@ function runPrediction(landmarks, detectedHandCount = 1) {
                         isDynamic: true
                     });
                 }
-                tensorDynamic.dispose();
-                predDynamic.dispose();
             }
         }
 

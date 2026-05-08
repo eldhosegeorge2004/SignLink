@@ -1510,12 +1510,32 @@ async function startCamera() {
 }
 
 // --- Logic ---
-function preprocessLandmarks(landmarks) {
-    const wrist = landmarks[0];
-    let shifted = landmarks.map(p => ({ x: p.x - wrist.x, y: p.y - wrist.y, z: p.z - wrist.z }));
-    const indexMCP = shifted[5];
-    const distance = Math.sqrt(Math.pow(indexMCP.x, 2) + Math.pow(indexMCP.y, 2) + Math.pow(indexMCP.z, 2)) || 1e-6;
-    return shifted.flatMap(p => [p.x / distance, p.y / distance, p.z / distance]);
+function preprocessLandmarks(multiHandLandmarks) {
+    const processHand = (landmarks) => {
+        if (!landmarks) return new Array(63).fill(0);
+        const wrist = landmarks[0];
+        const indexMCP = landmarks[5];
+        const distance = Math.hypot(
+            indexMCP.x - wrist.x,
+            indexMCP.y - wrist.y,
+            indexMCP.z - wrist.z
+        ) || 1e-6;
+        const normalized = new Array(63);
+
+        for (let i = 0; i < 21; i++) {
+            const point = landmarks[i];
+            const base = i * 3;
+            normalized[base] = (point.x - wrist.x) / distance;
+            normalized[base + 1] = (point.y - wrist.y) / distance;
+            normalized[base + 2] = (point.z - wrist.z) / distance;
+        }
+        return normalized;
+    };
+
+    const hand1 = multiHandLandmarks[0] || null;
+    const hand2 = multiHandLandmarks[1] || null;
+
+    return [...processHand(hand1), ...processHand(hand2)];
 }
 
 function onResults(results) {
@@ -1539,30 +1559,26 @@ function onResults(results) {
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
-
-            // Static mode recording
-            if (isCollecting && recordingMode === 'static') {
-                const label = normalizeLabel(labelInput.value);
-                if (label) {
-                    labelInput.value = label;
-                    const flatLandmarks = preprocessLandmarks(landmarks);
-                    const shouldContinue = captureStaticSample(label, flatLandmarks);
-                    if (!shouldContinue) break;
-                }
-            }
-
         }
 
-        // Dynamic mode recording: capture one frame per interval from primary hand,
-        // while remembering whether this sample used one hand or two hands.
+        // Static mode recording: now handles up to 2 hands in a single sample
+        if (isCollecting && recordingMode === 'static') {
+            const label = normalizeLabel(labelInput.value);
+            if (label) {
+                labelInput.value = label;
+                const flatLandmarks = preprocessLandmarks(results.multiHandLandmarks);
+                captureStaticSample(label, flatLandmarks, detectedHands);
+            }
+        }
+
+        // Dynamic mode recording: also supports up to 2 hands
         if (isDynamicRecording && recordingMode === 'dynamic') {
             dynamicRecordingMaxHands = Math.max(dynamicRecordingMaxHands, detectedHands);
 
             const now = Date.now();
             const frameInterval = 1000 / TARGET_FPS;
             if (now - lastFrameCaptureTime >= frameInterval) {
-                const primaryLandmarks = results.multiHandLandmarks[0];
-                const flatLandmarks = preprocessLandmarks(primaryLandmarks);
+                const flatLandmarks = preprocessLandmarks(results.multiHandLandmarks);
                 dynamicFrameBuffer.push(flatLandmarks);
                 lastFrameCaptureTime = now;
 
@@ -1601,25 +1617,18 @@ function saveDataPoint(label, landmarks, type = 'static', handCount = 1) {
     updateUIStats();
 }
 
-function captureStaticSample(label, flatLandmarks) {
-    if (!isCollecting) return false;
-    if (staticSessionSampleCount >= MAX_STATIC_SAMPLES_PER_SESSION) {
-        stopStaticCollection('Auto-stopped at 100 samples.');
-        return false;
-    }
+function captureStaticSample(label, flatLandmarks, handCount = 1) {
+    if (staticSessionSampleCount >= MAX_STATIC_SAMPLES_PER_SESSION) return false;
 
-    saveDataPoint(label, flatLandmarks, 'static');
-    staticSessionSampleCount += 1;
-    lastRecordedBatchCount += 1;
-    statusMsg.textContent = `Recording static sign: ${staticSessionSampleCount}/${MAX_STATIC_SAMPLES_PER_SESSION}`;
-    updateMobileRecordingCounter(staticSessionSampleCount);
-    updateMobileTrainSaveVisibility();
+    saveDataPoint(label, flatLandmarks, 'static', handCount);
+    staticSessionSampleCount++;
+    statusMsg.textContent = `Collected ${staticSessionSampleCount}/${MAX_STATIC_SAMPLES_PER_SESSION} samples for "${label}"`;
+    updateMobileRecordingCounter(staticSessionSampleCount, MAX_STATIC_SAMPLES_PER_SESSION, 'samples');
 
     if (staticSessionSampleCount >= MAX_STATIC_SAMPLES_PER_SESSION) {
-        stopStaticCollection('Auto-stopped at 100 samples.');
+        stopStaticCollection('Session complete!');
         return false;
     }
-
     return true;
 }
 
@@ -2040,7 +2049,7 @@ const __fetchCloudModel_removed_placeholder = null;
 
 function createStaticModel(outputUnits) {
     const staticModel = tf.sequential();
-    staticModel.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [63] }));
+    staticModel.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [126] }));
     staticModel.add(tf.layers.dropout({ rate: 0.2 }));
     staticModel.add(tf.layers.dense({ units: 32, activation: 'relu' }));
     staticModel.add(tf.layers.dense({ units: outputUnits, activation: 'softmax' }));
@@ -2053,7 +2062,7 @@ function createDynamicModel(outputUnits) {
     dynamicModel.add(tf.layers.lstm({
         units: 64,
         returnSequences: true,
-        inputShape: [MAX_DYNAMIC_FRAMES, 63],
+        inputShape: [MAX_DYNAMIC_FRAMES, 126],
         kernelInitializer: 'glorotUniform',
         recurrentInitializer: 'glorotUniform'
     }));
@@ -2196,8 +2205,9 @@ async function trainStaticModel(staticData, newStaticData) {
         trainingLabels.forEach((label, index) => { labelMap[label] = index; });
 
         statusMsg.innerText = "🔄 Training static model from base dataset...";
-
-        const xs = tf.tensor2d(trainingData.map(d => d.landmarks));
+        
+        const padLandmarks = (l) => l.length === 63 ? [...l, ...new Array(63).fill(0)] : l;
+        const xs = tf.tensor2d(trainingData.map(d => padLandmarks(d.landmarks)));
         const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), trainingLabels.length);
         const staticModel = createStaticModel(trainingLabels.length);
 
@@ -2242,7 +2252,8 @@ async function trainStaticModel(staticData, newStaticData) {
 
         statusMsg.innerText = `🔄 Incremental static training on ${newStaticData.length} new samples...`;
 
-        const xs = tf.tensor2d(newStaticData.map(d => d.landmarks));
+        const padLandmarks = (l) => l.length === 63 ? [...l, ...new Array(63).fill(0)] : l;
+        const xs = tf.tensor2d(newStaticData.map(d => padLandmarks(d.landmarks)));
         const ys = tf.oneHot(tf.tensor1d(newStaticData.map(d => labelMap[d.label]), 'int32'), internalLabels.length);
 
         try {
@@ -2282,7 +2293,8 @@ async function trainStaticModel(staticData, newStaticData) {
 
     statusMsg.innerText = `🔄 New static labels detected (${unseenLabels.join(', ')}). Rebuilding static model with rehearsal data...`;
 
-    const xs = tf.tensor2d(trainingData.map(d => d.landmarks));
+    const padLandmarks = (l) => l.length === 63 ? [...l, ...new Array(63).fill(0)] : l;
+    const xs = tf.tensor2d(trainingData.map(d => padLandmarks(d.landmarks)));
     const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), trainingLabels.length);
     const rebuiltStaticModel = createStaticModel(trainingLabels.length);
 
@@ -2324,10 +2336,11 @@ async function trainDynamicModel(dynamicData, newDynamicData) {
 
         const handRequirementMap = computeDynamicHandRequirements(trainingData, trainingLabels);
 
+        const padFeatures = (f) => f.length === 63 ? [...f, ...new Array(63).fill(0)] : f;
         const paddedSequences = trainingData.map(d => {
-            const frames = d.frames || [];
+            const frames = (d.frames || []).map(f => padFeatures(f));
             if (frames.length < MAX_DYNAMIC_FRAMES) {
-                const lastFrame = frames[frames.length - 1] || new Array(63).fill(0);
+                const lastFrame = frames[frames.length - 1] || new Array(126).fill(0);
                 return [...frames, ...Array(MAX_DYNAMIC_FRAMES - frames.length).fill(lastFrame)];
             }
             return frames.slice(0, MAX_DYNAMIC_FRAMES);
@@ -2381,10 +2394,11 @@ async function trainDynamicModel(dynamicData, newDynamicData) {
         const labelMap = {};
         internalLabels.forEach((label, index) => { labelMap[label] = index; });
 
+        const padFeatures = (f) => f.length === 63 ? [...f, ...new Array(63).fill(0)] : f;
         const paddedSequences = newDynamicData.map(d => {
-            const frames = d.frames || [];
+            const frames = (d.frames || []).map(f => padFeatures(f));
             if (frames.length < MAX_DYNAMIC_FRAMES) {
-                const lastFrame = frames[frames.length - 1] || new Array(63).fill(0);
+                const lastFrame = frames[frames.length - 1] || new Array(126).fill(0);
                 return [...frames, ...Array(MAX_DYNAMIC_FRAMES - frames.length).fill(lastFrame)];
             }
             return frames.slice(0, MAX_DYNAMIC_FRAMES);
@@ -2440,10 +2454,11 @@ async function trainDynamicModel(dynamicData, newDynamicData) {
 
     const handRequirementMap = computeDynamicHandRequirements(trainingData, trainingLabels);
 
+    const padFeatures = (f) => f.length === 63 ? [...f, ...new Array(63).fill(0)] : f;
     const paddedSequences = trainingData.map(d => {
-        const frames = d.frames || [];
+        const frames = (d.frames || []).map(f => padFeatures(f));
         if (frames.length < MAX_DYNAMIC_FRAMES) {
-            const lastFrame = frames[frames.length - 1] || new Array(63).fill(0);
+            const lastFrame = frames[frames.length - 1] || new Array(126).fill(0);
             return [...frames, ...Array(MAX_DYNAMIC_FRAMES - frames.length).fill(lastFrame)];
         }
         return frames.slice(0, MAX_DYNAMIC_FRAMES);
