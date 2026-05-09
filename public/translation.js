@@ -333,9 +333,14 @@ async function loadSavedModelAndLabels() {
     }
 }
 async function fetchCloudModel(type, lang) {
+    if (!window.supabaseClient) {
+        console.warn("Supabase client not initialized. Skipping cloud fetch.");
+        return null;
+    }
     try {
         const langLower = lang.toLowerCase();
         const candidates = await window.getStorageBucketCandidates('models');
+        console.log(`[CloudFetch] Checking for ${type} model in candidates:`, candidates);
         
         for (const modelsBucket of candidates) {
             // 1. Get Public URLs for labels and model
@@ -347,16 +352,23 @@ async function fetchCloudModel(type, lang) {
                 .from(modelsBucket)
                 .getPublicUrl(`models/${langLower}/${type}/model.json`);
 
+            console.log(`[CloudFetch] Attempting ${modelsBucket} bucket...`);
+
             // 2. Load Labels
             const labelsRes = await fetch(labelsUrlData.publicUrl);
             if (!labelsRes.ok) {
+                console.warn(`[CloudFetch] Failed to fetch labels from ${modelsBucket}: ${labelsRes.status}`);
                 continue;
             }
 
-            const labels = normalizeLabelList(await labelsRes.json()).labels;
+            const labelsData = await labelsRes.json();
+            const labels = normalizeLabelList(labelsData).labels;
+            console.log(`[CloudFetch] Successfully loaded ${labels.length} labels.`);
             
             // 3. Load Model
+            console.log(`[CloudFetch] Loading model weights from: ${modelUrlData.publicUrl}`);
             const model = await tf.loadLayersModel(modelUrlData.publicUrl);
+            console.log(`[CloudFetch] Model loaded successfully.`);
             
             let handReqs = null;
             if (type === 'dynamic') {
@@ -372,9 +384,10 @@ async function fetchCloudModel(type, lang) {
             return { model, labels, handReqs };
         }
 
+        console.warn(`[CloudFetch] No model artifacts found in any candidate buckets for ${type}.`);
         return null;
     } catch (err) {
-        console.warn(`Cloud model fetch failed for ${type}:`, err);
+        console.error(`[CloudFetch] Fatal error fetching cloud model for ${type}:`, err);
         return null;
     }
 }

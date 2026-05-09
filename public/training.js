@@ -328,6 +328,28 @@ const STORAGE_KEYS = {
     'ASL': { model: 'my-asl-model', labels: 'asl_labels', data: 'asl_data' }
 };
 
+// Real-time sync polling
+let syncInterval = null;
+const SYNC_INTERVAL_MS = 30000; // Check every 30 seconds
+
+async function startRealtimeSync() {
+    // Initial check
+    await checkForSavedModels();
+    
+    // Start polling for new models
+    if (syncInterval) clearInterval(syncInterval);
+    syncInterval = setInterval(async () => {
+        await checkForSavedModels();
+    }, SYNC_INTERVAL_MS);
+}
+
+function stopRealtimeSync() {
+    if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+    }
+}
+
 // --- Initialization ---
 async function init() {
     startCamera();
@@ -336,6 +358,7 @@ async function init() {
     setupMobileSignSetup(); // New mobile workflow
     setupCustomAlert();
     await loadDataFromServer();
+    await startRealtimeSync();
 }
 
 let confirmResolver = null;
@@ -1263,18 +1286,115 @@ function setMobileBottomBarMode(mode) {
 
 // Redundant functions removed
 
-// Check if models are already saved in localStorage
+// Download and cache actual model files from cloud storage
+async function downloadAndCacheModel(modelType, fileName) {
+    try {
+        const response = await fetch(`/api/download-model?lang=${currentLang}&type=${modelType}&fileName=${encodeURIComponent(fileName)}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        // Save to localStorage for immediate use
+        const arrayBuffer = await response.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        
+        localStorage.setItem(`${STORAGE_KEYS[currentLang].model}-${modelType}`, base64);
+        return true;
+    } catch (err) {
+        console.error(`Failed to download ${modelType} model:`, err);
+        return false;
+    }
+}
+
+// Download trained models from cloud storage
+async function downloadTrainedModelsFromCloud() {
+    try {
+        const response = await fetch('/api/list-models');
+        if (!response.ok) return;
+        
+        const cloudFiles = await response.json();
+        const langPrefix = `models/${currentLang.toLowerCase()}/`;
+        
+        const modelFiles = cloudFiles.filter(file => file.name.startsWith(langPrefix));
+        if (modelFiles.length === 0) return;
+        
+        let downloadedModels = { static: false, dynamic: false };
+        const modelTypes = ['static', 'dynamic'];
+        
+        for (const type of modelTypes) {
+            const typeFiles = modelFiles.filter(file => file.name.includes(`/${type}/`));
+            if (typeFiles.length > 0) {
+                // Download model.json and weights.bin if available
+                const modelJson = typeFiles.find(f => f.name.includes('model.json'));
+                const weightsBin = typeFiles.find(f => f.name.includes('weights.bin'));
+                
+                if (modelJson) {
+                    const success = await downloadAndCacheModel(type, 'model.json');
+                    if (success) downloadedModels[type] = true;
+                }
+                
+                if (weightsBin) {
+                    await downloadAndCacheModel(type, 'weights.bin');
+                }
+            }
+        }
+        
+        // Update localStorage to reflect cloud models availability
+        if (downloadedModels.static) {
+            localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-static`, 'cloud-synced');
+        }
+        if (downloadedModels.dynamic) {
+            localStorage.setItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`, 'cloud-synced');
+        }
+        
+        return downloadedModels;
+    } catch (err) {
+        console.warn('Failed to check cloud models:', err);
+        return null;
+    }
+}
+
+// Track last known model state to detect new models
+let lastKnownModels = { static: false, dynamic: false };
+
+// Check if models are already saved in localStorage or cloud
 async function checkForSavedModels() {
+    // First check cloud for models
+    const cloudModels = await downloadTrainedModelsFromCloud();
+    
     const staticLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-static`);
     const dynamicLabels = localStorage.getItem(`${STORAGE_KEYS[currentLang].labels}-dynamic`);
 
-    if (staticLabels || dynamicLabels) {
-        let modelInfo = "Saved models found: ";
-        if (staticLabels) modelInfo += "Static ✋ ";
-        if (dynamicLabels) modelInfo += "Dynamic 🔄";
-        statusMsg.innerText = `✅ ${modelInfo}. You can use these in Live Translation!`;
+    const hasStatic = staticLabels || cloudModels?.static;
+    const hasDynamic = dynamicLabels || cloudModels?.dynamic;
+
+    // Check for new models that weren't available before
+    const newStaticAvailable = hasStatic && !lastKnownModels.static;
+    const newDynamicAvailable = hasDynamic && !lastKnownModels.dynamic;
+
+    // Update last known state
+    lastKnownModels.static = hasStatic;
+    lastKnownModels.dynamic = hasDynamic;
+
+    if (hasStatic || hasDynamic) {
+        let modelInfo = "Models available: ";
+        if (hasStatic) modelInfo += "Static ✋ ";
+        if (hasDynamic) modelInfo += "Dynamic 🔄";
+        
+        const source = (staticLabels || dynamicLabels) ? "local" : "cloud";
+        statusMsg.innerText = `✅ ${modelInfo} (${source}). Ready for Live Translation!`;
         if (saveBtn) saveBtn.disabled = true;
 
+        // Show notification for newly available models
+        if (newStaticAvailable || newDynamicAvailable) {
+            const newTypes = [];
+            if (newStaticAvailable) newTypes.push("Static");
+            if (newDynamicAvailable) newTypes.push("Dynamic");
+            showToast(`New ${newTypes.join(" & ")} model(s) available from cloud! 🎉`, 'cloud_download');
+        }
+    } else {
+        lastKnownModels = { static: false, dynamic: false };
     }
 }
 
@@ -1973,11 +2093,11 @@ async function fetchCloudModel(type, lang) {
             // 1. Get Public URLs for labels and model
             const { data: labelsUrlData } = window.supabaseClient.storage
                 .from(modelsBucket)
-                .getPublicUrl(`models/${langLower}/${type}/labels.json`);
-                
+                .getPublicUrl(`${langLower}/${type}/labels.json`);
+            
             const { data: modelUrlData } = window.supabaseClient.storage
                 .from(modelsBucket)
-                .getPublicUrl(`models/${langLower}/${type}/model.json`);
+                .getPublicUrl(`${langLower}/${type}/model.json`);
 
             // 2. Load Labels
             const labelsRes = await fetch(labelsUrlData.publicUrl);
@@ -1994,7 +2114,7 @@ async function fetchCloudModel(type, lang) {
             if (type === 'dynamic') {
                 const { data: handReqsUrlData } = window.supabaseClient.storage
                     .from(modelsBucket)
-                    .getPublicUrl(`models/${langLower}/${type}/hand_reqs.json`);
+                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
                 const reqRes = await fetch(handReqsUrlData.publicUrl);
                 if (reqRes.ok) {
                     handReqs = normalizeHandRequirementMap(await reqRes.json()).normalized;

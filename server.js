@@ -23,17 +23,24 @@ const STORAGE_BUCKETS = {
 };
 
 async function ensureBucketExists(bucketName) {
-    const { data: buckets, error } = await supabase.storage.listBuckets();
-    if (error) {
-        throw new Error(`Cannot list storage buckets: ${error.message}`);
-    }
+    try {
+        const { data: buckets, error } = await supabase.storage.listBuckets();
+        if (error) {
+            console.error('Supabase storage error:', error);
+            throw new Error(`Cannot access Supabase storage: ${error.message}. Check SUPABASE_SERVICE_KEY in .env file.`);
+        }
 
-    const bucket = buckets.find((entry) => entry.name === bucketName);
-    if (!bucket) {
-        throw new Error(`Storage bucket "${bucketName}" not found. Create it in Supabase Storage or set the matching SUPABASE_*_BUCKET env var.`);
-    }
+        const bucket = buckets.find((entry) => entry.name === bucketName);
+        if (!bucket) {
+            console.log('Available buckets:', buckets.map(b => b.name));
+            throw new Error(`Storage bucket "${bucketName}" not found. Create it in Supabase Storage or set the matching SUPABASE_*_BUCKET env var.`);
+        }
 
-    return bucket;
+        return bucket;
+    } catch (err) {
+        console.error('Bucket check failed:', err);
+        throw err;
+    }
 }
 
 async function getModelBucketCandidates() {
@@ -68,6 +75,19 @@ async function uploadToAvailableBucket(bucketCandidates, filePath, buffer, optio
     }
 
     throw lastError;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: convert a Unix-ms integer (or ISO string) to an ISO timestamp string
+// that Supabase/PostgreSQL accepts for timestamptz columns.
+// ─────────────────────────────────────────────────────────────────────────────
+function toISOTimestamp(value) {
+    if (!value) return null;
+    // If it's already a string (ISO date), return as-is
+    if (typeof value === 'string') return value;
+    // If it's a number (Unix ms), convert to ISO string
+    if (typeof value === 'number') return new Date(value).toISOString();
+    return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,8 +134,8 @@ async function migrateLocalDataToSupabase() {
                     frames: s.frames || null,
                     hand_count: s.handCount || null,
                     is_trained: s.isTrained !== undefined ? s.isTrained : true,
-                    recorded_at: s.recordedAt || null,
-                    trained_at: s.trainedAt || null
+                    recorded_at: toISOTimestamp(s.recordedAt),
+                    trained_at: toISOTimestamp(s.trainedAt)
                 }));
 
                 const { error: insertErr } = await supabase
@@ -183,20 +203,30 @@ app.get('/api/training-data', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/training-data', async (req, res) => {
     try {
+        console.log('Saving training data to Supabase...');
         const allData = req.body; // { ISL: [...], ASL: [...] }
+        console.log('Received data for languages:', Object.keys(allData));
 
         for (const lang of Object.keys(allData)) {
             const samples = allData[lang] || [];
+            console.log(`Processing ${samples.length} samples for ${lang}`);
 
             // Delete existing rows for this language
+            console.log(`Deleting existing data for ${lang}...`);
             const { error: deleteErr } = await supabase
                 .from('training_data')
                 .delete()
                 .eq('lang', lang);
 
-            if (deleteErr) throw deleteErr;
+            if (deleteErr) {
+                console.error(`Delete error for ${lang}:`, deleteErr);
+                throw deleteErr;
+            }
 
-            if (samples.length === 0) continue;
+            if (samples.length === 0) {
+                console.log(`No samples to insert for ${lang}`);
+                continue;
+            }
 
             // Insert in batches of 500
             const BATCH = 500;
@@ -209,22 +239,29 @@ app.post('/api/training-data', async (req, res) => {
                     frames: s.frames || null,
                     hand_count: s.handCount || null,
                     is_trained: s.isTrained !== undefined ? s.isTrained : false,
-                    recorded_at: s.recordedAt || null,
-                    trained_at: s.trainedAt || null
+                    recorded_at: toISOTimestamp(s.recordedAt),
+                    trained_at: toISOTimestamp(s.trainedAt)
                 }));
 
+                console.log(`Inserting batch ${Math.floor(i/BATCH) + 1} for ${lang} (${batch.length} samples)`);
                 const { error: insertErr } = await supabase
                     .from('training_data')
                     .insert(batch);
 
-                if (insertErr) throw insertErr;
+                if (insertErr) {
+                    console.error(`Insert error for ${lang} batch ${Math.floor(i/BATCH) + 1}:`, insertErr);
+                    throw insertErr;
+                }
             }
+            console.log(`Successfully saved ${samples.length} samples for ${lang}`);
         }
 
+        console.log('Training data saved successfully');
         res.json({ success: true });
     } catch (err) {
-        console.error('Error saving training data to Supabase:', err.message);
-        res.status(500).json({ error: 'Failed to save training data' });
+        console.error('Error saving training data to Supabase:', err);
+        console.error('Full error details:', err);
+        res.status(500).json({ error: err.message || 'Failed to save training data' });
     }
 });
 
@@ -429,21 +466,29 @@ app.post('/api/trigger-cloud-training', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/list-models', async (req, res) => {
     try {
+        console.log('Listing models from storage...');
         const bucketCandidates = await getModelBucketCandidates();
+        console.log('Bucket candidates:', bucketCandidates);
         let data = null;
         let lastError = null;
 
         for (let index = 0; index < bucketCandidates.length; index += 1) {
             const bucketName = bucketCandidates[index];
             try {
+                console.log(`Trying bucket: ${bucketName}`);
                 await ensureBucketExists(bucketName);
                 const result = await supabase.storage
                     .from(bucketName)
                     .list('', { recursive: true });
-                if (result.error) throw result.error;
+                if (result.error) {
+                    console.error(`Bucket ${bucketName} list error:`, result.error);
+                    throw result.error;
+                }
+                console.log(`Found ${result.data?.length || 0} files in ${bucketName}`);
                 data = result.data;
                 break;
             } catch (error) {
+                console.error(`Error with bucket ${bucketName}:`, error);
                 lastError = error;
                 const isBucketMissing = /bucket.*not found/i.test(error.message || '');
                 const hasAnotherCandidate = index < bucketCandidates.length - 1;
@@ -454,9 +499,18 @@ app.get('/api/list-models', async (req, res) => {
         }
 
         if (!data && lastError) throw lastError;
+        console.log(`Returning ${data?.length || 0} model files`);
         res.json(data || []);
     } catch (err) {
-        console.error('Error listing cloud models:', err.message);
+        console.error('Error listing cloud models:', err);
+        console.error('Full error:', err);
+        
+        // If it's an authentication error, return empty array instead of 500
+        if (err.message.includes('Invalid Compact JWS') || err.message.includes('Cannot access Supabase storage')) {
+            console.log('Supabase storage not available, returning empty model list');
+            return res.json([]);
+        }
+        
         res.status(500).json({ error: err.message || 'Failed to list models' });
     }
 });
@@ -484,6 +538,55 @@ app.get('/api/sign-cards', async (req, res) => {
     } catch (err) {
         console.error('Error listing sign cards from Supabase:', err.message);
         res.status(500).json({ error: 'Failed to list sign cards' });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/download-model — download model file from Supabase Storage
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/download-model', async (req, res) => {
+    try {
+        const { lang, type, fileName } = req.query;
+        
+        if (!lang || !type || !fileName) {
+            return res.status(400).json({ error: 'Missing required parameters: lang, type, fileName' });
+        }
+
+        const filePath = `models/${lang.toLowerCase()}/${type}/${fileName}`;
+        const bucketCandidates = await getModelBucketCandidates();
+        
+        for (const bucketName of bucketCandidates) {
+            try {
+                await ensureBucketExists(bucketName);
+                const { data, error } = await supabase.storage
+                    .from(bucketName)
+                    .download(filePath);
+
+                if (error) throw error;
+                
+                // Set appropriate content type
+                const contentType = fileName.endsWith('.json') ? 'application/json' : 'application/octet-stream';
+                res.setHeader('Content-Type', contentType);
+                res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+                
+                return data.arrayBuffer().then(buffer => {
+                    res.send(Buffer.from(buffer));
+                });
+            } catch (error) {
+                const isBucketMissing = /bucket.*not found/i.test(error.message || '');
+                const isLastBucket = bucketName === bucketCandidates[bucketCandidates.length - 1];
+                
+                if (!isBucketMissing || isLastBucket) {
+                    throw error;
+                }
+                // Try next bucket
+            }
+        }
+        
+        res.status(404).json({ error: 'Model file not found' });
+    } catch (err) {
+        console.error('Error downloading model:', err.message);
+        res.status(500).json({ error: 'Failed to download model file' });
     }
 });
 
