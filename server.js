@@ -158,18 +158,33 @@ app.get('/api/training-data', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/training-data — save training data to local file
-// Replaces ALL data for the language(s) in the payload (same as before)
+// Merges incoming language data with existing data in the file
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/training-data', async (req, res) => {
     try {
-        const allData = req.body || { ISL: [], ASL: [] };
+        const incomingData = req.body || {};
+        let currentFileData = { ISL: [], ASL: [] };
 
-        const dataToSave = {
-            ISL: Array.isArray(allData.ISL) ? allData.ISL : [],
-            ASL: Array.isArray(allData.ASL) ? allData.ASL : []
-        };
+        // 1. Read existing data if the file exists
+        if (fs.existsSync(TRAINING_DATA_FILE)) {
+            try {
+                const raw = fs.readFileSync(TRAINING_DATA_FILE, 'utf8');
+                currentFileData = JSON.parse(raw);
+            } catch (readErr) {
+                console.warn('Could not parse existing training data for merging, starting fresh:', readErr.message);
+            }
+        }
 
-        fs.writeFileSync(TRAINING_DATA_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
+        // 2. Merge: Only update languages provided in the request
+        if (incomingData.ISL !== undefined) {
+            currentFileData.ISL = Array.isArray(incomingData.ISL) ? incomingData.ISL : [];
+        }
+        if (incomingData.ASL !== undefined) {
+            currentFileData.ASL = Array.isArray(incomingData.ASL) ? incomingData.ASL : [];
+        }
+
+        // 3. Write back to file
+        fs.writeFileSync(TRAINING_DATA_FILE, JSON.stringify(currentFileData, null, 2), 'utf8');
         res.json({ success: true });
     } catch (err) {
         console.error('Error saving training data to local file:', err.message);

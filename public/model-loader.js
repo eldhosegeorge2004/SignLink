@@ -112,6 +112,8 @@ async function _trainStaticFromScratch(staticSamples) {
     const { trainingData, trainingLabels } = prepared;
 
     const handReqs = _computeHandReqs(trainingData, trainingLabels);
+    const labelMap = {};
+    trainingLabels.forEach((lbl, idx) => { labelMap[lbl] = idx; });
 
     const xs = tf.tensor2d(trainingData.map(d => _padFeatures(d.landmarks)));
     const ys = tf.oneHot(
