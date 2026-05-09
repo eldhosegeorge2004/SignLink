@@ -389,17 +389,21 @@ app.post('/api/upload-model-component', async (req, res) => {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
-        const filePath = `models/${lang.toLowerCase()}/${type}/${fileName}`;
+        // Bucket is already named 'models', so path should be lang/type/fileName (no models/ prefix)
+        const filePath = `${lang.toLowerCase()}/${type}/${fileName}`;
+        console.log(`[Server Upload] Uploading to path: ${filePath} (bucket: models)`);
         const buffer = Buffer.from(fileDataB64, 'base64');
         const bucketCandidates = await getModelBucketCandidates();
+        console.log(`[Server Upload] Bucket candidates:`, bucketCandidates);
         const { bucketName } = await uploadToAvailableBucket(bucketCandidates, filePath, buffer, {
             contentType: contentType || 'application/octet-stream',
             upsert: true
         });
 
+        console.log(`[Server Upload] Successfully uploaded to bucket: ${bucketName}, path: ${filePath}`);
         res.json({ success: true, path: filePath, bucket: bucketName });
     } catch (err) {
-        console.error('Error uploading model component:', err.message);
+        console.error('[Server Upload] Error uploading model component:', err.message);
         res.status(500).json({ error: err.message || 'Failed to upload model component' });
     }
 });
@@ -547,12 +551,13 @@ app.get('/api/sign-cards', async (req, res) => {
 app.get('/api/download-model', async (req, res) => {
     try {
         const { lang, type, fileName } = req.query;
-        
+
         if (!lang || !type || !fileName) {
             return res.status(400).json({ error: 'Missing required parameters: lang, type, fileName' });
         }
 
-        const filePath = `models/${lang.toLowerCase()}/${type}/${fileName}`;
+        // Bucket is already named 'models', so path should be lang/type/fileName (no models/ prefix)
+        const filePath = `${lang.toLowerCase()}/${type}/${fileName}`;
         const bucketCandidates = await getModelBucketCandidates();
         
         for (const bucketName of bucketCandidates) {

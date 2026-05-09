@@ -166,22 +166,6 @@ if (ttsBtn) {
 // Load Models and Labels (Hybrid)
 async function loadSavedModelAndLabels() {
     try {
-        // Don't clear localStorage - use it as fallback while debugging cloud fetch
-        // console.log('[ModelLoad] Clearing stale localStorage models to force fresh cloud loading...');
-        // const keysToRemove = [
-        //     'my-isl-model-static',
-        //     'my-isl-model-dynamic',
-        //     'my-asl-model-static',
-        //     'my-asl-model-dynamic',
-        //     'isl_labels-static',
-        //     'isl_labels-dynamic',
-        //     'isl_labels-dynamic-hand-req',
-        //     'asl_labels-static',
-        //     'asl_labels-dynamic',
-        //     'asl_labels-dynamic-hand-req'
-        // ];
-        // keysToRemove.forEach(key => localStorage.removeItem(key));
-
         // Reset State
         serverModel = null;
         serverLabels = [];
@@ -668,7 +652,12 @@ async function fetchCloudModel(type, lang) {
     }
 }
 
-loadSavedModelAndLabels();
+// Force refresh from cloud on every page load to ensure we have the latest models
+console.log('[Init] Force loading models from cloud on page load...');
+(async () => {
+    await forceRefreshModels();
+    console.log('[Init] Models loaded from cloud successfully');
+})();
 
 // --- Real-time Model Sync ---
 let syncInterval = null;

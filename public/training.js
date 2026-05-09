@@ -774,6 +774,20 @@ function setupMobileSignSetup() {
                 updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
                 await uploadTrainedModelsToCloud();
 
+                // Force refresh models to pick up the newly uploaded cloud models
+                console.log('[Training] Forcing model refresh to pick up newly trained models...');
+                console.log('[Training] window.forceRefreshModels exists:', !!window.forceRefreshModels);
+                if (window.forceRefreshModels) {
+                    try {
+                        await window.forceRefreshModels();
+                        console.log('[Training] Model refresh completed successfully');
+                    } catch (err) {
+                        console.error('[Training] Model refresh failed:', err);
+                    }
+                } else {
+                    console.warn('[Training] window.forceRefreshModels is not available');
+                }
+
                 hideProcessingModal();
 
                 // Clear local sign data now that everything is safely on the cloud
@@ -828,6 +842,20 @@ function setupMobileSignSetup() {
                 updateProcessingModal("Cloud Backup...", "Saving the trained model to the cloud so it works on all devices.");
                 await uploadTrainedModelsToCloud();
 
+                // Force refresh models to pick up the newly uploaded cloud models
+                console.log('[Training] Forcing model refresh to pick up newly trained models...');
+                console.log('[Training] window.forceRefreshModels exists:', !!window.forceRefreshModels);
+                if (window.forceRefreshModels) {
+                    try {
+                        await window.forceRefreshModels();
+                        console.log('[Training] Model refresh completed successfully');
+                    } catch (err) {
+                        console.error('[Training] Model refresh failed:', err);
+                    }
+                } else {
+                    console.warn('[Training] window.forceRefreshModels is not available');
+                }
+
                 hideProcessingModal();
 
                 // Clear local sign data now that everything is safely on the cloud
@@ -871,6 +899,57 @@ function setupMobileSignSetup() {
     }
 
 
+    // Force refresh models from Supabase (clears cache and reloads)
+    async function forceRefreshModels() {
+        console.log('[Training] Force refreshing models from Supabase...');
+
+        // Clear all model and label cache keys for both ISL and ASL
+        const keysToRemove = [
+            'my-isl-model-static',
+            'my-isl-model-dynamic',
+            'my-asl-model-static',
+            'my-asl-model-dynamic',
+            'isl_labels-static',
+            'isl_labels-dynamic',
+            'isl_labels-dynamic-hand-req',
+            'asl_labels-static',
+            'asl_labels-dynamic',
+            'asl_labels-dynamic-hand-req'
+        ];
+
+        keysToRemove.forEach(key => {
+            localStorage.removeItem(key);
+            console.log(`[Training] Removed from localStorage: ${key}`);
+        });
+
+        // Also clear TensorFlow.js indexedDB
+        try {
+            await tf.io.removeModel('localstorage://my-isl-model-static');
+            await tf.io.removeModel('localstorage://my-isl-model-dynamic');
+            await tf.io.removeModel('localstorage://my-asl-model-static');
+            await tf.io.removeModel('localstorage://my-asl-model-dynamic');
+            console.log('[Training] TensorFlow.js models removed from IndexedDB');
+        } catch (e) {
+            console.log('[Training] No TensorFlow.js models to remove or removal failed:', e);
+        }
+
+        console.log('[Training] Model cache cleared successfully');
+
+        // Force reload models from cloud
+        if (typeof loadSavedModelAndLabels === 'function') {
+            console.log('[Training] Calling loadSavedModelAndLabels() to reload from cloud...');
+            await loadSavedModelAndLabels();
+        } else if (typeof loadModelsAndLabels === 'function') {
+            console.log('[Training] Calling loadModelsAndLabels() to reload from cloud...');
+            await loadModelsAndLabels();
+        } else {
+            console.warn('[Training] No model load function available');
+        }
+    }
+
+    // Make it available globally
+    window.forceRefreshModels = forceRefreshModels;
+
     async function uploadTrainedModelsToCloud() {
         if (!model) return;
 
@@ -886,6 +965,7 @@ function setupMobileSignSetup() {
         });
 
         const uploadComponent = async (type, fileName, fileDataB64, contentType) => {
+            console.log(`[Upload] Uploading ${type}/${fileName} for lang=${currentLang}`);
             const response = await fetch('/api/upload-model-component', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -899,9 +979,11 @@ function setupMobileSignSetup() {
             });
 
             const data = await response.json().catch(() => ({}));
+            console.log(`[Upload] Response for ${type}/${fileName}:`, data);
             if (!response.ok) {
                 throw new Error(data.error || 'Failed to upload model component');
             }
+            console.log(`[Upload] Successfully uploaded ${type}/${fileName} to path:`, data.path);
         };
 
         // Static Model Backup

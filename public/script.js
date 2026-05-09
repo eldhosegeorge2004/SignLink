@@ -2279,10 +2279,14 @@ hands.setOptions({
 hands.onResults(onResults);
 
 let isCollecting = false;
-// Initial Load
+// Initial Load - Force refresh from cloud to ensure we have the latest models
+console.log('[Init] Force loading models from cloud on page load...');
 if (modeSelect) modeSelect.value = currentMode;
-// updateModeVariables already reloads models for the active mode.
-updateModeVariables();
+// Force cloud refresh instead of normal load to avoid stale localStorage cache
+(async () => {
+    await forceRefreshModels();
+    console.log('[Init] Models loaded from cloud successfully');
+})();
 loadSavedLabels();
 // loadFromFirestore removed to prevent reference errors to deleted UI components
 
@@ -2307,22 +2311,6 @@ function saveGesture(label, landmarks) {
 // model (pre-trained dataset) and any locally trained model for the
 // selected language.
 async function loadModelsAndLabels() {
-    // Don't clear localStorage - use it as fallback while debugging cloud fetch
-    // console.log('[ModelLoad] Clearing stale localStorage models to force fresh cloud loading...');
-    // const keysToRemove = [
-    //     'my-isl-model-static',
-    //     'my-isl-model-dynamic',
-    //     'my-asl-model-static',
-    //     'my-asl-model-dynamic',
-    //     'isl_labels-static',
-    //     'isl_labels-dynamic',
-    //     'isl_labels-dynamic-hand-req',
-    //     'asl_labels-static',
-    //     'asl_labels-dynamic',
-    //     'asl_labels-dynamic-hand-req'
-    // ];
-    // keysToRemove.forEach(key => localStorage.removeItem(key));
-
     // reset state
     serverModel = null;
     serverLabels = [];
