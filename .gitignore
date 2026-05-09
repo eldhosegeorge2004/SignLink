@@ -18,3 +18,18 @@ public/test_final.html
 scripts/serviceAccountKey.json
 scripts/
 .env
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/.gradle-user-home/
+android/captures/
+*.keystore
+!debug.keystore
+
+# Local development
+public/mediapipe/
+node_modules/
+.DS_Store
+

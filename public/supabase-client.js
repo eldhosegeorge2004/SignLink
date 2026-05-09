@@ -1,6 +1,6 @@
 // public/supabase-client.js
-const supabaseUrl = 'https://ynvykdraupxkhsxxsonb.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InludnlrZHJhdXB4a2hzeHhzb25iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTIyMDUsImV4cCI6MjA4ODg4ODIwNX0.DRdCi6jxts3i9g0vTaRevRcIB4xfEadqxxX_d3DYzvA';
+const supabaseUrl = 'https://qpfnnpunpuzhsrhijkyr.supabase.co';
+const supabaseKey = 'sb_publishable_bmxQgLCLQ35JB0icQy0y8w_0Zks-gcV';
 window.supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 const defaultStorageBuckets = {
