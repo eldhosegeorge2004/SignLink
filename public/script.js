@@ -124,7 +124,7 @@ async function fetchCloudModel(type, lang) {
             if (type === 'dynamic') {
                 const { data: handReqsUrlData } = window.supabaseClient.storage
                     .from(modelsBucket)
-                    .getPublicUrl(`models/${langLower}/${type}/hand_reqs.json`);
+                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
                 const reqRes = await fetch(handReqsUrlData.publicUrl);
                 if (reqRes.ok) {
                     handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
@@ -2320,6 +2320,8 @@ async function loadModelsAndLabels() {
     // load server model for selected language
     const serverModelPath = currentMode === 'ASL' ? 'model/asl/model.json' : 'model/model.json';
     const serverLabelsPath = currentMode === 'ASL' ? 'model/asl/labels.json' : 'labels.json';
+    // DISABLED: Skip local server model to force cloud-only usage (prevents stale local models with old signs like "meow")
+    /*
     try {
         const response = await fetch(serverLabelsPath);
         if (response.ok) {
@@ -2332,6 +2334,8 @@ async function loadModelsAndLabels() {
     } catch (e) {
         console.warn('Server model load failed:', e);
     }
+    */
+    console.log('Local server model disabled - using cloud models only');
 
     // load local static model if available
     try {
@@ -2427,6 +2431,172 @@ async function loadModelsAndLabels() {
         dynamicLabelsLen: uniqueLabelsDynamic.length
     });
 }
+
+// Clear cached models and labels from localStorage
+async function clearModelCache() {
+    console.log('Clearing model cache from localStorage...');
+    
+    // Clear all model and label cache keys for both ISL and ASL
+    const keysToRemove = [
+        'my-isl-model-static',
+        'my-isl-model-dynamic',
+        'my-asl-model-static',
+        'my-asl-model-dynamic',
+        'isl_labels-static',
+        'isl_labels-dynamic',
+        'isl_labels-dynamic-hand-req',
+        'asl_labels-static',
+        'asl_labels-dynamic',
+        'asl_labels-dynamic-hand-req'
+    ];
+    
+    keysToRemove.forEach(key => {
+        localStorage.removeItem(key);
+        console.log(`Removed: ${key}`);
+    });
+    
+    // Also clear TensorFlow.js indexedDB
+    try {
+        await tf.io.removeModel('localstorage://my-isl-model-static');
+        await tf.io.removeModel('localstorage://my-isl-model-dynamic');
+        await tf.io.removeModel('localstorage://my-asl-model-static');
+        await tf.io.removeModel('localstorage://my-asl-model-dynamic');
+        console.log('TensorFlow.js models removed from IndexedDB');
+    } catch (e) {
+        console.log('No TensorFlow.js models to remove or removal failed:', e);
+    }
+    
+    console.log('Model cache cleared successfully');
+}
+
+// Force refresh models from Supabase (clears cache and reloads)
+async function forceRefreshModels() {
+    console.log('Force refreshing models from Supabase...');
+    
+    // Clear cache first
+    await clearModelCache();
+    
+    // Force reload models
+    await loadModelsAndLabels();
+    
+    console.log('Models refreshed from Supabase');
+}
+
+// Make the function available globally for debugging
+window.clearModelCache = clearModelCache;
+window.forceRefreshModels = forceRefreshModels;
+
+// --- Database-Based Detection (Nearest-Neighbor) ---
+let databaseTrainingData = [];
+let databaseLabels = [];
+
+async function loadTrainingDataFromDatabase() {
+    if (!window.supabaseClient) {
+        console.warn("Supabase client not initialized. Cannot load training data.");
+        return;
+    }
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('training_data')
+            .select('*')
+            .eq('lang', currentMode.toLowerCase())
+            .eq('type', 'static')
+            .order('label', { ascending: true });
+
+        if (error) throw error;
+
+        databaseTrainingData = data;
+        databaseLabels = [...new Set(data.map(row => row.label))];
+        console.log(`Loaded ${databaseTrainingData.length} training samples, ${databaseLabels.length} unique labels from database`);
+        console.log('Labels in database:', databaseLabels);
+        console.log('Sample data structure:', data.length > 0 ? JSON.stringify(data[0], null, 2) : 'No data');
+    } catch (err) {
+        console.error('Error loading training data from database:', err);
+    }
+}
+
+// Calculate Euclidean distance between two landmark arrays
+function calculateDistance(landmarks1, landmarks2) {
+    let sum = 0;
+    for (let i = 0; i < landmarks1.length; i++) {
+        const diff = landmarks1[i] - landmarks2[i];
+        sum += diff * diff;
+    }
+    return Math.sqrt(sum);
+}
+
+// Predict using nearest-neighbor matching with priority for newer samples
+function predictWithDatabase(landmarks) {
+    if (databaseTrainingData.length === 0) {
+        console.warn('No training data available for prediction');
+        return { label: null, confidence: 0 };
+    }
+
+    const now = Date.now();
+    let minScore = Infinity;
+    let bestLabel = null;
+    let bestConfidence = 0;
+
+    // Group samples by label
+    const labelGroups = {};
+    for (const sample of databaseTrainingData) {
+        if (!sample.landmarks) continue;
+        if (!labelGroups[sample.label]) {
+            labelGroups[sample.label] = [];
+        }
+        labelGroups[sample.label].push(sample);
+    }
+
+    console.log('Predicting with', Object.keys(labelGroups).length, 'labels:', Object.keys(labelGroups));
+
+    // Calculate score for each label (lower is better)
+    for (const label in labelGroups) {
+        const samples = labelGroups[label];
+        let totalWeightedDistance = 0;
+        let totalWeight = 0;
+
+        for (const sample of samples) {
+            const distance = calculateDistance(landmarks, sample.landmarks);
+
+            // Calculate age in days (max 30 days for decay)
+            const recordedAt = new Date(sample.recorded_at || sample.recordedAt).getTime();
+            const ageInDays = Math.min(30, (now - recordedAt) / (1000 * 60 * 60 * 24));
+
+            // Weight: newer samples have higher weight (exponential decay)
+            // Weight = e^(-age/10) where age is in days
+            const weight = Math.exp(-ageInDays / 10);
+
+            totalWeightedDistance += distance * weight;
+            totalWeight += weight;
+        }
+
+        const avgWeightedDistance = totalWeightedDistance / totalWeight;
+
+        if (avgWeightedDistance < minScore) {
+            minScore = avgWeightedDistance;
+            bestLabel = label;
+            bestConfidence = Math.max(0, 1 - (avgWeightedDistance / 2));
+        }
+    }
+
+    console.log('Best prediction:', bestLabel, 'with confidence:', bestConfidence, 'score:', minScore);
+
+    return { label: bestLabel, confidence: bestConfidence };
+}
+
+// Helper function to check if a specific label is in the database
+function checkLabelInDatabase(labelToCheck) {
+    const found = databaseLabels.includes(labelToCheck);
+    const samples = databaseTrainingData.filter(s => s.label === labelToCheck);
+    console.log(`Label "${labelToCheck}" in database:`, found);
+    console.log(`Number of samples for "${labelToCheck}":`, samples.length);
+    if (samples.length > 0) {
+        console.log('Sample:', JSON.stringify(samples[0], null, 2));
+    }
+    return { found, count: samples.length, samples };
+}
+
+window.checkLabelInDatabase = checkLabelInDatabase;
 
 // --- Camera & Hand Tracking ---
 let isCameraStarted = false;
@@ -2945,29 +3115,18 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             holdStartTime = 0;
         }
 
-        const input = tf.tensor2d([flatLandmarks]);
         let candidates = [];
 
-        // server predictions (ISL only, only when hand is still)
-        if (staticAllowed && serverModel && serverLabels.length) {
-            const pred = serverModel.predict(input);
-            const { conf, label } = getPredictionPeak(pred, serverLabels);
-            if (!shouldSkipStaticLabel(label)) {
-                candidates.push({ label, conf, source: 'server' });
+        // Database-based nearest-neighbor prediction (replaces model-based detection)
+        if (staticAllowed && databaseTrainingData.length > 0) {
+            const { label, confidence } = predictWithDatabase(flatLandmarks);
+            if (label && confidence > 0.3 && !shouldSkipStaticLabel(label)) {
+                candidates.push({ label, conf: confidence, source: 'database' });
             }
         }
 
-        // local static predictions (only when hand is still)
-        if (staticAllowed && model && uniqueLabels.length) {
-            const pred = model.predict(input);
-            const { conf, label } = getPredictionPeak(pred, uniqueLabels);
-            if (!shouldSkipStaticLabel(label)) {
-                candidates.push({ label, conf, source: 'local' });
-            }
-        }
-
-        // dynamic predictions with frame buffer
-        if (modelDynamic && uniqueLabelsDynamic.length) {
+        // dynamic predictions with frame buffer (database-based)
+        if (databaseTrainingData.length > 0) {
             if (dynamicBufferStartTime === 0) {
                 dynamicBufferStartTime = Date.now();
             }
@@ -2981,31 +3140,18 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             const dynamicReady = (Date.now() - dynamicBufferStartTime) >= DYNAMIC_ANALYZE_MS;
 
             if (dynamicFrameBuffer.length >= 1 && dynamicReady) {
-                const paddedFrames = [...dynamicFrameBuffer];
-                const lastFrame = paddedFrames[paddedFrames.length - 1];
-                while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
-                    paddedFrames.push(lastFrame);
+                // Use average of recent frames for dynamic prediction
+                const avgFrame = dynamicFrameBuffer.reduce((acc, frame) => {
+                    return acc.map((val, i) => val + frame[i]);
+                }, new Array(flatLandmarks.length).fill(0)).map(val => val / dynamicFrameBuffer.length);
+
+                const { label, confidence } = predictWithDatabase(avgFrame);
+                if (label && confidence > 0.3) {
+                    candidates.push({ label, conf: confidence, source: 'database-dynamic' });
                 }
 
-                const tensorDynamic = tf.tensor3d([paddedFrames]);
-                const predDynamic = modelDynamic.predict(tensorDynamic);
-                const { conf, label: predictedDynamicLabel } = getPredictionPeak(predDynamic, uniqueLabelsDynamic);
-
-                // Boost confidence for dynamic signs to compete with static scores
-                const boostedConf = Math.min(conf * 1.2, 1.0);
-                const allowDynamicDuringSpelling = accumulatedWord.length === 0 || isASLDynamicSpellingLetter(predictedDynamicLabel);
-                const strongEnoughForZ = hasStrongASLZMotion(predictedDynamicLabel, conf, paddedFrames);
-                if (allowDynamicDuringSpelling && strongEnoughForZ && labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
-                    candidates.push({
-                        label: predictedDynamicLabel,
-                        conf: boostedConf,
-                        source: 'dynamic',
-                        isDynamic: true
-                    });
-                }
-
-                tensorDynamic.dispose();
-                predDynamic.dispose();
+                dynamicBufferStartTime = Date.now();
+                dynamicFrameBuffer = [];
             }
         }
 

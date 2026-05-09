@@ -179,6 +179,8 @@ async function loadSavedModelAndLabels() {
         const promises = [];
 
         // 1. Load Server Model
+        // DISABLED: Skip local server model to force cloud-only usage (prevents stale local models with old signs like "meow")
+        /*
         const serverLoad = async () => {
             console.log("Attempting to load Server Model...");
             try {
@@ -206,6 +208,8 @@ async function loadSavedModelAndLabels() {
             return Promise.resolve();
         };
         promises.push(serverLoad());
+        */
+        console.log('Local server model disabled - using cloud models only');
 
         // 2. Load Local Static Model
         const localLoad = async () => {
@@ -331,7 +335,156 @@ async function loadSavedModelAndLabels() {
         console.error("Error in hybrid load:", e);
         setResultText("Error loading systems.");
     }
+
+    // Load training data from database for nearest-neighbor detection
+    await loadTrainingDataFromDatabase();
 }
+
+// Clear cached models and labels from localStorage
+async function clearModelCache() {
+    console.log('Clearing model cache from localStorage...');
+
+    // Clear all model and label cache keys for both ISL and ASL
+    const keysToRemove = [
+        'my-isl-model-static',
+        'my-isl-model-dynamic',
+        'my-asl-model-static',
+        'my-asl-model-dynamic',
+        'isl_labels-static',
+        'isl_labels-dynamic',
+        'isl_labels-dynamic-hand-req',
+        'asl_labels-static',
+        'asl_labels-dynamic',
+        'asl_labels-dynamic-hand-req'
+    ];
+
+    keysToRemove.forEach(key => {
+        localStorage.removeItem(key);
+        console.log(`Removed: ${key}`);
+    });
+
+    // Also clear TensorFlow.js indexedDB
+    try {
+        await tf.io.removeModel('localstorage://my-isl-model-static');
+        await tf.io.removeModel('localstorage://my-isl-model-dynamic');
+        await tf.io.removeModel('localstorage://my-asl-model-static');
+        await tf.io.removeModel('localstorage://my-asl-model-dynamic');
+        console.log('TensorFlow.js models removed from IndexedDB');
+    } catch (e) {
+        console.log('No TensorFlow.js models to remove or removal failed:', e);
+    }
+
+    console.log('Model cache cleared successfully');
+}
+
+// Force refresh models from Supabase (clears cache and reloads)
+async function forceRefreshModels() {
+    console.log('Force refreshing models from Supabase...');
+
+    // Clear cache first
+    await clearModelCache();
+
+    // Force reload models
+    await loadSavedModelAndLabels();
+
+    console.log('Models refreshed from Supabase');
+}
+
+// Make the function available globally for debugging
+window.clearModelCache = clearModelCache;
+window.forceRefreshModels = forceRefreshModels;
+
+// --- Database-Based Detection (Nearest-Neighbor) ---
+let databaseTrainingData = [];
+let databaseLabels = [];
+
+async function loadTrainingDataFromDatabase() {
+    if (!window.supabaseClient) {
+        console.warn("Supabase client not initialized. Cannot load training data.");
+        return;
+    }
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('training_data')
+            .select('*')
+            .eq('lang', langSelect.value.toLowerCase())
+            .eq('type', 'static')
+            .order('label', { ascending: true });
+
+        if (error) throw error;
+
+        databaseTrainingData = data;
+        databaseLabels = [...new Set(data.map(row => row.label))];
+        console.log(`Loaded ${databaseTrainingData.length} training samples, ${databaseLabels.length} unique labels from database`);
+    } catch (err) {
+        console.error('Error loading training data from database:', err);
+    }
+}
+
+// Calculate Euclidean distance between two landmark arrays
+function calculateDistance(landmarks1, landmarks2) {
+    let sum = 0;
+    for (let i = 0; i < landmarks1.length; i++) {
+        const diff = landmarks1[i] - landmarks2[i];
+        sum += diff * diff;
+    }
+    return Math.sqrt(sum);
+}
+
+// Predict using nearest-neighbor matching with priority for newer samples
+function predictWithDatabase(landmarks) {
+    if (databaseTrainingData.length === 0) {
+        return { label: null, confidence: 0 };
+    }
+
+    const now = Date.now();
+    let minScore = Infinity;
+    let bestLabel = null;
+    let bestConfidence = 0;
+
+    // Group samples by label
+    const labelGroups = {};
+    for (const sample of databaseTrainingData) {
+        if (!sample.landmarks) continue;
+        if (!labelGroups[sample.label]) {
+            labelGroups[sample.label] = [];
+        }
+        labelGroups[sample.label].push(sample);
+    }
+
+    // Calculate score for each label (lower is better)
+    for (const label in labelGroups) {
+        const samples = labelGroups[label];
+        let totalWeightedDistance = 0;
+        let totalWeight = 0;
+
+        for (const sample of samples) {
+            const distance = calculateDistance(landmarks, sample.landmarks);
+
+            // Calculate age in days (max 30 days for decay)
+            const recordedAt = new Date(sample.recorded_at || sample.recordedAt).getTime();
+            const ageInDays = Math.min(30, (now - recordedAt) / (1000 * 60 * 60 * 24));
+
+            // Weight: newer samples have higher weight (exponential decay)
+            // Weight = e^(-age/10) where age is in days
+            const weight = Math.exp(-ageInDays / 10);
+
+            totalWeightedDistance += distance * weight;
+            totalWeight += weight;
+        }
+
+        const avgWeightedDistance = totalWeightedDistance / totalWeight;
+
+        if (avgWeightedDistance < minScore) {
+            minScore = avgWeightedDistance;
+            bestLabel = label;
+            bestConfidence = Math.max(0, 1 - (avgWeightedDistance / 2));
+        }
+    }
+
+    return { label: bestLabel, confidence: bestConfidence };
+}
+
 async function fetchCloudModel(type, lang) {
     if (!window.supabaseClient) {
         console.warn("Supabase client not initialized. Skipping cloud fetch.");
@@ -346,11 +499,11 @@ async function fetchCloudModel(type, lang) {
             // 1. Get Public URLs for labels and model
             const { data: labelsUrlData } = window.supabaseClient.storage
                 .from(modelsBucket)
-                .getPublicUrl(`models/${langLower}/${type}/labels.json`);
-                
+                .getPublicUrl(`${langLower}/${type}/labels.json`);
+
             const { data: modelUrlData } = window.supabaseClient.storage
                 .from(modelsBucket)
-                .getPublicUrl(`models/${langLower}/${type}/model.json`);
+                .getPublicUrl(`${langLower}/${type}/model.json`);
 
             console.log(`[CloudFetch] Attempting ${modelsBucket} bucket...`);
 
@@ -374,7 +527,7 @@ async function fetchCloudModel(type, lang) {
             if (type === 'dynamic') {
                 const { data: handReqsUrlData } = window.supabaseClient.storage
                     .from(modelsBucket)
-                    .getPublicUrl(`models/${langLower}/${type}/hand_reqs.json`);
+                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
                 const reqRes = await fetch(handReqsUrlData.publicUrl);
                 if (reqRes.ok) {
                     handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
@@ -841,50 +994,32 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             // Keep local model non-mirrored to avoid unstable predictions from mirrored coordinates.
         }
 
-        // 3. Query Dynamic Model with frame buffer
-        // Skip dynamic detection if user is in the middle of spelling
-        if (localModelDynamic && localLabelsDynamic.length) {
+        // Database-based dynamic prediction with frame buffer
+        if (databaseTrainingData.length > 0) {
             if (dynamicBufferStartTime === 0) {
                 dynamicBufferStartTime = Date.now();
             }
 
-            // Add current frame to buffer
             dynamicFrameBuffer.push(flatNormal);
 
-            // Keep buffer at fixed size
             if (dynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
                 dynamicFrameBuffer.shift();
             }
 
             const dynamicReady = (Date.now() - dynamicBufferStartTime) >= DYNAMIC_ANALYZE_MS;
 
-            // Wait at least 1 second to analyze motion before predicting dynamic signs
             if (dynamicFrameBuffer.length >= 1 && dynamicReady) {
-                // Pad to MAX_DYNAMIC_FRAMES
-                const paddedFrames = [...dynamicFrameBuffer];
-                const lastFrame = paddedFrames[paddedFrames.length - 1];
-                while (paddedFrames.length < MAX_DYNAMIC_FRAMES) {
-                    paddedFrames.push(lastFrame);
+                const avgFrame = dynamicFrameBuffer.reduce((acc, frame) => {
+                    return acc.map((val, i) => val + frame[i]);
+                }, new Array(flatNormal.length).fill(0)).map(val => val / dynamicFrameBuffer.length);
+
+                const { label, confidence } = predictWithDatabase(avgFrame);
+                if (label && confidence > 0.3) {
+                    candidates.push({ label, conf: confidence, source: 'Database-Dynamic' });
                 }
 
-                const tensorDynamic = tf.tensor3d([paddedFrames]);
-                const predDynamic = localModelDynamic.predict(tensorDynamic);
-                const { conf, label: predictedDynamicLabel } = getPredictionFromTensor(predDynamic, localLabelsDynamic);
-
-                // Keep dynamic predictions unboosted to reduce false positives,
-                // but still enforce hand-count requirements when available.
-                const allowDynamicDuringSpelling = accumulatedWord.length === 0 || isASLDynamicSpellingLetter(predictedDynamicLabel);
-                const strongEnoughForZ = hasStrongASLZMotion(predictedDynamicLabel, conf, paddedFrames);
-                if (allowDynamicDuringSpelling && strongEnoughForZ && labelMatchesDetectedHands(predictedDynamicLabel, detectedHandCount)) {
-                    candidates.push({
-                        label: predictedDynamicLabel,
-                        conf: conf,
-                        source: 'Dynamic',
-                        isDynamic: true
-                    });
-                }
-                tensorDynamic.dispose();
-                predDynamic.dispose();
+                dynamicBufferStartTime = Date.now();
+                dynamicFrameBuffer = [];
             }
         }
 
