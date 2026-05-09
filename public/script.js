@@ -98,11 +98,11 @@ async function fetchCloudModel(type, lang) {
         for (const modelsBucket of candidates) {
             const { data: labelsUrlData } = window.supabaseClient.storage
                 .from(modelsBucket)
-                .getPublicUrl(`models/${langLower}/${type}/labels.json`);
+                .getPublicUrl(`${langLower}/${type}/labels.json`);
 
             const { data: modelUrlData } = window.supabaseClient.storage
                 .from(modelsBucket)
-                .getPublicUrl(`models/${langLower}/${type}/model.json`);
+                .getPublicUrl(`${langLower}/${type}/model.json`);
 
             console.log(`[CloudFetch] Attempting ${modelsBucket} bucket...`);
 
@@ -124,7 +124,7 @@ async function fetchCloudModel(type, lang) {
             if (type === 'dynamic') {
                 const { data: handReqsUrlData } = window.supabaseClient.storage
                     .from(modelsBucket)
-                    .getPublicUrl(`models/${langLower}/${type}/hand_reqs.json`);
+                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
                 const reqRes = await fetch(handReqsUrlData.publicUrl);
                 if (reqRes.ok) {
                     handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
@@ -2307,6 +2307,22 @@ function saveGesture(label, landmarks) {
 // model (pre-trained dataset) and any locally trained model for the
 // selected language.
 async function loadModelsAndLabels() {
+    // Don't clear localStorage - use it as fallback while debugging cloud fetch
+    // console.log('[ModelLoad] Clearing stale localStorage models to force fresh cloud loading...');
+    // const keysToRemove = [
+    //     'my-isl-model-static',
+    //     'my-isl-model-dynamic',
+    //     'my-asl-model-static',
+    //     'my-asl-model-dynamic',
+    //     'isl_labels-static',
+    //     'isl_labels-dynamic',
+    //     'isl_labels-dynamic-hand-req',
+    //     'asl_labels-static',
+    //     'asl_labels-dynamic',
+    //     'asl_labels-dynamic-hand-req'
+    // ];
+    // keysToRemove.forEach(key => localStorage.removeItem(key));
+
     // reset state
     serverModel = null;
     serverLabels = [];
@@ -2341,22 +2357,34 @@ async function loadModelsAndLabels() {
     */
     console.log('Local server model disabled - using cloud models only');
 
+    // Wait for Supabase client to be initialized
+    let maxWait = 50;
+    while (!window.supabaseClient && maxWait > 0) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        maxWait--;
+    }
+    if (!window.supabaseClient) {
+        console.warn('[ModelLoad] Supabase client not initialized after timeout. Will use localStorage fallback.');
+    }
+
     // load local static model if available
     try {
         let cloudData = null;
-        if (navigator.onLine) {
+        if (navigator.onLine && window.supabaseClient) {
+            console.log(`[ModelLoad] Attempting to fetch cloud static model for ${currentMode}...`);
             cloudData = await fetchCloudModel('static', currentMode);
         }
 
         if (cloudData) {
             uniqueLabels = cloudData.labels;
             model = cloudData.model;
-            console.log(`Cloud static model loaded (${uniqueLabels.length} labels)`);
+            console.log(`✅ Cloud static model loaded (${uniqueLabels.length} labels)`);
             try {
                 await model.save(`localstorage://${localStorageModelKey}-static`);
                 localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
             } catch (e) {}
         } else {
+            console.log(`[ModelLoad] Cloud static model not available, checking localStorage...`);
             const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
             if (localLabelData) {
                 const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
@@ -2366,10 +2394,12 @@ async function loadModelsAndLabels() {
                 }
                 try {
                     model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
-                    console.log(`Local static model loaded (${uniqueLabels.length} labels)`);
+                    console.log(`⚠️ Local static model loaded from cache (${uniqueLabels.length} labels)`);
                 } catch (e) {
                     model = null;
                 }
+            } else {
+                console.warn(`[ModelLoad] No static model found in cloud or localStorage`);
             }
         }
     } catch (e) {
@@ -2379,7 +2409,8 @@ async function loadModelsAndLabels() {
     // load local dynamic model if available
     try {
         let cloudData = null;
-        if (navigator.onLine) {
+        if (navigator.onLine && window.supabaseClient) {
+            console.log(`[ModelLoad] Attempting to fetch cloud dynamic model for ${currentMode}...`);
             cloudData = await fetchCloudModel('dynamic', currentMode);
         }
 
@@ -2387,13 +2418,14 @@ async function loadModelsAndLabels() {
             uniqueLabelsDynamic = cloudData.labels;
             modelDynamic = cloudData.model;
             dynamicLabelHandRequirements = cloudData.handReqs || {};
-            console.log(`Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
+            console.log(`✅ Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
             try {
                 await modelDynamic.save(`localstorage://${localStorageModelKey}-dynamic`);
                 localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
                 localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
             } catch (e) {}
         } else {
+            console.log(`[ModelLoad] Cloud dynamic model not available, checking localStorage...`);
             const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
             if (dynamicLabelData) {
                 const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
@@ -2409,10 +2441,12 @@ async function loadModelsAndLabels() {
                 }
                 try {
                     modelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
-                    console.log(`Local dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
+                    console.log(`⚠️ Local dynamic model loaded from cache (${uniqueLabelsDynamic.length} labels)`);
                 } catch (e) {
                     modelDynamic = null;
                 }
+            } else {
+                console.warn(`[ModelLoad] No dynamic model found in cloud or localStorage`);
             }
         }
     } catch (e) {
@@ -3283,6 +3317,9 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
 
         let candidates = [];
 
+        // DISABLED: Database-based nearest-neighbor prediction (contains stale "meow" labels)
+        // Using only TensorFlow models from Supabase
+        /*
         // Database-based nearest-neighbor prediction (replaces model-based detection)
         if (staticAllowed && databaseTrainingData.length > 0) {
             const { label, confidence } = predictWithDatabase(flatLandmarks);
@@ -3320,6 +3357,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 dynamicFrameBuffer = [];
             }
         }
+        */
 
         if (candidates.length === 0) {
             // No confident prediction

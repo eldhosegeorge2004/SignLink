@@ -52,13 +52,6 @@ window.getStorageBucketCandidates = async function getStorageBucketCandidates(bu
     const primary = config[bucketType] || defaultStorageBuckets[bucketType];
     const candidates = [primary];
 
-    if (bucketType === 'models') {
-        const signCardsBucket = config.signCards || defaultStorageBuckets.signCards;
-        if (signCardsBucket && signCardsBucket !== primary) {
-            candidates.push(signCardsBucket);
-        }
-    }
-
     return candidates;
 };
 
