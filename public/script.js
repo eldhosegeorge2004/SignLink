@@ -12,8 +12,6 @@ let localStorageModelKey = 'my-isl-model';
 let localStorageLabelKey = 'isl_labels';
 
 // Hybrid model support (same as translation.js)
-let serverModel = null;
-let serverLabels = [];
 let model = null; // local model reference (used earlier)
 let uniqueLabels = [];
 
@@ -494,35 +492,6 @@ async function loadSignPhraseMap() {
 }
 loadSignPhraseMap();
 
-// Preload sign card URLs from Supabase into cache so cards render instantly
-async function preloadSignCardsFromSupabase() {
-    try {
-        const { data, error } = await window.supabaseClient
-            .from('sign_cards')
-            .select('lang, label, url');
-        if (error) return;
-        
-        const cards = { isl: [], asl: [] };
-        for (const row of data) {
-            if (!cards[row.lang]) cards[row.lang] = [];
-            cards[row.lang].push(row);
-        }
-        
-        let count = 0;
-        for (const [lang, items] of Object.entries(cards)) {
-            for (const item of items) {
-                // Cache the Supabase public URL as available
-                vcImageExistsCache.set(item.url, true);
-                count++;
-            }
-        }
-        if (count > 0) console.log(`✅ Preloaded ${count} sign card URLs from Supabase`);
-    } catch (err) {
-        console.warn('Failed to preload sign cards from Supabase:', err);
-    }
-}
-preloadSignCardsFromSupabase();
-
 function getVCVisibleCardCapacity() {
     if (!predictionSignCardsContainer) return 30;
 
@@ -571,12 +540,24 @@ function buildSignImageCandidates(basePath, keys) {
     return urls;
 }
 
+
 async function resolveWordTokens(word, langFolder) {
     const normalizedWord = word.toLowerCase().replace(/[^a-z0-9-\s]/g, '').trim();
     if (!normalizedWord) return [];
 
     const collapsedWord = normalizedWord.replace(/\s+/g, '-');
     const joinedWord = normalizedWord.replace(/\s+/g, '');
+    
+    // 1. Check Cloud Map First (Fastest, no network request needed if preloaded)
+    const cloudUrl = window.signCardsCloudMap[langFolder]?.get(collapsedWord) || 
+                   window.signCardsCloudMap[langFolder]?.get(joinedWord) ||
+                   window.signCardsCloudMap[langFolder]?.get(normalizedWord);
+    
+    if (cloudUrl) {
+        return [{ type: 'card', src: cloudUrl, label: collapsedWord }];
+    }
+
+    // 2. Fallback to Local Candidates (Requires network check)
     const wordCandidates = [
         ...buildSignImageCandidates(`/signs-images/${langFolder}/words`, [
             collapsedWord,
@@ -596,10 +577,18 @@ async function resolveWordTokens(word, langFolder) {
         }
     }
 
+    // 3. Resolve as Characters
     const charTokens = [];
     const charsOnly = joinedWord.replace(/-/g, '');
     for (const char of charsOnly.toUpperCase()) {
         if (!/[A-Z0-9]/.test(char)) continue;
+
+        const charLower = char.toLowerCase();
+        const cloudCharUrl = window.signCardsCloudMap[langFolder]?.get(charLower);
+        if (cloudCharUrl) {
+            charTokens.push({ type: 'card', src: cloudCharUrl, label: char });
+            continue;
+        }
 
         const charCandidates = [];
         if (/[A-Z]/.test(char)) {
@@ -608,6 +597,11 @@ async function resolveWordTokens(word, langFolder) {
             charCandidates.push(...buildSignImageCandidates(`/signs-images/${langFolder}/characters`, [char]));
             const digitWord = DIGIT_WORD_MAP[char];
             if (digitWord) {
+                const cloudDigitUrl = window.signCardsCloudMap[langFolder]?.get(digitWord.toLowerCase());
+                if (cloudDigitUrl) {
+                    charTokens.push({ type: 'card', src: cloudDigitUrl, label: char });
+                    continue;
+                }
                 charCandidates.push(...buildSignImageCandidates(`/signs-images/${langFolder}/characters`, [digitWord]));
             }
         }
@@ -628,6 +622,7 @@ async function resolveWordTokens(word, langFolder) {
     if (charTokens.length > 0) return charTokens;
     return [{ type: 'label', label: normalizedWord }];
 }
+
 
 function resolveMappedPhrase(phrase, langFolder) {
     const perLangMap = signPhraseMap[langFolder] || {};
@@ -2291,128 +2286,119 @@ function saveGesture(label, landmarks) {
 // selected language.
 async function loadModelsAndLabels() {
     // reset state
-    serverModel = null;
-    serverLabels = [];
     model = null;
     uniqueLabels = [];
     modelDynamic = null;
     uniqueLabelsDynamic = [];
     dynamicLabelHandRequirements = {};
     predictionBuffer.length = 0;
-    dynamicFrameBuffer = [];
-    dynamicBufferStartTime = 0;
-    lastDisplayedPrediction = null;
-    lastDisplayedFrame = null;
 
-    // load server model for selected language
-    const serverModelPath = currentMode === 'ASL' ? 'model/asl/model.json' : 'model/model.json';
-    const serverLabelsPath = currentMode === 'ASL' ? 'model/asl/labels.json' : 'labels.json';
-    try {
-        const response = await fetch(serverLabelsPath);
-        if (response.ok) {
-            serverLabels = normalizeLabelList(await response.json()).labels;
-            serverModel = await tf.loadLayersModel(serverModelPath);
-            console.log(`Server model loaded (${serverLabels.length} labels)`);
-        } else {
-            console.warn(`${serverLabelsPath} not found for server model.`);
+    const promises = [];
+
+    // 1. Local User Models (localStorage) - Highest priority as they represent immediate training results
+    const localUserLoad = async () => {
+        try {
+            const staticLabelsData = localStorage.getItem(`${localStorageLabelKey}-static`);
+            const dynamicLabelsData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
+            
+            if (staticLabelsData) {
+                const normalized = normalizeLabelList(JSON.parse(staticLabelsData)).labels;
+                const userModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
+                if (userModel) {
+                    model = userModel;
+                    uniqueLabels = normalized;
+                    console.log(`✅ Local User Static Model loaded (${uniqueLabels.length} labels)`);
+                }
+            }
+            
+            if (dynamicLabelsData) {
+                const normalized = normalizeLabelList(JSON.parse(dynamicLabelsData)).labels;
+                const userModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
+                if (userModelDynamic) {
+                    modelDynamic = userModelDynamic;
+                    uniqueLabelsDynamic = normalized;
+                    const handReqs = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
+                    dynamicLabelHandRequirements = handReqs ? JSON.parse(handReqs) : {};
+                    console.log(`✅ Local User Dynamic Model loaded (${uniqueLabelsDynamic.length} labels)`);
+                }
+            }
+        } catch (e) {
+            console.warn("No local user models found or failed to load.", e);
         }
-    } catch (e) {
-        console.warn('Server model load failed:', e);
-    }
+    };
+    await localUserLoad();
 
-    // load local static model if available
-    try {
-        let cloudData = null;
-        if (navigator.onLine) {
-            cloudData = await fetchCloudModel('static', currentMode);
-        }
+    // 2. Cloud Models (Supabase Storage) - Sync from other devices
+    const cloudLoad = async () => {
+        try {
+            let cloudDataStatic = null;
+            let cloudDataDynamic = null;
+            
+            if (navigator.onLine) {
+                console.log("Checking Supabase for latest models...");
+                cloudDataStatic = await fetchCloudModel('static', currentMode);
+                cloudDataDynamic = await fetchCloudModel('dynamic', currentMode);
+            }
 
-        if (cloudData) {
-            uniqueLabels = cloudData.labels;
-            model = cloudData.model;
-            console.log(`Cloud static model loaded (${uniqueLabels.length} labels)`);
-            try {
-                await model.save(`localstorage://${localStorageModelKey}-static`);
-                localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
-            } catch (e) {}
-        } else {
-            const localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
-            if (localLabelData) {
-                const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
-                uniqueLabels = normalizedLocalLabels.labels;
-                if (normalizedLocalLabels.changed) {
+            // Only overwrite if cloud model is available and we don't have a local one,
+            // or if we want to force sync from cloud. For now, let's allow cloud to update local.
+            if (cloudDataStatic) {
+                model = cloudDataStatic.model;
+                uniqueLabels = cloudDataStatic.labels;
+                console.log(`Cloud Static Model loaded (${uniqueLabels.length} labels)`);
+                // Persist to local for offline use
+                try {
+                    await model.save(`localstorage://${localStorageModelKey}-static`);
                     localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
-                }
-                try {
-                    model = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
-                    console.log(`Local static model loaded (${uniqueLabels.length} labels)`);
-                } catch (e) {
-                    model = null;
-                }
+                } catch (e) {}
             }
-        }
-    } catch (e) {
-        console.warn('Local static model load failed:', e);
-    }
-
-    // load local dynamic model if available
-    try {
-        let cloudData = null;
-        if (navigator.onLine) {
-            cloudData = await fetchCloudModel('dynamic', currentMode);
-        }
-
-        if (cloudData) {
-            uniqueLabelsDynamic = cloudData.labels;
-            modelDynamic = cloudData.model;
-            dynamicLabelHandRequirements = cloudData.handReqs || {};
-            console.log(`Cloud dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
-            try {
-                await modelDynamic.save(`localstorage://${localStorageModelKey}-dynamic`);
-                localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
-                localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-            } catch (e) {}
-        } else {
-            const dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
-            if (dynamicLabelData) {
-                const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
-                uniqueLabelsDynamic = normalizedDynamicLabels.labels;
-                if (normalizedDynamicLabels.changed) {
+            if (cloudDataDynamic) {
+                modelDynamic = cloudDataDynamic.model;
+                uniqueLabelsDynamic = cloudDataDynamic.labels;
+                dynamicLabelHandRequirements = cloudDataDynamic.handReqs || {};
+                console.log(`Cloud Dynamic Model loaded (${uniqueLabelsDynamic.length} labels)`);
+                // Persist to local for offline use
+                try {
+                    await modelDynamic.save(`localstorage://${localStorageModelKey}-dynamic`);
                     localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
-                }
-                const dynamicReqData = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
-                const normalizedHandReqs = normalizeHandRequirementMap(dynamicReqData ? JSON.parse(dynamicReqData) : {});
-                dynamicLabelHandRequirements = normalizedHandReqs.map;
-                if (normalizedHandReqs.changed) {
                     localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-                }
-                try {
-                    modelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
-                    console.log(`Local dynamic model loaded (${uniqueLabelsDynamic.length} labels)`);
-                } catch (e) {
-                    modelDynamic = null;
-                }
+                } catch (e) {}
             }
+        } catch (e) {
+            console.warn("Cloud model sync failed, using current models.", e);
         }
-    } catch (e) {
-        console.warn('Local dynamic model load failed:', e);
-    }
+    };
+    promises.push(cloudLoad());
 
-    // update training UI
-    if ((model && uniqueLabels.length > 0) || (modelDynamic && uniqueLabelsDynamic.length > 0)) {
-        console.log('Saved model(s) loaded.');
-    } else {
-        console.log('No saved local model.');
-    }
 
-    console.log('loadModelsAndLabels completed', {
-        serverModel: !!serverModel,
-        serverLabelsLen: serverLabels.length,
-        localModel: !!model,
-        uniqueLabelsLen: uniqueLabels.length,
-        dynamicModel: !!modelDynamic,
-        dynamicLabelsLen: uniqueLabelsDynamic.length
-    });
+    // 2. Local Models fallback (training_data.json)
+    const localLoad = async () => {
+        // Only run if cloud load didn't provide everything
+        if (model && modelDynamic) return;
+
+        try {
+            const lang = currentMode === 'ASL' ? 'ASL' : 'ISL';
+            const result = await window.loadModelsFromTrainingData(lang);
+
+            if (!model && result.staticModel) {
+                model = result.staticModel;
+                uniqueLabels = result.staticLabels;
+                staticLabelHandRequirements = result.staticHandReqs || {};
+                console.log(`Local Static Model fallback ready (${uniqueLabels.length} labels)`);
+            }
+            if (!modelDynamic && result.dynamicModel) {
+                modelDynamic = result.dynamicModel;
+                uniqueLabelsDynamic = result.dynamicLabels;
+                dynamicLabelHandRequirements = result.dynamicHandReqs || {};
+                console.log(`Local Dynamic Model fallback ready (${uniqueLabelsDynamic.length} labels)`);
+            }
+        } catch (e) {
+            console.warn("Local model build failed:", e);
+        }
+    };
+    promises.push(localLoad());
+
+    await Promise.allSettled(promises);
 }
 
 // --- Camera & Hand Tracking ---
@@ -2678,7 +2664,7 @@ function onResults(results) {
         if (isCollecting) {
             // Collection disabled
         } else {
-            runPrediction(flatLandmarks, detectedHandCount);
+            runPrediction(landmarks, detectedHandCount);
         }
     } else {
         // If hand disappears while spelling, finalize immediately
@@ -2880,45 +2866,17 @@ function getPredictionPeak(predictionTensor, labels) {
 }
 
 function chooseBestCandidateWithLocalPriority(candidates) {
-    const serverCandidates = candidates.filter(c => c.source === 'server');
-    const localCandidates = candidates.filter(c => c.source === 'local' || c.source === 'dynamic');
-
-    serverCandidates.sort((a, b) => b.conf - a.conf);
+    const localCandidates = candidates.filter(c => c.source.startsWith('Local') || c.source === 'Dynamic');
     localCandidates.sort((a, b) => b.conf - a.conf);
-
-    const bestServer = serverCandidates[0] || null;
-    const bestLocal = localCandidates[0] || null;
-
-    if (bestServer && bestLocal) {
-        const serverLabel = String(bestServer.label || '').toUpperCase();
-        const localLabel = String(bestLocal.label || '').toUpperCase();
-        const serverIsAlphabet = /^[A-Z]$/.test(serverLabel);
-        const localIsDigit = /^[0-9]$/.test(localLabel);
-
-        // Keep a narrow safety guard only for strong alphabet-vs-digit conflicts.
-        if (serverIsAlphabet && localIsDigit && bestServer.conf >= 0.75 && (bestServer.conf - bestLocal.conf) >= 0.08) {
-            return bestServer;
-        }
-
-        // Stronger local preference so website-trained signs actually take priority.
-        const localScore = bestLocal.conf + 0.10;
-        const serverScore = bestServer.conf;
-        return localScore >= serverScore ? bestLocal : bestServer;
-    }
-
-    return bestLocal || bestServer || null;
+    return localCandidates[0] || null;
 }
 
-function runPrediction(flatLandmarks, detectedHandCount = 1) {
-    // require either server or local model to be present
-    if ((!serverModel || serverLabels.length === 0) &&
-        (!model || uniqueLabels.length === 0) &&
-        (!modelDynamic || uniqueLabelsDynamic.length === 0)) {
-        return;
-    }
+function runPrediction(landmarks, detectedHandCount = 1) {
+    if (!model && !modelDynamic) return;
 
     tf.tidy(() => {
-        const motionState = updateMotionState(flatLandmarks);
+        const flatNormal = preprocessLandmarks(landmarks);
+        const motionState = updateMotionState(flatNormal);
         const staticAllowed = motionState.stillForMs >= STATIC_STILL_DURATION_MS;
 
         if (!staticAllowed) {
@@ -2927,24 +2885,15 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
             holdStartTime = 0;
         }
 
-        const input = tf.tensor2d([flatLandmarks]);
+        const input = tf.tensor2d([flatNormal]);
         let candidates = [];
-
-        // server predictions (ISL only, only when hand is still)
-        if (staticAllowed && serverModel && serverLabels.length) {
-            const pred = serverModel.predict(input);
-            const { conf, label } = getPredictionPeak(pred, serverLabels);
-            if (!shouldSkipStaticLabel(label)) {
-                candidates.push({ label, conf, source: 'server' });
-            }
-        }
 
         // local static predictions (only when hand is still)
         if (staticAllowed && model && uniqueLabels.length) {
             const pred = model.predict(input);
             const { conf, label } = getPredictionPeak(pred, uniqueLabels);
             if (!shouldSkipStaticLabel(label)) {
-                candidates.push({ label, conf, source: 'local' });
+                candidates.push({ label, conf, source: 'Local' });
             }
         }
 
@@ -2954,7 +2903,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 dynamicBufferStartTime = Date.now();
             }
 
-            dynamicFrameBuffer.push(flatLandmarks);
+            dynamicFrameBuffer.push(flatNormal);
 
             if (dynamicFrameBuffer.length > MAX_DYNAMIC_FRAMES) {
                 dynamicFrameBuffer.shift();

@@ -1,6 +1,6 @@
 // public/supabase-client.js
-const supabaseUrl = 'https://qpfnnpunpuzhsrhijkyr.supabase.co';
-const supabaseKey = 'sb_publishable_bmxQgLCLQ35JB0icQy0y8w_0Zks-gcV';
+const supabaseUrl = 'https://qzfimxpunguvhzljjkyr.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6ZmlteHB1bmd1dmh6bGpqa3lyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyODIxODYsImV4cCI6MjA5Mzg1ODE4Nn0.HYDSlhAC2EexuIZQW-92VzHD_zYFk6Ruufn5NXlhKg4';
 window.supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 const defaultStorageBuckets = {
@@ -69,3 +69,34 @@ window.withStorageBucketFallback = async function withStorageBucketFallback(buck
 
     throw lastError;
 };
+
+// Global cloud sign card mapping for instant lookups
+window.signCardsCloudMap = { asl: new Map(), isl: new Map() };
+
+window.preloadSignCardsFromSupabase = async function preloadSignCardsFromSupabase() {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('sign_cards')
+            .select('lang, label, url');
+        
+        if (error) throw error;
+        
+        if (data) {
+            let count = 0;
+            for (const row of data) {
+                const lang = (row.lang || 'asl').toLowerCase();
+                const label = (row.label || '').toLowerCase();
+                if (!window.signCardsCloudMap[lang]) window.signCardsCloudMap[lang] = new Map();
+                window.signCardsCloudMap[lang].set(label, row.url);
+                count++;
+            }
+            if (count > 0) console.log(`✅ Preloaded ${count} sign card URLs from Supabase`);
+        }
+    } catch (err) {
+        console.warn('Failed to preload sign cards from Supabase:', err);
+    }
+};
+
+// Kick off preload immediately
+window.preloadSignCardsFromSupabase();
+

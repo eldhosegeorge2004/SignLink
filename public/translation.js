@@ -49,10 +49,7 @@ const SPELLING_IDLE_TIMEOUT_MS = 5000;
 
 // --- Model & State ---
 // Hybrid Model Approaches:
-// 1. Server Model (Pre-trained ISL Dataset)
-// 2. Local Model (User Generated via AI Training)
-let serverModel = null;
-let serverLabels = [];
+// 1. Local Model (User Generated via AI Training)
 let localModel = null;
 let localLabels = [];
 
@@ -163,8 +160,6 @@ if (ttsBtn) {
 async function loadSavedModelAndLabels() {
     try {
         // Reset State
-        serverModel = null;
-        serverLabels = [];
         localModel = null;
         localLabels = [];
         localModelDynamic = null;
@@ -178,36 +173,8 @@ async function loadSavedModelAndLabels() {
 
         const promises = [];
 
-        // 1. Load Server Model
-        const serverLoad = async () => {
-            console.log("Attempting to load Server Model...");
-            try {
-                const isASL = localStorageModelKey === 'my-asl-model';
-                const modelPath = isASL ? 'model/asl/model.json' : 'model/model.json';
-                const labelsPath = isASL ? 'model/asl/labels.json' : 'labels.json';
-
-                const response = await fetch(labelsPath);
-                if (response.ok) {
-                    serverLabels = normalizeLabelList(await response.json()).labels;
-                    try {
-                        serverModel = await tf.loadLayersModel(modelPath);
-                        console.log(`Server Model loaded (${serverLabels.length} labels from ${labelsPath})`);
-                    } catch (tfErr) {
-                        console.error("TFJS Server Model Load Error:", tfErr);
-                        serverModel = null;
-                    }
-                } else {
-                    console.warn(`${labelsPath} not found.`);
-                }
-            } catch (e) {
-                console.error("Server model load failed fatally:", e);
-                serverModel = null;
-            }
-            return Promise.resolve();
-        };
-        promises.push(serverLoad());
-
-        // 2. Load Local Static Model
+        // 1. Build local static + dynamic models from training_data.json only
+        // Load Local Static Model
         const localLoad = async () => {
             console.log("Attempting to load Local Static Model...");
             try {
@@ -249,7 +216,7 @@ async function loadSavedModelAndLabels() {
         };
         promises.push(localLoad());
 
-        // 3. Load Local Dynamic Model
+        // 2. Load Local Dynamic Model
         const dynamicLoad = async () => {
             console.log("Attempting to load Local Dynamic Model...");
             try {
@@ -299,10 +266,9 @@ async function loadSavedModelAndLabels() {
         // Wait for all promises (use allSettled so one failure doesn't kill others)
         await Promise.allSettled(promises);
 
-        // 4. UI Feedback - only show error if no models found
+        // 3. UI Feedback - only show error if no models found
         const loadedModels = [];
-        if (serverModel) loadedModels.push("Server");
-        if (localModel) loadedModels.push("Local Static");
+        if (localModel)        loadedModels.push("Local Static");
         if (localModelDynamic) loadedModels.push("Local Dynamic");
 
         // Don't show models loaded message - keep display clear
@@ -311,7 +277,7 @@ async function loadSavedModelAndLabels() {
         }
 
         // "Go to Training" button if absolutely nothing
-        if (!serverModel && !localModel && !localModelDynamic) {
+        if (!localModel && !localModelDynamic) {
             if (!document.getElementById('goto-training-btn')) {
                 const btn = document.createElement('button');
                 btn.id = 'goto-training-btn';
@@ -748,38 +714,14 @@ function applyISLHandCountDisambiguation(label, detectedHandCount) {
 }
 
 function chooseBestCandidateWithLocalPriority(candidates) {
-    const serverCandidates = candidates.filter(c => c.source.startsWith('Server'));
     const localCandidates = candidates.filter(c => c.source.startsWith('Local') || c.source === 'Dynamic');
-
-    serverCandidates.sort((a, b) => b.conf - a.conf);
     localCandidates.sort((a, b) => b.conf - a.conf);
-
-    const bestLocal = localCandidates[0] || null;
-    const bestServer = serverCandidates[0] || null;
-
-    if (bestLocal && bestServer) {
-        const serverLabel = String(bestServer.label || '').toUpperCase();
-        const localLabel = String(bestLocal.label || '').toUpperCase();
-        const serverIsAlphabet = /^[A-Z]$/.test(serverLabel);
-        const localIsDigit = /^[0-9]$/.test(localLabel);
-
-        // Keep a narrow safety guard only for strong alphabet-vs-digit conflicts.
-        if (serverIsAlphabet && localIsDigit && bestServer.conf >= 0.75 && (bestServer.conf - bestLocal.conf) >= 0.08) {
-            return bestServer;
-        }
-
-        // Stronger local preference so website-trained signs win more consistently.
-        const localScore = bestLocal.conf + 0.10;
-        const serverScore = bestServer.conf;
-        return localScore >= serverScore ? bestLocal : bestServer;
-    }
-
-    return bestLocal || bestServer || null;
+    return localCandidates[0] || null;
 }
 
 function runPrediction(landmarks, detectedHandCount = 1) {
     // We need at least one model
-    if (!serverModel && !localModel && !localModelDynamic) return;
+    if (!localModel && !localModelDynamic) return;
 
     tf.tidy(() => {
         // Prepare Inputs for static models
@@ -798,23 +740,7 @@ function runPrediction(landmarks, detectedHandCount = 1) {
         // Collect candidates from all available models
         let candidates = [];
 
-        // 1. Query Server Model (Static only when hand is still)
-        if (staticAllowed && serverModel && serverLabels.length) {
-            const pNorm = predictSingleModel(serverModel, serverLabels, tensorNormal);
-            if (!shouldSkipStaticLabel(pNorm.label)) {
-                candidates.push({ ...pNorm, source: 'Server' });
-            }
-
-            if (pNorm.conf < 0.7) {
-                const tensorFlipped = tf.tensor2d([preprocessLandmarks(landmarks, true)]);
-                const pFlip = predictSingleModel(serverModel, serverLabels, tensorFlipped);
-                if (!shouldSkipStaticLabel(pFlip.label)) {
-                    candidates.push({ ...pFlip, source: 'Server(M)' });
-                }
-            }
-        }
-
-        // 2. Query Local Static Model (only when hand is still)
+        // 1. Query Local Static Model (only when hand is still)
         if (staticAllowed && localModel && localLabels.length) {
             const pNorm = predictSingleModel(localModel, localLabels, tensorNormal);
             if (!shouldSkipStaticLabel(pNorm.label)) {
@@ -877,14 +803,6 @@ function runPrediction(landmarks, detectedHandCount = 1) {
         // 5. Threshold & Display
         if (best) {
             let outputLabel = best.isDynamic ? normalizeAlphabetLabel(best.label) : normalizeAlphabetLabel(getSmoothedPrediction(best.label));
-
-            // Hardcoded overrides for ASL explicitly requested by user to fix misclassifications
-            if (localStorageModelKey === 'my-asl-model' && best.source && best.source.startsWith('Server')) {
-                if (outputLabel === 'D') outputLabel = '1';
-                if (outputLabel === 'R') outputLabel = '3';
-                if (outputLabel === 'W') outputLabel = '6';
-                if (outputLabel === 'F') outputLabel = '9';
-            }
 
             outputLabel = applyISLHandCountDisambiguation(outputLabel, detectedHandCount);
             updateDisplayedPrediction(outputLabel, best.conf, !!best.isDynamic, flatNormal);
@@ -1586,6 +1504,13 @@ async function resolveTranslationWordTokens(word, langFolder) {
     const normalizedWord = word.toLowerCase().replace(/[^a-z0-9-]/g, '');
     if (!normalizedWord) return [];
 
+    // 1. Check Cloud Map First (Fastest)
+    const cloudUrl = window.signCardsCloudMap[langFolder]?.get(normalizedWord);
+    if (cloudUrl) {
+        return [{ type: 'card', src: cloudUrl, label: normalizedWord }];
+    }
+
+    // 2. Fallback to Local Candidates
     const wordCandidates = [
         `/signs-images/${langFolder}/words/${normalizedWord}.jpg`,
         `/signs-images/${langFolder}/words/${normalizedWord}.png`,
@@ -1601,10 +1526,18 @@ async function resolveTranslationWordTokens(word, langFolder) {
         }
     }
 
+    // 3. Resolve as Characters
     const charTokens = [];
     const charsOnly = normalizedWord.replace(/-/g, '');
     for (const char of charsOnly.toUpperCase()) {
         if (!/[A-Z0-9]/.test(char)) continue;
+
+        const charLower = char.toLowerCase();
+        const cloudCharUrl = window.signCardsCloudMap[langFolder]?.get(charLower);
+        if (cloudCharUrl) {
+            charTokens.push({ type: 'card', src: cloudCharUrl, label: char });
+            continue;
+        }
 
         const candidates = [];
         if (/[A-Z]/.test(char)) {
@@ -1617,6 +1550,11 @@ async function resolveTranslationWordTokens(word, langFolder) {
             candidates.push(`/signs-images/${langFolder}/characters/${char}.gif`);
             const digitWord = TRANSLATION_DIGIT_WORD_MAP[char];
             if (digitWord) {
+                const cloudDigitUrl = window.signCardsCloudMap[langFolder]?.get(digitWord.toLowerCase());
+                if (cloudDigitUrl) {
+                    charTokens.push({ type: 'card', src: cloudDigitUrl, label: char });
+                    continue;
+                }
                 candidates.push(`/signs-images/${langFolder}/characters/${digitWord}.jpg`);
                 candidates.push(`/signs-images/${langFolder}/characters/${digitWord}.png`);
                 candidates.push(`/signs-images/${langFolder}/characters/${digitWord}.gif`);
@@ -1636,6 +1574,7 @@ async function resolveTranslationWordTokens(word, langFolder) {
 
     return charTokens.length ? charTokens : [{ type: 'label', label: normalizedWord }];
 }
+
 
 function resolveTranslationMappedPhrase(phrase, langFolder) {
     const perLangMap = translationPhraseMap[langFolder] || {};
