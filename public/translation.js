@@ -341,11 +341,11 @@ async function fetchCloudModel(type, lang) {
             // 1. Get Public URLs for labels and model
             const { data: labelsUrlData } = window.supabaseClient.storage
                 .from(modelsBucket)
-                .getPublicUrl(`${langLower}/${type}/labels.json`);
+                .getPublicUrl(`models/${langLower}/${type}/labels.json`);
                 
             const { data: modelUrlData } = window.supabaseClient.storage
                 .from(modelsBucket)
-                .getPublicUrl(`${langLower}/${type}/model.json`);
+                .getPublicUrl(`models/${langLower}/${type}/model.json`);
 
             // 2. Load Labels
             const labelsRes = await fetch(labelsUrlData.publicUrl);
@@ -362,7 +362,7 @@ async function fetchCloudModel(type, lang) {
             if (type === 'dynamic') {
                 const { data: handReqsUrlData } = window.supabaseClient.storage
                     .from(modelsBucket)
-                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
+                    .getPublicUrl(`models/${langLower}/${type}/hand_reqs.json`);
                 const reqRes = await fetch(handReqsUrlData.publicUrl);
                 if (reqRes.ok) {
                     handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
@@ -593,7 +593,11 @@ function getPredictionFromTensor(predictionTensor, labels) {
     }
 
     // Cleanup happens in tf.tidy in caller
-    return { label: normalizeAlphabetLabel(labels[idx]), conf: conf };
+    const rawLabel = labels[idx];
+    if (rawLabel && rawLabel.startsWith('__internal_dummy___')) {
+        return { label: null, conf: 0 };
+    }
+    return { label: normalizeAlphabetLabel(rawLabel), conf: conf };
 }
 
 function predictSingleModel(modelInstance, labels, tensor) {

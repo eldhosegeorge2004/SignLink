@@ -924,10 +924,11 @@ function setupMobileSignSetup() {
                 const modelJson = JSON.stringify(buildModelJson(artifacts, 'model.weights.bin'));
                 await uploadComponent('dynamic', 'model.json', btoa(modelJson), 'application/json');
 
+                const weightsBlob = new Blob([artifacts.weightData], {type: 'application/octet-stream'});
                 const weightsB64 = await new Promise(resolve => {
                     const reader = new FileReader();
                     reader.onloadend = () => resolve(reader.result.split(',')[1]);
-                    reader.readAsDataURL(new Blob([artifacts.weightData]));
+                    reader.readAsDataURL(weightsBlob);
                 });
                 await uploadComponent('dynamic', 'model.weights.bin', weightsB64, 'application/octet-stream');
                 return {modelArtifactsInfo: {dateSaved: new Date()}};
@@ -1260,64 +1261,7 @@ function setMobileBottomBarMode(mode) {
 }
 
 
-async function uploadModelToCloud(type, modelInstance, labels, handReqs = null) {
-    // 1. Save model to get artifacts
-    const saveResults = await modelInstance.save(tf.io.withSaveHandler(async (artifacts) => {
-        return artifacts;
-    }));
-
-    // 2. Upload Model Topology (JSON)
-    const modelJson = {
-        modelTopology: saveResults.modelTopology,
-        weightsManifest: [{
-            paths: ['./weights.bin'],
-            weights: saveResults.weightSpecs
-        }]
-    };
-    
-    await uploadComponent(type, 'model.json', btoa(JSON.stringify(modelJson)), 'application/json');
-
-    // 3. Upload Weights (Binary)
-    const weightsB64 = arrayBufferToBase64(saveResults.weightData);
-    await uploadComponent(type, 'weights.bin', weightsB64, 'application/octet-stream');
-
-    // 4. Upload Labels
-    await uploadComponent(type, 'labels.json', btoa(JSON.stringify(labels)), 'application/json');
-
-    // 5. Upload Hand Reqs if dynamic
-    if (handReqs) {
-        await uploadComponent(type, 'hand_reqs.json', btoa(JSON.stringify(handReqs)), 'application/json');
-    }
-}
-
-async function uploadComponent(type, fileName, b64Data, contentType) {
-    const response = await fetch('/api/upload-model-component', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            lang: currentLang,
-            type,
-            fileName,
-            fileDataB64: b64Data,
-            contentType
-        })
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(data.error || 'Failed to upload model component');
-    }
-}
-
-function arrayBufferToBase64(buffer) {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-}
+// Redundant functions removed
 
 // Check if models are already saved in localStorage
 async function checkForSavedModels() {
@@ -2029,11 +1973,11 @@ async function fetchCloudModel(type, lang) {
             // 1. Get Public URLs for labels and model
             const { data: labelsUrlData } = window.supabaseClient.storage
                 .from(modelsBucket)
-                .getPublicUrl(`${langLower}/${type}/labels.json`);
+                .getPublicUrl(`models/${langLower}/${type}/labels.json`);
                 
             const { data: modelUrlData } = window.supabaseClient.storage
                 .from(modelsBucket)
-                .getPublicUrl(`${langLower}/${type}/model.json`);
+                .getPublicUrl(`models/${langLower}/${type}/model.json`);
 
             // 2. Load Labels
             const labelsRes = await fetch(labelsUrlData.publicUrl);
@@ -2050,7 +1994,7 @@ async function fetchCloudModel(type, lang) {
             if (type === 'dynamic') {
                 const { data: handReqsUrlData } = window.supabaseClient.storage
                     .from(modelsBucket)
-                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
+                    .getPublicUrl(`models/${langLower}/${type}/hand_reqs.json`);
                 const reqRes = await fetch(handReqsUrlData.publicUrl);
                 if (reqRes.ok) {
                     handReqs = normalizeHandRequirementMap(await reqRes.json()).normalized;
@@ -2244,7 +2188,7 @@ async function trainStaticModel(staticData, newStaticData) {
                 }
             });
             model.static = staticModel;
-            model.staticLabels = toPublicLabels(trainingLabels);
+            model.staticLabels = trainingLabels; // Keep internal dummy labels for index alignment
             return { trained: true };
         } finally {
             xs.dispose();
@@ -2499,7 +2443,7 @@ async function trainDynamicModel(dynamicData, newDynamicData) {
         });
 
         model.dynamic = rebuiltDynamicModel;
-        model.dynamicLabels = toPublicLabels(trainingLabels);
+        model.dynamicLabels = trainingLabels; // Keep internal dummy labels for index alignment
         model.dynamicHandRequirements = Object.fromEntries(
             Object.entries(handRequirementMap).filter(([label]) => !label.startsWith(DUMMY_LABEL_PREFIX))
         );
