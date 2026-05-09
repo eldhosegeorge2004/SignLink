@@ -37,8 +37,8 @@ const ASL_Z_MIN_WHOLE_HAND_PATH = 0.11;
 const ASL_Z_MIN_ACTIVE_LANDMARK_RATIO = 0.28;
 let lastDisplayedPrediction = null;
 let lastDisplayedFrame = null;
-const STATIC_STILL_DURATION_MS = 1000;
-const MOTION_THRESHOLD = 0.02;
+const STATIC_STILL_DURATION_MS = 400; // Lowered further
+const MOTION_THRESHOLD = 0.05; // Increased tolerance for shaky hands
 let previousMotionFrame = null;
 let staticStillStartTime = 0;
 const NO_HANDS_TIMEOUT_MS = 2000;
@@ -2249,9 +2249,9 @@ const hands = new Hands({
 hands.setOptions({
     maxNumHands: 2,
     modelComplexity: 1,
-    minDetectionConfidence: 0.8, // Increased for better mobile detection
-    minTrackingConfidence: 0.7,  // Increased to reduce jitter
-    selfieMode: true             // Essential for front-facing phone cameras
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.7
+    // selfieMode: true removed to match Training Data landmarks
 });
 
 hands.onResults(onResults);
@@ -2261,7 +2261,7 @@ let isCollecting = false;
 if (modeSelect) modeSelect.value = currentMode;
 // updateModeVariables already reloads models for the active mode.
 updateModeVariables();
-loadSavedLabels();
+// loadSavedLabels() removed as it conflicts with the robust loadModelsAndLabels()
 // loadFromFirestore removed to prevent reference errors to deleted UI components
 
 // Global function to delete all data for a specific label removed
@@ -2298,32 +2298,41 @@ async function loadModelsAndLabels() {
     // 1. Local User Models (localStorage) - Highest priority as they represent immediate training results
     const localUserLoad = async () => {
         try {
+            console.log(`Checking LocalStorage for ${currentMode} models...`);
             const staticLabelsData = localStorage.getItem(`${localStorageLabelKey}-static`);
             const dynamicLabelsData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
             
             if (staticLabelsData) {
                 const normalized = normalizeLabelList(JSON.parse(staticLabelsData)).labels;
-                const userModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
-                if (userModel) {
-                    model = userModel;
-                    uniqueLabels = normalized;
-                    console.log(`✅ Local User Static Model loaded (${uniqueLabels.length} labels)`);
+                try {
+                    const userModel = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-static`);
+                    if (userModel) {
+                        model = userModel;
+                        uniqueLabels = normalized;
+                        console.log(`✅ Local User Static Model loaded (${uniqueLabels.length} labels)`);
+                    }
+                } catch (e) {
+                    console.warn("Failed to load static model from LocalStorage", e);
                 }
             }
             
             if (dynamicLabelsData) {
                 const normalized = normalizeLabelList(JSON.parse(dynamicLabelsData)).labels;
-                const userModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
-                if (userModelDynamic) {
-                    modelDynamic = userModelDynamic;
-                    uniqueLabelsDynamic = normalized;
-                    const handReqs = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
-                    dynamicLabelHandRequirements = handReqs ? JSON.parse(handReqs) : {};
-                    console.log(`✅ Local User Dynamic Model loaded (${uniqueLabelsDynamic.length} labels)`);
+                try {
+                    const userModelDynamic = await tf.loadLayersModel(`localstorage://${localStorageModelKey}-dynamic`);
+                    if (userModelDynamic) {
+                        modelDynamic = userModelDynamic;
+                        uniqueLabelsDynamic = normalized;
+                        const handReqs = localStorage.getItem(`${localStorageLabelKey}-dynamic-hand-req`);
+                        dynamicLabelHandRequirements = handReqs ? JSON.parse(handReqs) : {};
+                        console.log(`✅ Local User Dynamic Model loaded (${uniqueLabelsDynamic.length} labels)`);
+                    }
+                } catch (e) {
+                    console.warn("Failed to load dynamic model from LocalStorage", e);
                 }
             }
         } catch (e) {
-            console.warn("No local user models found or failed to load.", e);
+            console.warn("Error checking local user models:", e);
         }
     };
     await localUserLoad();
@@ -2331,38 +2340,46 @@ async function loadModelsAndLabels() {
     // 2. Cloud Models (Supabase Storage) - Sync from other devices
     const cloudLoad = async () => {
         try {
-            let cloudDataStatic = null;
-            let cloudDataDynamic = null;
-            
-            if (navigator.onLine) {
-                console.log("Checking Supabase for latest models...");
-                cloudDataStatic = await fetchCloudModel('static', currentMode);
-                cloudDataDynamic = await fetchCloudModel('dynamic', currentMode);
+            if (!navigator.onLine) {
+                console.log("Offline: Skipping cloud model check.");
+                return;
             }
 
-            // Only overwrite if cloud model is available and we don't have a local one,
-            // or if we want to force sync from cloud. For now, let's allow cloud to update local.
-            if (cloudDataStatic) {
-                model = cloudDataStatic.model;
-                uniqueLabels = cloudDataStatic.labels;
-                console.log(`Cloud Static Model loaded (${uniqueLabels.length} labels)`);
-                // Persist to local for offline use
-                try {
-                    await model.save(`localstorage://${localStorageModelKey}-static`);
-                    localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
-                } catch (e) {}
+            console.log(`Checking Supabase for latest ${currentMode} models...`);
+            const [cloudDataStatic, cloudDataDynamic] = await Promise.all([
+                fetchCloudModel('static', currentMode),
+                fetchCloudModel('dynamic', currentMode)
+            ]);
+
+            // Only overwrite if cloud model is available and has labels
+            if (cloudDataStatic && cloudDataStatic.labels && cloudDataStatic.labels.length > 0) {
+                // If local model exists, only overwrite if cloud has more or equal labels
+                // (Simple heuristic for "newer" model if timestamps aren't available)
+                if (!uniqueLabels || cloudDataStatic.labels.length >= uniqueLabels.length) {
+                    model = cloudDataStatic.model;
+                    uniqueLabels = cloudDataStatic.labels;
+                    console.log(`☁️ Cloud Static Model sync successful (${uniqueLabels.length} labels)`);
+                    // Persist to local for offline use
+                    try {
+                        await model.save(`localstorage://${localStorageModelKey}-static`);
+                        localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(uniqueLabels));
+                    } catch (e) {}
+                }
             }
-            if (cloudDataDynamic) {
-                modelDynamic = cloudDataDynamic.model;
-                uniqueLabelsDynamic = cloudDataDynamic.labels;
-                dynamicLabelHandRequirements = cloudDataDynamic.handReqs || {};
-                console.log(`Cloud Dynamic Model loaded (${uniqueLabelsDynamic.length} labels)`);
-                // Persist to local for offline use
-                try {
-                    await modelDynamic.save(`localstorage://${localStorageModelKey}-dynamic`);
-                    localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
-                    localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
-                } catch (e) {}
+
+            if (cloudDataDynamic && cloudDataDynamic.labels && cloudDataDynamic.labels.length > 0) {
+                if (!uniqueLabelsDynamic || cloudDataDynamic.labels.length >= uniqueLabelsDynamic.length) {
+                    modelDynamic = cloudDataDynamic.model;
+                    uniqueLabelsDynamic = cloudDataDynamic.labels;
+                    dynamicLabelHandRequirements = cloudDataDynamic.handReqs || {};
+                    console.log(`☁️ Cloud Dynamic Model sync successful (${uniqueLabelsDynamic.length} labels)`);
+                    // Persist to local for offline use
+                    try {
+                        await modelDynamic.save(`localstorage://${localStorageModelKey}-dynamic`);
+                        localStorage.setItem(`${localStorageLabelKey}-dynamic`, JSON.stringify(uniqueLabelsDynamic));
+                        localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
+                    } catch (e) {}
+                }
             }
         } catch (e) {
             console.warn("Cloud model sync failed, using current models.", e);
@@ -2370,36 +2387,18 @@ async function loadModelsAndLabels() {
     };
     promises.push(cloudLoad());
 
-
-    // 2. Local Models fallback (training_data.json)
-    const localLoad = async () => {
-        // Only run if cloud load didn't provide everything
-        if (model && modelDynamic) return;
-
-        try {
-            const lang = currentMode === 'ASL' ? 'ASL' : 'ISL';
-            const result = await window.loadModelsFromTrainingData(lang);
-
-            if (!model && result.staticModel) {
-                model = result.staticModel;
-                uniqueLabels = result.staticLabels;
-                staticLabelHandRequirements = result.staticHandReqs || {};
-                console.log(`Local Static Model fallback ready (${uniqueLabels.length} labels)`);
-            }
-            if (!modelDynamic && result.dynamicModel) {
-                modelDynamic = result.dynamicModel;
-                uniqueLabelsDynamic = result.dynamicLabels;
-                dynamicLabelHandRequirements = result.dynamicHandReqs || {};
-                console.log(`Local Dynamic Model fallback ready (${uniqueLabelsDynamic.length} labels)`);
-            }
-        } catch (e) {
-            console.warn("Local model build failed:", e);
-        }
-    };
-    promises.push(localLoad());
-
     await Promise.allSettled(promises);
+
+    // Final Validation
+    if (!model && !modelDynamic) {
+        console.error("❌ No models loaded for Video Call. Signs will not be recognized.");
+        setPredictionText("System Error: No models found. Please train first.");
+    } else {
+        console.log(`🎯 Recognition Ready. Static: ${uniqueLabels.length}, Dynamic: ${uniqueLabelsDynamic.length}`);
+        setPredictionText("Waiting for sign...");
+    }
 }
+
 
 // --- Camera & Hand Tracking ---
 let isCameraStarted = false;
@@ -2557,7 +2556,7 @@ function preprocessLandmarks(landmarks) {
 
 function getSmoothedPrediction(predLabel) {
     predictionBuffer.push(predLabel);
-    if (predictionBuffer.length > 15) predictionBuffer.shift();
+    if (predictionBuffer.length > 10) predictionBuffer.shift(); // Faster response
     const counts = {};
     predictionBuffer.forEach(l => counts[l] = (counts[l] || 0) + 1);
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
@@ -2648,23 +2647,30 @@ function onResults(results) {
 
         // Handle Hand Overlay Drawing
         if (shouldDrawOverlay) {
-            for (const hand of handLandmarks) {
-                drawConnectors(ctx, hand, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
-                drawLandmarks(ctx, hand, { color: '#FF0000', lineWidth: 2 });
+            try {
+                for (const hand of handLandmarks) {
+                    if (typeof drawConnectors !== 'undefined' && typeof HAND_CONNECTIONS !== 'undefined') {
+                        drawConnectors(ctx, hand, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
+                    }
+                    if (typeof drawLandmarks !== 'undefined') {
+                        drawLandmarks(ctx, hand, { color: '#FF0000', lineWidth: 2 });
+                    }
+                }
+                overlayHadRenderedContent = true;
+            } catch (drawErr) {
+                console.warn("Overlay drawing failed:", drawErr);
             }
-            overlayHadRenderedContent = true;
         }
 
         // Preprocess for AI (Normalization is Scale/Translation invariant)
         const flatLandmarks = preprocessLandmarks(landmarks);
-
         const detectedHandCount = Math.min(2, handLandmarks.length);
 
-        // Handle Collection or Prediction
-        if (isCollecting) {
-            // Collection disabled
-        } else {
-            runPrediction(landmarks, detectedHandCount);
+        // Handle Prediction
+        try {
+            runPrediction(landmarks, flatLandmarks, detectedHandCount);
+        } catch (predErr) {
+            console.error("Sign prediction failed:", predErr);
         }
     } else {
         // If hand disappears while spelling, finalize immediately
@@ -2685,12 +2691,9 @@ function onResults(results) {
         dynamicBufferStartTime = 0;
         resetMotionState();
 
-        // Reset the last added letter so user can sign the same letter again if they lift their hand
-        // e.g. "Apple" requires P -> lift -> P
         if (lastAddedLetter !== null) {
             lastAddedLetter = null;
         }
-        // also clear hold tracking
         heldLetter = null;
         holdStartTime = 0;
         overlayHadRenderedContent = false;
@@ -2866,16 +2869,19 @@ function getPredictionPeak(predictionTensor, labels) {
 }
 
 function chooseBestCandidateWithLocalPriority(candidates) {
-    const localCandidates = candidates.filter(c => c.source.startsWith('Local') || c.source === 'Dynamic');
+    // Normalize source string to match the filter
+    const localCandidates = candidates.filter(c => 
+        (c.source && c.source.toLowerCase().startsWith('local')) || 
+        (c.source && c.source.toLowerCase() === 'dynamic')
+    );
     localCandidates.sort((a, b) => b.conf - a.conf);
     return localCandidates[0] || null;
 }
 
-function runPrediction(landmarks, detectedHandCount = 1) {
+function runPrediction(landmarks, flatNormal, detectedHandCount = 1) {
     if (!model && !modelDynamic) return;
 
     tf.tidy(() => {
-        const flatNormal = preprocessLandmarks(landmarks);
         const motionState = updateMotionState(flatNormal);
         const staticAllowed = motionState.stillForMs >= STATIC_STILL_DURATION_MS;
 
@@ -2885,15 +2891,23 @@ function runPrediction(landmarks, detectedHandCount = 1) {
             holdStartTime = 0;
         }
 
-        const input = tf.tensor2d([flatNormal]);
         let candidates = [];
 
-        // local static predictions (only when hand is still)
-        if (staticAllowed && model && uniqueLabels.length) {
+        // local static predictions
+        if (model && uniqueLabels.length) {
+            const input = tf.tensor2d([flatNormal]);
             const pred = model.predict(input);
             const { conf, label } = getPredictionPeak(pred, uniqueLabels);
-            if (!shouldSkipStaticLabel(label)) {
-                candidates.push({ label, conf, source: 'Local' });
+            
+            // Diagnostic log (throttled)
+            if (Math.random() < 0.05) {
+                console.log(`[Diagnostic] Static Top: ${label} (${Math.round(conf * 100)}%), Still: ${staticAllowed} (${Math.round(motionState.stillForMs)}ms)`);
+            }
+
+            // Lowered threshold and added a fallback for when moving but high confidence
+            const threshold = staticAllowed ? 0.4 : 0.8; 
+            if (conf > threshold && !shouldSkipStaticLabel(label)) {
+                candidates.push({ label, conf, source: 'local' });
             }
         }
 
@@ -2934,9 +2948,6 @@ function runPrediction(landmarks, detectedHandCount = 1) {
                         isDynamic: true
                     });
                 }
-
-                tensorDynamic.dispose();
-                predDynamic.dispose();
             }
         }
 

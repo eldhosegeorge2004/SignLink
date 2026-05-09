@@ -615,6 +615,7 @@ video {
     height: 100%;
     pointer-events: none;
     object-fit: cover;
+    transform: scaleX(-1);
 }
 
 .userInfo {
