@@ -124,7 +124,7 @@ async function fetchCloudModel(type, lang) {
             if (type === 'dynamic') {
                 const { data: handReqsUrlData } = window.supabaseClient.storage
                     .from(modelsBucket)
-                    .getPublicUrl(`${langLower}/${type}/hand_reqs.json`);
+                    .getPublicUrl(`models/${langLower}/${type}/hand_reqs.json`);
                 const reqRes = await fetch(handReqsUrlData.publicUrl);
                 if (reqRes.ok) {
                     handReqs = normalizeHandRequirementMap(await reqRes.json()).map;
@@ -1665,6 +1665,10 @@ if (modeSelect) {
         await loadFromFirestore(); // Reload data
         // new loader handles both server & local models
         await loadModelsAndLabels();
+        // Reload database training data for the new language
+        await loadTrainingDataFromDatabase();
+        // Reload local training data for the new language
+        await loadLocalTrainingData();
     });
 }
 
@@ -2430,6 +2434,11 @@ async function loadModelsAndLabels() {
         dynamicModel: !!modelDynamic,
         dynamicLabelsLen: uniqueLabelsDynamic.length
     });
+
+    // Load training data from database for nearest-neighbor detection
+    await loadTrainingDataFromDatabase();
+    // Load local training data from localStorage
+    await loadLocalTrainingData();
 }
 
 // Clear cached models and labels from localStorage
@@ -2486,9 +2495,112 @@ async function forceRefreshModels() {
 window.clearModelCache = clearModelCache;
 window.forceRefreshModels = forceRefreshModels;
 
+// --- Real-time Model Sync ---
+let syncInterval = null;
+const SYNC_INTERVAL_MS = 30000; // Check every 30 seconds
+let lastKnownModels = { static: false, dynamic: false };
+let lastKnownDatabaseLabels = [];
+
+async function checkForModelUpdates() {
+    try {
+        const staticLabels = localStorage.getItem(`${localStorageLabelKey}-static`);
+        const dynamicLabels = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
+
+        // Check if localStorage models have changed
+        const hasStatic = !!staticLabels;
+        const hasDynamic = !!dynamicLabels;
+
+        const newStaticAvailable = hasStatic && !lastKnownModels.static;
+        const newDynamicAvailable = hasDynamic && !lastKnownModels.dynamic;
+
+        // Update last known state
+        lastKnownModels.static = hasStatic;
+        lastKnownModels.dynamic = hasDynamic;
+
+        // Check if database training data has changed
+        await loadTrainingDataFromDatabase();
+        await loadLocalTrainingData();
+        const combinedData = getCombinedTrainingData();
+        const currentDatabaseLabels = [...new Set(combinedData.map(row => row.label))];
+        const databaseLabelsChanged = JSON.stringify(currentDatabaseLabels.sort()) !== JSON.stringify(lastKnownDatabaseLabels.sort());
+        lastKnownDatabaseLabels = currentDatabaseLabels;
+
+        // Check for cloud model updates (compare label counts)
+        let cloudModelUpdated = false;
+        if (navigator.onLine && window.supabaseClient) {
+            try {
+                const cloudStatic = await fetchCloudModel('static', currentMode);
+                const cloudDynamic = await fetchCloudModel('dynamic', currentMode);
+                
+                if (cloudStatic && cloudStatic.labels && cloudStatic.labels.length !== uniqueLabels.length) {
+                    console.log('[ModelSync] Cloud static model has different label count, reloading...');
+                    cloudModelUpdated = true;
+                }
+                if (cloudDynamic && cloudDynamic.labels && cloudDynamic.labels.length !== uniqueLabelsDynamic.length) {
+                    console.log('[ModelSync] Cloud dynamic model has different label count, reloading...');
+                    cloudModelUpdated = true;
+                }
+            } catch (cloudErr) {
+                // Cloud check failed, continue with localStorage check
+                console.warn('[ModelSync] Cloud model check failed:', cloudErr);
+            }
+        }
+
+        // Reload models if changes detected
+        if (newStaticAvailable || newDynamicAvailable || databaseLabelsChanged || cloudModelUpdated) {
+            console.log('[ModelSync] Model updates detected, reloading...');
+            await loadModelsAndLabels();
+            console.log('[ModelSync] Models reloaded successfully');
+        }
+    } catch (err) {
+        console.error('[ModelSync] Error checking for model updates:', err);
+    }
+}
+
+function startRealtimeSync() {
+    // Initial check
+    checkForModelUpdates();
+    
+    // Start polling for model updates
+    if (syncInterval) clearInterval(syncInterval);
+    syncInterval = setInterval(checkForModelUpdates, SYNC_INTERVAL_MS);
+}
+
+function stopRealtimeSync() {
+    if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+    }
+}
+
+// Start real-time sync when page loads
+startRealtimeSync();
+
 // --- Database-Based Detection (Nearest-Neighbor) ---
 let databaseTrainingData = [];
 let databaseLabels = [];
+let localTrainingData = [];
+
+async function loadLocalTrainingData() {
+    try {
+        const lang = currentMode.toLowerCase();
+        const storageKey = `${lang === 'isl' ? 'isl' : 'asl'}_data`;
+        const raw = localStorage.getItem(storageKey);
+        
+        if (!raw) {
+            console.log(`No local training data found for ${lang}`);
+            localTrainingData = [];
+            return;
+        }
+
+        const parsed = JSON.parse(raw);
+        localTrainingData = Array.isArray(parsed) ? parsed : [];
+        console.log(`Loaded ${localTrainingData.length} training samples from local storage (${storageKey})`);
+    } catch (err) {
+        console.error('Error loading local training data:', err);
+        localTrainingData = [];
+    }
+}
 
 async function loadTrainingDataFromDatabase() {
     if (!window.supabaseClient) {
@@ -2496,23 +2608,54 @@ async function loadTrainingDataFromDatabase() {
         return;
     }
     try {
+        const lang = currentMode.toLowerCase();
+        console.log(`[DB Load] Loading training data for language: ${lang}`);
+        
+        // Load both static and dynamic training data
         const { data, error } = await window.supabaseClient
             .from('training_data')
             .select('*')
-            .eq('lang', currentMode.toLowerCase())
-            .eq('type', 'static')
+            .eq('lang', lang)
             .order('label', { ascending: true });
 
         if (error) throw error;
 
-        databaseTrainingData = data;
-        databaseLabels = [...new Set(data.map(row => row.label))];
-        console.log(`Loaded ${databaseTrainingData.length} training samples, ${databaseLabels.length} unique labels from database`);
-        console.log('Labels in database:', databaseLabels);
-        console.log('Sample data structure:', data.length > 0 ? JSON.stringify(data[0], null, 2) : 'No data');
+        databaseTrainingData = data || [];
+        databaseLabels = [...new Set(databaseTrainingData.map(row => row.label))];
+        
+        // Check if data has landmarks
+        const samplesWithLandmarks = databaseTrainingData.filter(r => r.landmarks && r.landmarks.length > 0);
+        console.log(`[DB Load] Loaded ${databaseTrainingData.length} training samples (${databaseTrainingData.filter(r => r.type === 'static').length} static, ${databaseTrainingData.filter(r => r.type === 'dynamic').length} dynamic), ${databaseLabels.length} unique labels from database`);
+        console.log(`[DB Load] Samples with landmarks: ${samplesWithLandmarks.length}/${databaseTrainingData.length}`);
+        
+        if (samplesWithLandmarks.length > 0) {
+            console.log(`[DB Load] Sample landmark length: ${samplesWithLandmarks[0].landmarks.length}`);
+            console.log(`[DB Load] First 5 labels: ${databaseLabels.slice(0, 5).join(', ')}`);
+        }
     } catch (err) {
         console.error('Error loading training data from database:', err);
     }
+}
+
+// Get combined training data from both local storage and Supabase
+function getCombinedTrainingData() {
+    const combined = [...databaseTrainingData];
+    
+    // Add local training data that isn't already in the database
+    const dbLabels = new Set(databaseTrainingData.map(row => row.label));
+    
+    for (const localSample of localTrainingData) {
+        const label = localSample.label;
+        const isTrained = localSample.isTrained !== false; // Consider trained if not explicitly false
+        
+        // Only add if trained and not already in database
+        if (isTrained && !dbLabels.has(label)) {
+            combined.push(localSample);
+            dbLabels.add(label);
+        }
+    }
+    
+    return combined;
 }
 
 // Calculate Euclidean distance between two landmark arrays
@@ -2527,8 +2670,10 @@ function calculateDistance(landmarks1, landmarks2) {
 
 // Predict using nearest-neighbor matching with priority for newer samples
 function predictWithDatabase(landmarks) {
-    if (databaseTrainingData.length === 0) {
-        console.warn('No training data available for prediction');
+    // Use combined training data from both local storage and Supabase
+    const combinedData = getCombinedTrainingData();
+    
+    if (combinedData.length === 0) {
         return { label: null, confidence: 0 };
     }
 
@@ -2539,16 +2684,17 @@ function predictWithDatabase(landmarks) {
 
     // Group samples by label
     const labelGroups = {};
-    for (const sample of databaseTrainingData) {
-        if (!sample.landmarks) continue;
+    for (const sample of combinedData) {
+        // Handle both static (landmarks) and dynamic (frames) data
+        if (!sample.landmarks && !sample.frames) continue;
         if (!labelGroups[sample.label]) {
             labelGroups[sample.label] = [];
         }
         labelGroups[sample.label].push(sample);
     }
 
-    console.log('Predicting with', Object.keys(labelGroups).length, 'labels:', Object.keys(labelGroups));
-
+    const totalLabels = Object.keys(labelGroups).length;
+    
     // Calculate score for each label (lower is better)
     for (const label in labelGroups) {
         const samples = labelGroups[label];
@@ -2556,7 +2702,21 @@ function predictWithDatabase(landmarks) {
         let totalWeight = 0;
 
         for (const sample of samples) {
-            const distance = calculateDistance(landmarks, sample.landmarks);
+            let distance;
+            
+            if (sample.landmarks) {
+                // Static sign: compare landmarks directly
+                distance = calculateDistance(landmarks, sample.landmarks);
+            } else if (sample.frames && Array.isArray(sample.frames) && sample.frames.length > 0) {
+                // Dynamic sign: compare against average of stored frames
+                const avgFrame = sample.frames.reduce((acc, frame) => {
+                    if (!frame || !Array.isArray(frame)) return acc;
+                    return acc.map((val, i) => val + (frame[i] || 0));
+                }, new Array(landmarks.length).fill(0)).map(val => val / sample.frames.length);
+                distance = calculateDistance(landmarks, avgFrame);
+            } else {
+                continue;
+            }
 
             // Calculate age in days (max 30 days for decay)
             const recordedAt = new Date(sample.recorded_at || sample.recordedAt).getTime();
@@ -2570,16 +2730,21 @@ function predictWithDatabase(landmarks) {
             totalWeight += weight;
         }
 
-        const avgWeightedDistance = totalWeightedDistance / totalWeight;
+        if (totalWeight > 0) {
+            const avgWeightedDistance = totalWeightedDistance / totalWeight;
 
-        if (avgWeightedDistance < minScore) {
-            minScore = avgWeightedDistance;
-            bestLabel = label;
-            bestConfidence = Math.max(0, 1 - (avgWeightedDistance / 2));
+            if (avgWeightedDistance < minScore) {
+                minScore = avgWeightedDistance;
+                bestLabel = label;
+                bestConfidence = Math.max(0, 1 - (avgWeightedDistance / 2));
+            }
         }
     }
 
-    console.log('Best prediction:', bestLabel, 'with confidence:', bestConfidence, 'score:', minScore);
+    // Log prediction details periodically for debugging
+    if (bestLabel && Math.random() < 0.01) {
+        console.log(`[DB Predict] Total labels: ${totalLabels}, Best: ${bestLabel}, Confidence: ${bestConfidence.toFixed(3)}, Score: ${minScore.toFixed(3)}`);
+    }
 
     return { label: bestLabel, confidence: bestConfidence };
 }
@@ -3069,7 +3234,7 @@ function getPredictionPeak(predictionTensor, labels) {
 
 function chooseBestCandidateWithLocalPriority(candidates) {
     const serverCandidates = candidates.filter(c => c.source === 'server');
-    const localCandidates = candidates.filter(c => c.source === 'local' || c.source === 'dynamic');
+    const localCandidates = candidates.filter(c => c.source === 'local' || c.source === 'dynamic' || c.source === 'database');
 
     serverCandidates.sort((a, b) => b.conf - a.conf);
     localCandidates.sort((a, b) => b.conf - a.conf);
@@ -3088,8 +3253,9 @@ function chooseBestCandidateWithLocalPriority(candidates) {
             return bestServer;
         }
 
-        // Stronger local preference so website-trained signs actually take priority.
-        const localScore = bestLocal.conf + 0.10;
+        // Database predictions get highest priority (AI training page data)
+        const isDatabasePrediction = bestLocal.source === 'database';
+        const localScore = isDatabasePrediction ? bestLocal.conf + 0.20 : bestLocal.conf + 0.10;
         const serverScore = bestServer.conf;
         return localScore >= serverScore ? bestLocal : bestServer;
     }
@@ -3146,7 +3312,7 @@ function runPrediction(flatLandmarks, detectedHandCount = 1) {
                 }, new Array(flatLandmarks.length).fill(0)).map(val => val / dynamicFrameBuffer.length);
 
                 const { label, confidence } = predictWithDatabase(avgFrame);
-                if (label && confidence > 0.3) {
+                if (label && confidence > 0.1) {
                     candidates.push({ label, conf: confidence, source: 'database-dynamic' });
                 }
 
