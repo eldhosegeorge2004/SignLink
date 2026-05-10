@@ -1,861 +1,960 @@
+<!-- SignLink Live Translation Page -->
+<!-- This page provides real-time sign language to text translation.
+     Users can switch between sign mode (camera) and voice mode (speech recognition). -->
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
+    <!-- Character encoding for the page -->
     <meta charset="UTF-8">
+    <!-- Viewport settings for responsive design on mobile devices -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Page title shown in browser tab -->
     <title>SignLink - Live Translation</title>
-    <!-- Reusing existing styles -->
+    <!-- Main stylesheet -->
     <link rel="stylesheet" href="style.css">
-    <!-- Icons -->
+    <!-- Material Icons library for icons -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- Google Fonts: Inter for body text, Outfit for headings -->
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;700;800&display=swap"
         rel="stylesheet">
 
-    <!-- specific styles for translation page -->
+    <!-- ==================== PAGE-SPECIFIC STYLES ==================== -->
     <style>
+        /* Main translation container */
         .translation-container {
-            padding: 0;
-            gap: 0;
-            overflow: hidden;
-            height: 100dvh;
-            min-height: 100dvh;
-            justify-content: flex-start;
-            background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
-            display: flex;
-            flex-direction: column;
-            width: 100vw;
-            position: relative;
+            padding: 0;  /* No padding */
+            gap: 0;  /* No gap */
+            overflow: hidden;  /* Hide overflow */
+            height: 100dvh;  /* Full viewport height */
+            min-height: 100dvh;  /* Minimum height */
+            justify-content: flex-start;  /* Align to top */
+            background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);  /* Dark gradient */
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            width: 100vw;  /* Full width */
+            position: relative;  /* For absolute positioning */
         }
 
+        /* Main content area */
         .translation-main {
-            width: 100%;
-            flex: none;
-            height: auto;
-            gap: 0;
-            display: flex;
-            flex-direction: column;
-            padding-top: 0;
+            width: 100%;  /* Full width */
+            flex: none;  /* Don't grow */
+            height: auto;  /* Auto height */
+            gap: 0;  /* No gap */
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            padding-top: 0;  /* No top padding */
         }
 
+        /* Video section (camera feed) */
         .video-section {
-            width: 100%;
+            width: 100%;  /* Full width */
         }
 
 
-        /* Result Overlay over Camera */
+        /* ==================== RESULT OVERLAY ==================== */
+        /* Result overlay (shows translation result over camera) */
         .result-overlay {
-            position: fixed;
-            bottom: 110px; /* Above the pill control bar */
-            left: 50%;
-            transform: translateX(-50%);
-            width: 85%;
-            background: rgba(13, 20, 36, 0.9);
-            padding: 15px 20px;
-            border-radius: 30px;
-            z-index: 110;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-            color: white;
-            font-size: 1.1rem;
-            display: none;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            text-align: center;
+            position: fixed;  /* Fixed position */
+            bottom: 110px;  /* Above the pill control bar */
+            left: 50%;  /* Center horizontally */
+            transform: translateX(-50%);  /* Center with transform */
+            width: 85%;  /* 85% width */
+            background: rgba(13, 20, 36, 0.9);  /* Dark background */
+            padding: 15px 20px;  /* Inner spacing */
+            border-radius: 30px;  /* Rounded corners */
+            z-index: 110;  /* High z-index */
+            backdrop-filter: blur(10px);  /* Blur background */
+            border: 1px solid rgba(255, 255, 255, 0.1);  /* Subtle border */
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);  /* Shadow */
+            color: white;  /* White text */
+            font-size: 1.1rem;  /* Medium font */
+            display: none;  /* Hidden by default */
+            white-space: nowrap;  /* No text wrapping */
+            overflow: hidden;  /* Hide overflow */
+            text-overflow: ellipsis;  /* Ellipsis for overflow */
+            text-align: center;  /* Center text */
         }
 
+        /* Show overlay when STT result has content */
         .result-overlay:has(#stt-result:not(:empty)) {
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            display: flex;  /* Show as flex */
+            justify-content: center;  /* Center horizontally */
+            align-items: center;  /* Center vertically */
         }
 
+        /* Hide overlay in voice mode */
         body.voice-mode-active .result-overlay {
-            display: none !important;
+            display: none !important;  /* Force hidden */
         }
 
-        /* Remove old desktop grid overrides */
+        /* Remove old desktop grid overrides in voice mode */
         body.voice-mode-active .translation-main {
-            width: 100%;
-            grid-template-columns: 1fr;
+            width: 100%;  /* Full width */
+            grid-template-columns: 1fr;  /* Single column */
         }
 
+        /* ==================== MOBILE APP HEADER ==================== */
+        /* Mobile app header (fixed at top) */
         .mobile-app-header {
-            display: flex !important;
-            align-items: center;
-            justify-content: space-between;
-            padding: calc(10px + env(safe-area-inset-top)) 14px 0 14px;
-            background: transparent;
-            position: fixed;
-            top: 0;
-            left: 0;
+            display: flex !important;  /* Force flex display */
+            align-items: center;  /* Center vertically */
+            justify-content: space-between;  /* Space apart */
+            padding: calc(10px + env(safe-area-inset-top)) 14px 0 14px;  /* Account for safe area */
+            background: transparent;  /* Transparent background */
+            position: fixed;  /* Fixed position */
+            top: 0;  /* At top */
+            left: 0;  /* Full width */
             right: 0;
-            z-index: 100;
-            pointer-events: none;
+            z-index: 100;  /* High z-index */
+            pointer-events: none;  /* Don't block clicks on container */
         }
 
+        /* Re-enable clicks on header children */
         .mobile-app-header > * {
-            pointer-events: all;
+            pointer-events: all;  /* Enable clicks */
         }
+
+        /* App title in header */
         .app-title {
-            font-family: 'Outfit', sans-serif;
-            font-size: 1rem;
-            font-weight: 700;
-            color: #e6edf3;
-            margin: 0;
+            font-family: 'Outfit', sans-serif;  /* Outfit font */
+            font-size: 1rem;  /* Medium font */
+            font-weight: 700;  /* Bold */
+            color: #e6edf3;  /* Light text */
+            margin: 0;  /* No margin */
         }
 
+        /* Header actions container */
         .header-actions {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            gap: 10px;  /* Space between buttons */
         }
 
+        /* Header icon button (circular buttons) */
         .header-icon-btn {
-            background: rgba(13, 20, 36, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #e6edf3;
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            backdrop-filter: blur(12px);
-            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
-            text-decoration: none;
-            transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+            background: rgba(13, 20, 36, 0.7);  /* Dark background */
+            border: 1px solid rgba(255, 255, 255, 0.1);  /* Subtle border */
+            color: #e6edf3;  /* Light text */
+            width: 44px;  /* Width */
+            height: 44px;  /* Height */
+            border-radius: 50%;  /* Circle */
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            cursor: pointer;  /* Pointer cursor */
+            backdrop-filter: blur(12px);  /* Blur background */
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);  /* Shadow */
+            text-decoration: none;  /* Remove underline */
+            transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;  /* Smooth transitions */
         }
 
+        /* Header icon button hover effect */
         .header-icon-btn:hover {
-            background: rgba(30, 41, 59, 0.9);
-            border-color: rgba(191, 219, 254, 0.24);
-            transform: translateY(-1px);
+            background: rgba(30, 41, 59, 0.9);  /* Stronger background */
+            border-color: rgba(191, 219, 254, 0.24);  /* Blue border */
+            transform: translateY(-1px);  /* Move up */
         }
 
+        /* Header title pill (styled container for title) */
         .header-title-pill {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            min-width: 0;
-            padding: 11px 16px;
-            border-radius: 999px;
-            background: rgba(13, 20, 36, 0.72);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #e6edf3;
-            backdrop-filter: blur(12px);
-            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            gap: 10px;  /* Space between elements */
+            min-width: 0;  /* Allow shrinking */
+            padding: 11px 16px;  /* Inner spacing */
+            border-radius: 999px;  /* Pill shape */
+            background: rgba(13, 20, 36, 0.72);  /* Dark background */
+            border: 1px solid rgba(255, 255, 255, 0.1);  /* Subtle border */
+            color: #e6edf3;  /* Light text */
+            backdrop-filter: blur(12px);  /* Blur background */
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);  /* Shadow */
         }
 
+        /* Icon in header title pill */
         .header-title-pill .material-icons {
-            color: #7dd3fc;
-            font-size: 20px;
+            color: #7dd3fc;  /* Light blue */
+            font-size: 20px;  /* Icon size */
         }
 
+        /* Header title text container */
         .header-title-text {
-            display: flex;
-            flex-direction: column;
-            min-width: 0;
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            min-width: 0;  /* Allow shrinking */
         }
 
+        /* Header kicker (small label above title) */
         .header-kicker {
-            color: #94a3b8;
-            font-size: 0.62rem;
-            font-weight: 700;
-            line-height: 1;
-            text-transform: uppercase;
-            letter-spacing: 0.14em;
+            color: #94a3b8;  /* Muted color */
+            font-size: 0.62rem;  /* Very small font */
+            font-weight: 700;  /* Bold */
+            line-height: 1;  /* Tight line height */
+            text-transform: uppercase;  /* All caps */
+            letter-spacing: 0.14em;  /* Wide letter spacing */
         }
 
-        /* Video Container - Full Screen */
+        /* ==================== VIDEO CONTAINER ==================== */
+        /* Full-screen video container */
         .video-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100dvh;
-            border-radius: 0;
-            border: none;
-            margin: 0;
-            background: #000;
-            z-index: 1; /* Background layer */
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            position: fixed;  /* Fixed position */
+            top: 0;  /* At top */
+            left: 0;  /* At left */
+            width: 100vw;  /* Full viewport width */
+            height: 100dvh;  /* Full viewport height */
+            border-radius: 0;  /* No border radius */
+            border: none;  /* No border */
+            margin: 0;  /* No margin */
+            background: #000;  /* Black background */
+            z-index: 1;  /* Background layer */
+            display: flex;  /* Flex layout */
+            justify-content: center;  /* Center horizontally */
+            align-items: center;  /* Center vertically */
+            overflow: hidden;  /* Hide overflow */
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);  /* Shadow */
         }
 
+        /* Video and canvas elements (overlay each other) */
         video, canvas {
-            width: 100%;
-            height: 100%;
-            object-fit: cover !important; /* Forces vertical full-screen crop */
-            transform: scaleX(-1);
-            position: absolute;
-            top: 0;
-            left: 0;
+            width: 100%;  /* Full width */
+            height: 100%;  /* Full height */
+            object-fit: cover !important;  /* Forces vertical full-screen crop */
+            transform: scaleX(-1);  /* Mirror horizontally (like a mirror) */
+            position: absolute;  /* Positioned in container */
+            top: 0;  /* Top aligned */
+            left: 0;  /* Left aligned */
         }
 
+        /* Canvas element (for drawing landmarks) */
         canvas {
-            pointer-events: none;
+            pointer-events: none;  /* Don't block clicks */
         }
 
-        /* Speech Container - Anchored at the top like video call */
+        /* ==================== SPEECH CONTAINER ==================== */
+        /* Speech/caption panel (anchored at top like video call) */
         .speech-container.caption-log-panel {
-            position: fixed !important;
-            top: calc(env(safe-area-inset-top) + 8px) !important;
-            left: 12px !important;
-            right: 12px !important;
-            bottom: auto !important;
-            transform: none !important;
-            width: auto !important;
-            max-height: min(42vh, calc(100dvh - 180px));
-            border-radius: 24px !important;
-            background: rgba(13, 20, 36, 0.78) !important;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            z-index: 105;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-            opacity: 1;
-            visibility: hidden;
+            position: fixed !important;  /* Fixed position */
+            top: calc(env(safe-area-inset-top) + 8px) !important;  /* Account for safe area */
+            left: 12px !important;  /* From left */
+            right: 12px !important;  /* From right */
+            bottom: auto !important;  /* Auto bottom */
+            transform: none !important;  /* No transform */
+            width: auto !important;  /* Auto width */
+            max-height: min(42vh, calc(100dvh - 180px));  /* Max height */
+            border-radius: 24px !important;  /* Rounded corners */
+            background: rgba(13, 20, 36, 0.78) !important;  /* Dark background */
+            backdrop-filter: blur(10px);  /* Blur background */
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;  /* Subtle border */
+            z-index: 105;  /* High z-index */
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);  /* Shadow */
+            opacity: 1;  /* Visible */
+            visibility: hidden;  /* Hidden by default */
         }
 
+        /* Caption panel content */
         .speech-container .caption-panel-content {
-            padding: 12px;
-            gap: 10px;
+            padding: 12px;  /* Inner spacing */
+            gap: 10px;  /* Space between elements */
         }
 
+        /* Caption section headers */
         .speech-container .caption-section-header,
         .speech-container .sign-cards-panel-header {
-            padding: 0 4px;
+            padding: 0 4px;  /* Inner spacing */
         }
 
+        /* Show speech container in voice mode */
         body.voice-mode-active .speech-container.caption-log-panel {
-            display: flex !important;
-            visibility: visible !important;
+            display: flex !important;  /* Show as flex */
+            visibility: visible !important;  /* Make visible */
         }
 
+        /* Speech container awake state */
         body.voice-mode-active .speech-container.caption-log-panel.awake {
-            opacity: 1;
+            opacity: 1;  /* Full opacity */
         }
 
+        /* Speech caption log (scrollable text area) */
         .speech-caption-log {
-            max-height: 110px;
-            overflow-y: auto;
-            padding: 4px 8px;
-            margin: 0;
-            border: none;
-            font-size: 0.9rem !important;
-            color: #e6edf3;
-            line-height: 1.4;
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-            display: flex !important;
+            max-height: 110px;  /* Max height */
+            overflow-y: auto;  /* Vertical scroll */
+            padding: 4px 8px;  /* Inner spacing */
+            margin: 0;  /* No margin */
+            border: none;  /* No border */
+            font-size: 0.9rem !important;  /* Small font */
+            color: #e6edf3;  /* Light text */
+            line-height: 1.4;  /* Readable line height */
+            scrollbar-width: none;  /* Hide scrollbar (Firefox) */
+            -ms-overflow-style: none;  /* Hide scrollbar (IE/Edge) */
+            display: flex !important;  /* Flex layout */
         }
 
+        /* Hide scrollbar (Chrome/Safari) */
         .speech-caption-log::-webkit-scrollbar {
-            display: none;
+            display: none;  /* Hide */
         }
 
+        /* Show caption log in voice mode */
         body.voice-mode-active .speech-caption-log {
-            display: flex !important;
+            display: flex !important;  /* Show as flex */
         }
 
+        /* Hide caption log when collapsed */
         .caption-log-window.collapsed .speech-caption-log {
-            display: none !important;
+            display: none !important;  /* Hide */
         }
 
+        /* Sign cards area slide-in animation */
         .sign-cards-area-right.popup-in {
-            animation: sign-cards-slide-in 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+            animation: sign-cards-slide-in 0.34s cubic-bezier(0.22, 1, 0.36, 1);  /* Slide in */
         }
 
+        /* Sign card item pop animation */
         .sign-card-item {
-            animation: sign-card-item-pop 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+            animation: sign-card-item-pop 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;  /* Pop in */
         }
 
+        /* Sign cards slide-in keyframes */
         @keyframes sign-cards-slide-in {
             from {
-                opacity: 0;
-                transform: translateY(18px) scale(0.98);
+                opacity: 0;  /* Start invisible */
+                transform: translateY(18px) scale(0.98);  /* Start below and slightly smaller */
             }
-
             to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
+                opacity: 1;  /* End visible */
+                transform: translateY(0) scale(1);  /* End at position and normal size */
             }
         }
 
+        /* Sign card item pop keyframes */
         @keyframes sign-card-item-pop {
             from {
-                opacity: 0;
-                transform: translateY(16px) scale(0.9);
+                opacity: 0;  /* Start invisible */
+                transform: translateY(16px) scale(0.9);  /* Start below and smaller */
             }
-
             to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
+                opacity: 1;  /* End visible */
+                transform: translateY(0) scale(1);  /* End at position and normal size */
             }
         }
 
+        /* Placeholder message (shown when no content) */
         .placeholder-msg {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: rgba(255, 255, 255, 0.2);
-            font-style: italic;
-            font-size: 0.9rem;
+            width: 100%;  /* Full width */
+            height: 100%;  /* Full height */
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            color: rgba(255, 255, 255, 0.2);  /* Faint white */
+            font-style: italic;  /* Italic text */
+            font-size: 0.9rem;  /* Small font */
         }
 
-        /* Result Overlay over Camera - Moved to base styles */
+        /* Hide result overlay in voice mode */
         body.voice-mode-active .result-overlay {
-            display: none !important;
+            display: none !important;  /* Force hidden */
         }
 
+        /* ==================== CONTROL BAR ==================== */
+        /* Bottom control bar (floating pill) */
         .control-bar {
-            position: fixed;
-            left: 50%;
-            transform: translateX(-50%);
-            bottom: 15px;
-            z-index: 210;
-            display: flex;
-            gap: 10px;
-            padding: 6px 15px;
-            flex-direction: row;
-            flex-wrap: nowrap;
-            align-items: center;
-            justify-content: center;
-            background: rgba(15, 23, 42, 0.8);
-            backdrop-filter: blur(12px);
-            border-radius: 40px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            width: fit-content;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-            max-width: 95vw;
+            position: fixed;  /* Fixed position */
+            left: 50%;  /* Center horizontally */
+            transform: translateX(-50%);  /* Center with transform */
+            bottom: 15px;  /* From bottom */
+            z-index: 210;  /* High z-index */
+            display: flex;  /* Flex layout */
+            gap: 10px;  /* Space between buttons */
+            padding: 6px 15px;  /* Inner spacing */
+            flex-direction: row;  /* Horizontal layout */
+            flex-wrap: nowrap;  /* No wrapping */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            background: rgba(15, 23, 42, 0.8);  /* Dark background */
+            backdrop-filter: blur(12px);  /* Blur background */
+            border-radius: 40px;  /* Pill shape */
+            border: 1px solid rgba(255, 255, 255, 0.1);  /* Subtle border */
+            width: fit-content;  /* Auto width */
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);  /* Shadow */
+            max-width: 95vw;  /* Max width */
         }
 
         /* Control button styling */
         .control-btn {
-            width: 44px;
-            height: 44px;
-            min-width: 44px;
-            min-height: 44px;
-            padding: 8px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
-            color: white;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s;
+            width: 44px;  /* Width */
+            height: 44px;  /* Height */
+            min-width: 44px;  /* Min width */
+            min-height: 44px;  /* Min height */
+            padding: 8px;  /* Inner spacing */
+            border-radius: 50%;  /* Circle */
+            background: rgba(255, 255, 255, 0.1);  /* Light background */
+            border: none;  /* No border */
+            color: white;  /* White text */
+            cursor: pointer;  /* Pointer cursor */
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            transition: all 0.3s;  /* Smooth transition */
         }
 
+        /* Language select dropdown */
         #lang-select {
-            background: rgba(255,255,255,0.1); 
-            color: white; 
-            border: 1px solid rgba(255,255,255,0.2); 
-            padding: 8px 12px !important;
-            font-size: 0.75rem !important;
-            border-radius: 16px !important;
-            min-width: 100px;
-            max-width: 140px;
-            font-family: 'Inter', sans-serif;
-            cursor: pointer;
-            outline: none;
+            background: rgba(255,255,255,0.1);  /* Light background */
+            color: white;  /* White text */
+            border: 1px solid rgba(255,255,255,0.2);  /* Subtle border */
+            padding: 8px 12px !important;  /* Inner spacing */
+            font-size: 0.75rem !important;  /* Small font */
+            border-radius: 16px !important;  /* Rounded corners */
+            min-width: 100px;  /* Min width */
+            max-width: 140px;  /* Max width */
+            font-family: 'Inter', sans-serif;  /* Inter font */
+            cursor: pointer;  /* Pointer cursor */
+            outline: none;  /* No outline */
         }
 
+        /* Control button hover effect */
         .control-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            transform: scale(1.1);
+            background: rgba(255, 255, 255, 0.2);  /* Lighter background */
+            transform: scale(1.1);  /* Scale up */
         }
 
+        /* Icon in control button */
         .control-btn .material-icons {
-            font-size: 28px;
+            font-size: 28px;  /* Icon size */
         }
 
-
-
-
-        /* Remove old desktop grid overrides */
+        /* ==================== VOICE MODE OVERRIDES ==================== */
+        /* Remove old desktop grid overrides in voice mode */
         body.voice-mode-active .translation-main {
-            width: 100%;
-            grid-template-columns: 1fr;
+            width: 100%;  /* Full width */
+            grid-template-columns: 1fr;  /* Single column */
         }
 
+        /* Video container in voice mode */
         body.voice-mode-active .video-container {
-            grid-column: auto;
-            grid-row: auto;
+            grid-column: auto;  /* Auto column */
+            grid-row: auto;  /* Auto row */
         }
 
+        /* Hide speech container in sign mode */
         body:not(.voice-mode-active) .speech-container {
-            display: none !important;
+            display: none !important;  /* Force hidden */
         }
 
-        /* Spelling overlay: smaller on mobile */
+        /* ==================== SPELLING OVERLAY ==================== */
+        /* Spelling overlay (shows spelled letters) */
         #spelling-overlay {
-            top: 90px !important;
-            left: 50% !important;
-            transform: translateX(-50%) !important;
-            padding: 6px 16px !important;
-            border-radius: 8px !important;
-            position: absolute;
-            background: rgba(0, 0, 0, 0.8);
-            display: none; /* Hidden by default */
-            z-index: 100;
-            pointer-events: none;
+            top: 90px !important;  /* From top */
+            left: 50% !important;  /* Center horizontally */
+            transform: translateX(-50%) !important;  /* Center with transform */
+            padding: 6px 16px !important;  /* Inner spacing */
+            border-radius: 8px !important;  /* Rounded corners */
+            position: absolute;  /* Absolute position */
+            background: rgba(0, 0, 0, 0.8);  /* Dark background */
+            display: none;  /* Hidden by default */
+            z-index: 100;  /* High z-index */
+            pointer-events: none;  /* Don't block clicks */
         }
 
+        /* Spelling text */
         #spelling-text {
-            color: white;
-            font-size: 1.4rem !important;
-            font-weight: bold;
-            font-family: 'Outfit', sans-serif;
-            letter-spacing: 3px !important;
+            color: white;  /* White text */
+            font-size: 1.4rem !important;  /* Large font */
+            font-weight: bold;  /* Bold */
+            font-family: 'Outfit', sans-serif;  /* Outfit font */
+            letter-spacing: 3px !important;  /* Wide letter spacing */
         }
 
+        /* ==================== MOBILE RESPONSIVE STYLES ==================== */
         @media (max-width: 600px) {
+            /* CSS variables for mobile layout */
             :root {
-                --translation-mobile-control-height: 56px;
-                --translation-mobile-control-offset: 10px;
-                --translation-mobile-control-reserve: calc(var(--translation-mobile-control-height) + var(--translation-mobile-control-offset) + env(safe-area-inset-bottom) + 10px);
+                --translation-mobile-control-height: 56px;  /* Control bar height */
+                --translation-mobile-control-offset: 10px;  /* Control bar offset */
+                --translation-mobile-control-reserve: calc(var(--translation-mobile-control-height) + var(--translation-mobile-control-offset) + env(safe-area-inset-bottom) + 10px);  /* Space reserved for control bar */
             }
 
             /* Override desktop voice mode layout on mobile */
             body.voice-mode-active .translation-main {
-                grid-template-columns: 1fr;
-                width: 100%;
+                grid-template-columns: 1fr;  /* Single column */
+                width: 100%;  /* Full width */
             }
 
-            /* Full-screen container — no scroll */
+            /* Full-screen container — no scroll on mobile */
             .translation-container {
-                padding: 0;
-                gap: 0;
-                overflow: hidden;
-                height: 100dvh;
-                min-height: 100dvh;
-                justify-content: flex-start;
-                background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
-                flex-direction: column;
+                padding: 0;  /* No padding */
+                gap: 0;  /* No gap */
+                overflow: hidden;  /* Hide overflow */
+                height: 100dvh;  /* Full viewport height */
+                min-height: 100dvh;  /* Minimum height */
+                justify-content: flex-start;  /* Align to top */
+                background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);  /* Dark gradient */
+                flex-direction: column;  /* Vertical stacking */
             }
+
+            /* Main content on mobile */
             .translation-main {
-                grid-template-columns: 1fr;
-                width: 100%;
-                flex: none;
-                height: calc(100dvh - var(--translation-mobile-control-reserve));
-                min-height: 0;
-                gap: 0;
-                display: flex;
-                flex-direction: column;
-                padding-top: 0;
+                grid-template-columns: 1fr;  /* Single column */
+                width: 100%;  /* Full width */
+                flex: none;  /* Don't grow */
+                height: calc(100dvh - var(--translation-mobile-control-reserve));  /* Height minus control bar space */
+                min-height: 0;  /* No min height */
+                gap: 0;  /* No gap */
+                display: flex;  /* Flex layout */
+                flex-direction: column;  /* Vertical stacking */
+                padding-top: 0;  /* No top padding */
             }
 
+            /* Video section on mobile */
             .video-section {
-                flex: 1;
-                min-height: 0;
-                display: flex;
+                flex: 1;  /* Fill available space */
+                min-height: 0;  /* No min height */
+                display: flex;  /* Flex layout */
             }
 
-            /* Camera fills portion of screen */
+            /* Camera fills portion of screen on mobile */
             .video-container {
-                left: 0;
-                width: 100%;
-                height: 100%;
-                aspect-ratio: unset;
-                border-radius: 0;
-                border: none;
-                box-shadow: none;
-                flex-shrink: 0;
-                background: #000;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                left: 0;  /* Left aligned */
+                width: 100%;  /* Full width */
+                height: 100%;  /* Full height */
+                aspect-ratio: unset;  /* Unset aspect ratio */
+                border-radius: 0;  /* No border radius */
+                border: none;  /* No border */
+                box-shadow: none;  /* No shadow */
+                flex-shrink: 0;  /* Don't shrink */
+                background: #000;  /* Black background */
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);  /* Bottom border */
             }
 
             /* Sign mode: no lower panel, camera fills down to control bar */
             body:not(.voice-mode-active) .info-side-panel {
-                display: none !important;
+                display: none !important;  /* Force hidden */
             }
 
+            /* Remove bottom border in sign mode */
             body:not(.voice-mode-active) .video-container {
-                border-bottom: none;
+                border-bottom: none;  /* No border */
             }
 
             /* Voice mode: show panel and reduce camera height */
             body.voice-mode-active .video-section {
-                flex: 0 0 42vh;
+                flex: 0 0 42vh;  /* Fixed height (42% of viewport) */
             }
 
-            /* Removed old back-btn overrides */
-
-            /* Translation result strip — compact */
+            /* Translation result strip — compact on mobile */
             .result-overlay {
-                bottom: 80px;
-                padding: 10px 18px;
-                font-size: 0.95rem;
-                max-width: 90%;
-                border-radius: 30px;
+                bottom: 80px;  /* From bottom */
+                padding: 10px 18px;  /* Inner spacing */
+                font-size: 0.95rem;  /* Medium font */
+                max-width: 90%;  /* Max width */
+                border-radius: 30px;  /* Rounded corners */
             }
 
-            /* Control bar — fits in one tight row */
+            /* Control bar — fits in one tight row on mobile */
             .control-bar {
-                bottom: calc(var(--translation-mobile-control-offset) + env(safe-area-inset-bottom));
-                gap: 10px;
-                padding: 0 10px;
-                display: flex;
-                flex-direction: row;
-                flex-wrap: nowrap;
-                align-items: center;
-                justify-content: center;
+                bottom: calc(var(--translation-mobile-control-offset) + env(safe-area-inset-bottom));  /* Account for safe area */
+                gap: 10px;  /* Space between buttons */
+                padding: 0 10px;  /* Inner spacing */
+                display: flex;  /* Flex layout */
+                flex-direction: row;  /* Horizontal layout */
+                flex-wrap: nowrap;  /* No wrapping */
+                align-items: center;  /* Center vertically */
+                justify-content: center;  /* Center horizontally */
             }
 
             /* Control buttons styling for mobile */
             .control-btn {
-                width: 44px;
-                height: 44px;
-                min-width: 44px;
-                min-height: 44px;
-                padding: 8px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
+                width: 44px;  /* Width */
+                height: 44px;  /* Height */
+                min-width: 44px;  /* Min width */
+                min-height: 44px;  /* Min height */
+                padding: 8px;  /* Inner spacing */
+                border-radius: 50%;  /* Circle */
+                display: flex;  /* Flex layout */
+                align-items: center;  /* Center vertically */
+                justify-content: center;  /* Center horizontally */
             }
 
-            /* Shrink lang select to be compact */
+            /* Shrink lang select to be compact on mobile */
             #lang-select {
-                padding: 8px 12px !important;
-                font-size: 0.75rem !important;
-                border-radius: 16px !important;
-                min-width: 100px;
-                max-width: 140px;
+                padding: 8px 12px !important;  /* Inner spacing */
+                font-size: 0.75rem !important;  /* Small font */
+                border-radius: 16px !important;  /* Rounded corners */
+                min-width: 100px;  /* Min width */
+                max-width: 140px;  /* Max width */
             }
 
-            /* Speech panel: captions and sign cards area */
+            /* Speech panel: captions and sign cards area on mobile */
             .speech-container {
-                position: relative !important;
-                bottom: auto !important;
-                left: auto !important;
-                right: auto !important;
-                width: 100% !important;
-                height: 100%;
-                max-height: none;
-                min-height: 0;
-                border: none !important;
-                background: rgba(30, 41, 59, 0.6);
-                backdrop-filter: blur(8px);
-                padding: 0 !important;
-                box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
-                grid-column: auto !important;
-                grid-row: auto !important;
-                display: flex;
-                flex-direction: column;
-                justify-content: flex-start;
-                align-items: stretch;
-                overflow: hidden;
-                flex: 1;
+                position: relative !important;  /* Relative position */
+                bottom: auto !important;  /* Auto bottom */
+                left: auto !important;  /* Auto left */
+                right: auto !important;  /* Auto right */
+                width: 100% !important;  /* Full width */
+                height: 100%;  /* Full height */
+                max-height: none;  /* No max height */
+                min-height: 0;  /* No min height */
+                border: none !important;  /* No border */
+                background: rgba(30, 41, 59, 0.6);  /* Dark background */
+                backdrop-filter: blur(8px);  /* Blur background */
+                padding: 0 !important;  /* No padding */
+                box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);  /* Shadow */
+                grid-column: auto !important;  /* Auto column */
+                grid-row: auto !important;  /* Auto row */
+                display: flex;  /* Flex layout */
+                flex-direction: column;  /* Vertical stacking */
+                justify-content: flex-start;  /* Align to top */
+                align-items: stretch;  /* Stretch items */
+                overflow: hidden;  /* Hide overflow */
+                flex: 1;  /* Fill available space */
             }
 
+            /* Speech panel card body */
             #speech-panel .card-body {
-                padding: 12px 14px;
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-                min-height: 0;
-                overflow: hidden;
+                padding: 12px 14px;  /* Inner spacing */
+                display: flex;  /* Flex layout */
+                flex-direction: column;  /* Vertical stacking */
+                gap: 10px;  /* Space between elements */
+                min-height: 0;  /* No min height */
+                overflow: hidden;  /* Hide overflow */
             }
 
+            /* Speech caption log on mobile */
             #speech-panel .speech-caption-log-right {
-                max-height: 32%;
-                min-height: 56px;
-                overflow-y: auto;
-                margin-bottom: 0;
+                max-height: 32%;  /* Max height */
+                min-height: 56px;  /* Min height */
+                overflow-y: auto;  /* Vertical scroll */
+                margin-bottom: 0;  /* No margin */
             }
 
+            /* Sign cards area on mobile */
             #speech-panel .sign-cards-area-right {
-                height: auto;
-                min-height: 0;
-                max-height: none;
-                flex: 1;
-                overflow-y: auto;
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-                padding-bottom: 10px;
+                height: auto;  /* Auto height */
+                min-height: 0;  /* No min height */
+                max-height: none;  /* No max height */
+                flex: 1;  /* Fill available space */
+                overflow-y: auto;  /* Vertical scroll */
+                overflow-x: auto;  /* Horizontal scroll */
+                -webkit-overflow-scrolling: touch;  /* Smooth scroll on iOS */
+                padding-bottom: 10px;  /* Bottom padding */
             }
 
+            /* Speech container in voice mode on mobile */
             body.voice-mode-active .speech-container {
-                position: relative !important;
-                background: transparent !important;
-                backdrop-filter: none !important;
-                border: none !important;
+                position: relative !important;  /* Relative position */
+                background: transparent !important;  /* Transparent background */
+                backdrop-filter: none !important;  /* No blur */
+                border: none !important;  /* No border */
             }
 
-            /* Captions in the middle */
+            /* ==================== LISTENING INDICATOR ==================== */
+            /* Listening indicator (shows when speech recognition is active) */
             .listening-indicator {
-                position: static !important;
-                display: none !important;
-                left: auto !important;
-                top: auto !important;
-                z-index: auto;
-                margin: 24px 16px 0 16px !important;
-                font-size: 0.9rem !important;
-                color: #3b82f6;
+                position: static !important;  /* Static position */
+                display: none !important;  /* Hidden by default */
+                left: auto !important;  /* Auto left */
+                top: auto !important;  /* Auto top */
+                z-index: auto;  /* Auto z-index */
+                margin: 24px 16px 0 16px !important;  /* Margin */
+                font-size: 0.9rem !important;  /* Medium font */
+                color: #3b82f6;  /* Blue color */
             }
 
+            /* Show listening indicator in voice mode */
             body.voice-mode-active .listening-indicator {
-                display: flex !important;
+                display: flex !important;  /* Show as flex */
             }
 
+            /* Show listening indicator with show class */
             body.voice-mode-active .listening-indicator.show {
-                display: flex !important;
+                display: flex !important;  /* Show as flex */
             }
 
+            /* ==================== SPEECH CAPTION LOG ==================== */
+            /* Speech caption log (scrollable text area) */
             .speech-caption-log {
-                max-height: auto;
-                min-height: auto;
-                position: static !important;
-                display: none !important;
-                left: auto !important;
-                top: auto !important;
-                z-index: auto;
-                width: 100% !important;
-                background: transparent !important;
-                padding: 6px 16px 12px 16px !important;
-                margin: 0 !important;
-                border: none !important;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-                font-size: 0.85rem !important;
-                color: #e2e8f0;
+                max-height: auto;  /* Auto max height */
+                min-height: auto;  /* Auto min height */
+                position: static !important;  /* Static position */
+                display: none !important;  /* Hidden by default */
+                left: auto !important;  /* Auto left */
+                top: auto !important;  /* Auto top */
+                z-index: auto;  /* Auto z-index */
+                width: 100% !important;  /* Full width */
+                background: transparent !important;  /* Transparent background */
+                padding: 6px 16px 12px 16px !important;  /* Inner spacing */
+                margin: 0 !important;  /* No margin */
+                border: none !important;  /* No border */
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);  /* Bottom border */
+                font-size: 0.85rem !important;  /* Small font */
+                color: #e2e8f0;  /* Light text */
             }
 
+            /* Show caption log in voice mode */
             body.voice-mode-active .speech-caption-log {
-                max-height: auto !important;
-                min-height: auto !important;
-                display: block !important;
+                max-height: auto !important;  /* Auto max height */
+                min-height: auto !important;  /* Auto min height */
+                display: block !important;  /* Show as block */
             }
 
+            /* Show caption log with show class */
             body.voice-mode-active .speech-caption-log.show {
-                display: block !important;
+                display: block !important;  /* Show as block */
             }
 
-            /* Sign cards area at bottom */
+            /* ==================== SIGN CARDS AREA ==================== */
+            /* Sign cards area at bottom (grid of sign cards) */
             .sign-cards-area {
-                height: auto;
-                min-height: 100px;
-                max-height: 30vh;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 12px 16px !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 0 !important;
-                background: rgba(15, 23, 42, 0.5);
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
-                gap: 6px;
-                overflow-y: auto;
+                height: auto;  /* Auto height */
+                min-height: 100px;  /* Min height */
+                max-height: 30vh;  /* Max height */
+                width: 100% !important;  /* Full width */
+                margin: 0 !important;  /* No margin */
+                padding: 12px 16px !important;  /* Inner spacing */
+                border-top: 1px solid rgba(255, 255, 255, 0.15);  /* Top border */
+                border-radius: 0 !important;  /* No border radius */
+                background: rgba(15, 23, 42, 0.5);  /* Dark background */
+                display: grid;  /* Grid layout */
+                grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));  /* Auto columns */
+                gap: 6px;  /* Space between cards */
+                overflow-y: auto;  /* Vertical scroll */
             }
 
+            /* Sign cards area in voice mode */
             body.voice-mode-active .sign-cards-area {
-                width: 100% !important;
-                margin: 0 !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.15);
-                background: rgba(15, 23, 42, 0.5);
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
-                gap: 6px;
-                padding: 12px 16px;
+                width: 100% !important;  /* Full width */
+                margin: 0 !important;  /* No margin */
+                border-top: 1px solid rgba(255, 255, 255, 0.15);  /* Top border */
+                background: rgba(15, 23, 42, 0.5);  /* Dark background */
+                display: grid;  /* Grid layout */
+                grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));  /* Auto columns */
+                gap: 6px;  /* Space between cards */
+                padding: 12px 16px;  /* Inner spacing */
             }
 
+            /* ==================== SPELLING OVERLAY (MOBILE) ==================== */
             /* Spelling overlay: smaller on mobile */
             #spelling-overlay {
-                top: 90px !important;
-                left: 50% !important;
-                transform: translateX(-50%) !important;
-                padding: 6px 16px !important;
-                border-radius: 8px !important;
+                top: 90px !important;  /* From top */
+                left: 50% !important;  /* Center horizontally */
+                transform: translateX(-50%) !important;  /* Center with transform */
+                padding: 6px 16px !important;  /* Inner spacing */
+                border-radius: 8px !important;  /* Rounded corners */
             }
 
+            /* Spelling text */
             #spelling-text {
-                font-size: 1.4rem !important;
-                letter-spacing: 3px !important;
+                font-size: 1.4rem !important;  /* Large font */
+                letter-spacing: 3px !important;  /* Wide letter spacing */
             }
         }
 
 
+        /* ==================== EXTRA SMALL DEVICES ==================== */
         /* Extra small devices (< 360px) */
         @media (max-width: 360px) {
+            /* Smaller control bar dimensions */
             :root {
-                --translation-mobile-control-height: 48px;
-                --translation-mobile-control-offset: 8px;
+                --translation-mobile-control-height: 48px;  /* Smaller height */
+                --translation-mobile-control-offset: 8px;  /* Smaller offset */
             }
 
+            /* Control bar on extra small screens */
             .control-bar {
-                gap: 6px;
-                bottom: calc(var(--translation-mobile-control-offset) + env(safe-area-inset-bottom));
+                gap: 6px;  /* Smaller gap */
+                bottom: calc(var(--translation-mobile-control-offset) + env(safe-area-inset-bottom));  /* Account for safe area */
             }
 
+            /* Smaller control buttons */
             .control-btn {
-                width: 40px;
-                height: 40px;
-                min-width: 40px;
-                min-height: 40px;
+                width: 40px;  /* Smaller width */
+                height: 40px;  /* Smaller height */
+                min-width: 40px;  /* Smaller min width */
+                min-height: 40px;  /* Smaller min height */
             }
 
+            /* Smaller language select */
             #lang-select {
-                font-size: 0.65rem !important;
-                padding: 6px 10px !important;
-                min-width: 90px;
+                font-size: 0.65rem !important;  /* Very small font */
+                padding: 6px 10px !important;  /* Smaller padding */
+                min-width: 90px;  /* Smaller min width */
             }
 
-            /* Header icon resizing */
+            /* Smaller header icon buttons */
             .header-icon-btn {
-                width: 40px;
-                height: 40px;
-                padding: 0;
+                width: 40px;  /* Smaller width */
+                height: 40px;  /* Smaller height */
+                padding: 0;  /* No padding */
             }
 
+            /* Smaller caption log font */
             .speech-caption-log {
-                font-size: 0.75rem !important;
+                font-size: 0.75rem !important;  /* Very small font */
             }
 
+            /* Sign cards panel window min height */
             .speech-container .sign-cards-panel-window {
-                min-height: 144px;
+                min-height: 144px;  /* Min height */
             }
         }
-</style>
+    </style>
 
-    <!-- Dependencies -->
+    <!-- ==================== EXTERNAL DEPENDENCIES ==================== -->
+    <!-- MediaPipe Camera Utils (for camera handling) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <!-- MediaPipe Control Utils (for MediaPipe controls) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
         crossorigin="anonymous"></script>
+    <!-- MediaPipe Drawing Utils (for drawing landmarks) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
         crossorigin="anonymous"></script>
+    <!-- MediaPipe Hands (for hand detection) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <!-- TensorFlow.js (for machine learning) -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     
-    <!-- Supabase Client -->
+    <!-- ==================== SUPABASE CLIENT ==================== -->
+    <!-- Supabase JavaScript SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Custom Supabase client configuration -->
     <script src="supabase-client.js"></script>
 </head>
 
+<!-- ==================== HTML BODY ==================== -->
 <body>
 
+    <!-- ==================== MOBILE APP HEADER ==================== -->
+    <!-- Header with back button, title, and spacer -->
     <div class="mobile-app-header">
+        <!-- Back button to return to home page -->
         <a href="index.html?mode=translation" class="header-icon-btn" aria-label="Back to home">
             <span class="material-icons" style="font-size: 28px; margin-right: 2px;">chevron_left</span>
         </a>
+        <!-- Title pill with icon and text -->
         <div class="header-title-pill">
-            <span class="material-icons">translate</span>
+            <span class="material-icons">translate</span>  <!-- Translation icon -->
             <div class="header-title-text">
-                <span class="header-kicker">SignLink</span>
-                <h1 class="app-title">Live Translation</h1>
+                <span class="header-kicker">SignLink</span>  <!-- App name -->
+                <h1 class="app-title">Live Translation</h1>  <!-- Page title -->
             </div>
         </div>
+        <!-- Header actions spacer (for layout balance) -->
         <div class="header-actions" style="min-width: 44px;"></div>
     </div>
 
+    <!-- ==================== MAIN TRANSLATION CONTAINER ==================== -->
     <div class="translation-container">
 
+        <!-- Main content area -->
         <div class="translation-main">
 
-            <!-- Left Side: Camera Area -->
+            <!-- ==================== VIDEO SECTION ==================== -->
+            <!-- Camera area for sign detection -->
             <div class="video-section">
                 <div id="sign-view" class="video-container">
+                    <!-- Video element for camera feed -->
                     <video id="input-video" autoplay playsinline muted></video>
+                    <!-- Canvas for drawing landmarks and overlays -->
                     <canvas id="output-canvas"></canvas>
 
-                    <!-- Camera Off Placeholder -->
+                    <!-- ==================== CAMERA OFF PLACEHOLDER ==================== -->
+                    <!-- Placeholder shown when camera is off -->
                     <div id="camera-off-placeholder"
                         style="display: none; flex-direction: column; align-items: center; justify-content: center; position: absolute; top:0; left:0; width:100%; height:100%; background: #000; z-index: 10;">
-                        <span class="material-icons" style="font-size: 64px; color: #555;">videocam_off</span>
-                        <p style="color: #777; margin-top: 10px;">Camera is Off</p>
+                        <span class="material-icons" style="font-size: 64px; color: #555;">videocam_off</span>  <!-- Camera off icon -->
+                        <p style="color: #777; margin-top: 10px;">Camera is Off</p>  <!-- Message text -->
                     </div>
 
-
-                    <!-- Sign Mode Result Overlay -->
+                    <!-- ==================== RESULT OVERLAY ==================== -->
+                    <!-- Sign mode result overlay (shows translation result) -->
                     <div class="result-overlay">
-                        <span id="stt-result"></span>
+                        <span id="stt-result"></span>  <!-- Speech-to-text result -->
                     </div>
 
-                    <!-- Spelling Overlay (Top Left) -->
+                    <!-- ==================== SPELLING OVERLAY ==================== -->
+                    <!-- Spelling overlay (shows spelled letters for dynamic signs) -->
                     <div id="spelling-overlay" style="
                         position: absolute;
-                        top: 100px;
-                        left: 20px;
-                        background: rgba(0, 0, 0, 0.8);
-                        padding: 10px 20px;
-                        border-radius: 10px;
-                        display: none; /* Hidden by default */
-                        z-index: 100;
-                        pointer-events: none;
+                        top: 100px;  /* From top */
+                        left: 20px;  /* From left */
+                        background: rgba(0, 0, 0, 0.8);  /* Dark background */
+                        padding: 10px 20px;  /* Inner spacing */
+                        border-radius: 10px;  /* Rounded corners */
+                        display: none;  /* Hidden by default */
+                        z-index: 100;  /* High z-index */
+                        pointer-events: none;  /* Don't block clicks */
                     ">
                         <span id="spelling-text" style="
-                            color: white;
-                            font-size: 2rem;
-                            font-weight: bold;
-                            font-family: 'Outfit', sans-serif;
-                            letter-spacing: 2px;
+                            color: white;  /* White text */
+                            font-size: 2rem;  /* Large font */
+                            font-weight: bold;  /* Bold */
+                            font-family: 'Outfit', sans-serif;  /* Outfit font */
+                            letter-spacing: 2px;  /* Wide letter spacing */
                         "></span>
                     </div>
                 </div>
             </div>
 
-
-            <!-- Speech HUD (Shown in voice mode) -->
+            <!-- ==================== SPEECH HUD ==================== -->
+            <!-- Speech panel (shown in voice mode for speech recognition results) -->
             <div id="speech-panel" class="speech-container caption-log-panel visible awake">
                 <div class="caption-panel-content">
+                    <!-- Caption log window -->
                     <div id="caption-log-window" class="caption-log-window">
                         <div class="caption-section-header">
-                            <span>Captions</span>
+                            <span>Captions</span>  <!-- Section title -->
+                            <!-- Toggle button to hide/show captions -->
                             <button id="captionToggleBtn" class="section-toggle-btn" type="button" aria-expanded="true" aria-controls="speech-caption-log" title="Hide captions">
                                 <span class="material-icons">expand_more</span>
                             </button>
                         </div>
+                        <!-- Speech caption log (scrollable text area) -->
                         <div id="speech-caption-log" class="speech-caption-log caption-log-list">
-                            <div class="caption-log-empty">Speech captions will appear here.</div>
+                            <div class="caption-log-empty">Speech captions will appear here.</div>  <!-- Placeholder text -->
                         </div>
                     </div>
+                    <!-- Sign cards panel window -->
                     <div id="sign-cards-panel-window" class="sign-cards-panel-window">
                         <div class="sign-cards-panel-header">
-                            <span>Sign Cards Translation</span>
+                            <span>Sign Cards Translation</span>  <!-- Section title -->
+                            <!-- Toggle button to hide/show sign cards -->
                             <button id="signCardsToggleBtn" class="section-toggle-btn" type="button" aria-expanded="true" aria-controls="sign-cards-output" title="Hide sign cards">
                                 <span class="material-icons">expand_more</span>
                             </button>
                         </div>
+                        <!-- Sign cards output container (grid of sign cards) -->
                         <div id="sign-cards-output" class="prediction-sign-cards-container active">
-                            <div class="placeholder-msg">Sign cards translation will appear here.</div>
+                            <div class="placeholder-msg">Sign cards translation will appear here.</div>  <!-- Placeholder text -->
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-
-        <!-- Controls -->
+        <!-- ==================== CONTROL BAR ==================== -->
+        <!-- Bottom control bar with action buttons -->
         <div class="control-bar">
-            <!-- Camera Toggle -->
+            <!-- Camera toggle button -->
             <button id="cam-btn" class="control-btn" title="Toggle Camera">
                 <span class="material-icons">videocam</span>
             </button>
 
-            <!-- TTS Toggle -->
+            <!-- Text-to-speech toggle button -->
             <button id="tts-btn" class="control-btn" title="Toggle Text-to-Speech">
                 <span class="material-icons">volume_up</span>
             </button>
 
-            <!-- Language Select -->
+            <!-- Language select dropdown -->
             <div style="position: relative;">
                 <select id="lang-select">
-                    <option value="ISL" style="background: #1e293b;">ISL (Indian)</option>
-                    <option value="ASL" style="background: #1e293b;">ASL (American)</option>
+                    <option value="ISL" style="background: #1e293b;">ISL (Indian)</option>  <!-- Indian Sign Language -->
+                    <option value="ASL" style="background: #1e293b;">ASL (American)</option>  <!-- American Sign Language -->
                 </select>
             </div>
 
-            <!-- Sign/Voice Mode Toggle -->
+            <!-- Sign/Voice mode toggle button -->
             <button id="sign-voice-toggle" class="control-btn" title="Switch between Sign and Voice Mode">
                 <span class="material-icons">pan_tool</span>
             </button>
@@ -863,9 +962,14 @@
 
     </div>
 
+    <!-- ==================== JAVASCRIPT FILES ==================== -->
+    <!-- Capacitor core (for native mobile features) -->
     <script src="capacitor.js"></script>
+    <!-- Capacitor text-to-speech plugin -->
     <script src="capacitor-tts.js"></script>
+    <!-- Capacitor speech recognition plugin -->
     <script src="capacitor-speech.js"></script>
+    <!-- Main translation logic -->
     <script src="translation.js?v=9"></script>
 </body>
 
