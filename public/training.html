@@ -1,789 +1,882 @@
+<!-- SignLink AI Training Studio -->
+<!-- This page allows users to train custom AI models for sign language recognition.
+     Users can capture sign samples, label them, and build their own sign models. -->
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
+    <!-- Character encoding for the page -->
     <meta charset="UTF-8">
+    <!-- Viewport settings for responsive design on mobile devices -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Page title shown in browser tab -->
     <title>SignLink - AI Training Studio</title>
+    <!-- Main stylesheet -->
     <link rel="stylesheet" href="style.css">
+    <!-- Material Icons library for icons -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- Google Fonts: Inter for body text, Outfit for headings -->
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;700;800&display=swap"
         rel="stylesheet">
 
     <style>
+        /* ==================== CSS VARIABLES ==================== */
+        /* These variables define the color scheme and design tokens for the training studio */
         :root {
-            --studio-bg: #020817;
-            --studio-bg-soft: rgba(15, 23, 42, 0.86);
-            --studio-surface: rgba(13, 20, 36, 0.82);
-            --studio-surface-strong: rgba(15, 23, 42, 0.96);
-            --studio-surface-muted: rgba(30, 41, 59, 0.72);
-            --studio-border: rgba(148, 163, 184, 0.18);
-            --studio-border-strong: rgba(191, 219, 254, 0.26);
-            --studio-text: #e6edf3;
-            --studio-text-muted: #94a3b8;
-            --studio-accent: #58a6ff;
-            --studio-accent-strong: #3b82f6;
-            --studio-accent-soft: rgba(59, 130, 246, 0.16);
-            --studio-success: #22c55e;
-            --studio-danger: #ef4444;
-            --studio-warning: #f59e0b;
-            --studio-shadow: 0 18px 54px rgba(0, 0, 0, 0.42);
+            --studio-bg: #020817;  /* Main background color (very dark blue) */
+            --studio-bg-soft: rgba(15, 23, 42, 0.86);  /* Softer background */
+            --studio-surface: rgba(13, 20, 36, 0.82);  /* Surface color for panels */
+            --studio-surface-strong: rgba(15, 23, 42, 0.96);  /* Stronger surface */
+            --studio-surface-muted: rgba(30, 41 59, 0.72);  /* Muted surface */
+            --studio-border: rgba(148, 163, 184, 0.18);  /* Border color (subtle) */
+            --studio-border-strong: rgba(191, 219, 254, 0.26);  /* Stronger border */
+            --studio-text: #e6edf3;  /* Main text color (off-white) */
+            --studio-text-muted: #94a3b8;  /* Muted text color (gray) */
+            --studio-accent: #58a6ff;  /* Accent blue color */
+            --studio-accent-strong: #3b82f6;  /* Stronger accent blue */
+            --studio-accent-soft: rgba(59, 130, 246, 0.16);  /* Soft accent */
+            --studio-success: #22c55e;  /* Success color (green) */
+            --studio-danger: #ef4444;  /* Danger color (red) */
+            --studio-warning: #f59e0b;  /* Warning color (orange) */
+            --studio-shadow: 0 18px 54px rgba(0, 0, 0, 0.42);  /* Drop shadow */
         }
 
-        /* Training Studio Specific Styles */
+        /* ==================== BODY & LAYOUT ==================== */
+        /* Training Studio specific body styles */
         body {
-            overflow: hidden;
+            overflow: hidden;  /* Prevent scrollbars */
+            /* Multi-layer gradient background for depth */
             background:
-                radial-gradient(circle at top, rgba(59, 130, 246, 0.18), transparent 34%),
-                radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.12), transparent 30%),
-                linear-gradient(180deg, #020617 0%, #020817 48%, #01040d 100%);
-            color: var(--studio-text);
+                radial-gradient(circle at top, rgba(59, 130, 246, 0.18), transparent 34%),  /* Blue glow top */
+                radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.12), transparent 30%),  /* Cyan glow bottom-right */
+                linear-gradient(180deg, #020617 0%, #020817 48%, #01040d 100%);  /* Dark gradient */
+            color: var(--studio-text);  /* Light text color */
         }
 
+        /* Main layout container */
         .studio-layout {
-            display: flex;
-            flex-direction: column;
-            width: 100vw;
-            height: 100dvh;
-            background: transparent;
-            gap: 0;
-            padding-top: 0;
-            position: relative;
-            overflow: hidden;
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            width: 100vw;  /* Full viewport width */
+            height: 100dvh;  /* Full viewport height */
+            background: transparent;  /* Transparent background */
+            gap: 0;  /* No gap */
+            padding-top: 0;  /* No top padding */
+            position: relative;  /* For absolute positioning */
+            overflow: hidden;  /* Prevent overflow */
         }
 
-        /* LEFT PANEL: Controls */
-
-
+        /* ==================== PANEL STYLES ==================== */
+        /* Panel section container (used for left and right panels) */
         .panel-section {
-            background: var(--studio-surface);
-            border: 1px solid var(--studio-border);
-            border-radius: 20px;
-            padding: 15px;
-            backdrop-filter: blur(18px);
-            box-shadow: var(--studio-shadow);
+            background: var(--studio-surface);  /* Dark surface */
+            border: 1px solid var(--studio-border);  /* Subtle border */
+            border-radius: 20px;  /* Rounded corners */
+            padding: 15px;  /* Inner spacing */
+            backdrop-filter: blur(18px);  /* Blur background */
+            box-shadow: var(--studio-shadow);  /* Drop shadow */
         }
 
+        /* Section title (for panel sections) */
         .section-title {
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            color: var(--studio-text-muted);
-            font-weight: 700;
-            margin-bottom: 12px;
-            letter-spacing: 0.12em;
+            font-size: 0.85rem;  /* Small font */
+            text-transform: uppercase;  /* All caps */
+            color: var(--studio-text-muted);  /* Muted color */
+            font-weight: 700;  /* Bold */
+            margin-bottom: 12px;  /* Space below */
+            letter-spacing: 0.12em;  /* Wide letter spacing */
         }
 
+        /* Vertical input group (stacks inputs vertically) */
         .input-group-vertical {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            gap: 10px;  /* Space between inputs */
         }
 
+        /* Text input field */
         .text-input {
-            background: rgba(15, 23, 42, 0.82);
-            border: 1px solid var(--studio-border);
-            color: var(--studio-text);
-            padding: 12px 14px;
-            border-radius: 14px;
-            outline: none;
-            font-family: 'Inter', sans-serif;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+            background: rgba(15, 23, 42, 0.82);  /* Dark background */
+            border: 1px solid var(--studio-border);  /* Subtle border */
+            color: var(--studio-text);  /* Light text */
+            padding: 12px 14px;  /* Inner spacing */
+            border-radius: 14px;  /* Rounded corners */
+            outline: none;  /* Remove default outline */
+            font-family: 'Inter', sans-serif;  /* Inter font */
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;  /* Smooth transitions */
         }
 
+        /* Text input focus state */
         .text-input:focus {
-            border-color: rgba(96, 165, 250, 0.85);
-            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
-            background: rgba(15, 23, 42, 0.96);
+            border-color: rgba(96, 165, 250, 0.85);  /* Blue border */
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);  /* Blue glow */
+            background: rgba(15, 23, 42, 0.96);  /* Stronger background */
         }
 
+        /* Select dropdown input */
         .select-input {
-            background: rgba(15, 23, 42, 0.82);
-            border: 1px solid var(--studio-border);
-            color: var(--studio-text);
-            padding: 10px;
-            border-radius: 14px;
-            outline: none;
-            cursor: pointer;
+            background: rgba(15, 23, 42, 0.82);  /* Dark background */
+            border: 1px solid var(--studio-border);  /* Subtle border */
+            color: var(--studio-text);  /* Light text */
+            padding: 10px;  /* Inner spacing */
+            border-radius: 14px;  /* Rounded corners */
+            outline: none;  /* Remove default outline */
+            cursor: pointer;  /* Pointer cursor */
         }
 
+        /* ==================== BUTTON STYLES ==================== */
+        /* Primary button (main action buttons) */
         .primary-btn {
-            background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb);
-            color: white;
-            border: 1px solid rgba(191, 219, 254, 0.2);
-            padding: 12px;
-            border-radius: 14px;
-            font-weight: 700;
-            cursor: pointer;
-            width: 100%;
-            transition: transform 0.2s ease, filter 0.2s ease, border-color 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            box-shadow: 0 12px 30px rgba(37, 99, 235, 0.28);
+            background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb);  /* Blue gradient */
+            color: white;  /* White text */
+            border: 1px solid rgba(191, 219, 254, 0.2);  /* Subtle border */
+            padding: 12px;  /* Inner spacing */
+            border-radius: 14px;  /* Rounded corners */
+            font-weight: 700;  /* Bold */
+            cursor: pointer;  /* Pointer cursor */
+            width: 100%;  /* Full width */
+            transition: transform 0.2s ease, filter 0.2s ease, border-color 0.2s ease;  /* Smooth transitions */
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            gap: 8px;  /* Space between icon and text */
+            box-shadow: 0 12px 30px rgba(37, 99, 235, 0.28);  /* Blue shadow */
         }
 
+        /* Primary button hover effect */
         .primary-btn:hover {
-            filter: brightness(1.05);
-            transform: translateY(-1px);
+            filter: brightness(1.05);  /* Slightly brighter */
+            transform: translateY(-1px);  /* Move up */
         }
 
+        /* Primary button disabled state */
         .primary-btn:disabled {
-            background: rgba(30, 41, 59, 0.75);
-            color: var(--studio-text-muted);
-            cursor: not-allowed;
-            box-shadow: none;
+            background: rgba(30, 41, 59, 0.75);  /* Dark background */
+            color: var(--studio-text-muted);  /* Muted text */
+            cursor: not-allowed;  /* Not allowed cursor */
+            box-shadow: none;  /* No shadow */
         }
 
+        /* Save button variant (green gradient) */
         #sidebarTrainSaveBtn {
-            background: linear-gradient(135deg, #22c55e, #16a34a);
-            border-color: rgba(34, 197, 94, 0.4);
+            background: linear-gradient(135deg, #22c55e, #16a34a);  /* Green gradient */
+            border-color: rgba(34, 197, 94, 0.4);  /* Green border */
         }
 
+        /* Save button disabled state */
         #sidebarTrainSaveBtn:disabled {
-            background: #14532d;
-            border-color: #166534;
-            color: #d7f4d7;
-            cursor: not-allowed;
-            box-shadow: none;
+            background: #14532d;  /* Dark green */
+            border-color: #166534;  /* Darker green border */
+            color: #d7f4d7;  /* Light green text */
+            cursor: not-allowed;  /* Not allowed cursor */
+            box-shadow: none;  /* No shadow */
         }
 
+        /* Secondary button (less prominent actions) */
         .secondary-btn {
-            background: rgba(15, 23, 42, 0.78);
-            color: var(--studio-text);
-            border: 1px solid var(--studio-border);
-            padding: 10px;
-            border-radius: 14px;
-            cursor: pointer;
-            width: 100%;
-            transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
-            backdrop-filter: blur(12px);
+            background: rgba(15, 23, 42, 0.78);  /* Dark background */
+            color: var(--studio-text);  /* Light text */
+            border: 1px solid var(--studio-border);  /* Subtle border */
+            padding: 10px;  /* Inner spacing */
+            border-radius: 14px;  /* Rounded corners */
+            cursor: pointer;  /* Pointer cursor */
+            width: 100%;  /* Full width */
+            transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;  /* Smooth transitions */
+            backdrop-filter: blur(12px);  /* Blur background */
         }
 
+        /* Secondary button hover effect */
         .secondary-btn:hover {
-            background: rgba(30, 41, 59, 0.95);
-            border-color: rgba(96, 165, 250, 0.35);
-            transform: translateY(-1px);
+            background: rgba(30, 41, 59, 0.95);  /* Stronger background */
+            border-color: rgba(96, 165, 250, 0.35);  /* Blue border */
+            transform: translateY(-1px);  /* Move up */
         }
 
+        /* Secondary button disabled state */
         .secondary-btn:disabled {
-            background: rgba(15, 23, 42, 0.42);
-            color: var(--studio-text-muted);
-            border-color: rgba(148, 163, 184, 0.12);
-            cursor: not-allowed;
-            transform: none;
-            opacity: 0.6;
+            background: rgba(15, 23, 42, 0.42);  /* Very dark background */
+            color: var(--studio-text-muted);  /* Muted text */
+            border-color: rgba(148, 163, 184, 0.12);  /* Very subtle border */
+            cursor: not-allowed;  /* Not allowed cursor */
+            transform: none;  /* No transform */
+            opacity: 0.6;  /* Semi-transparent */
         }
 
+        /* Secondary button disabled hover (no effect) */
         .secondary-btn:disabled:hover {
-            background: rgba(15, 23, 42, 0.42);
-            border-color: rgba(148, 163, 184, 0.12);
-            transform: none;
+            background: rgba(15, 23, 42, 0.42);  /* Keep same */
+            border-color: rgba(148, 163, 184, 0.12);  /* Keep same */
+            transform: none;  /* Keep same */
         }
 
-        /* CENTER PANEL: Canvas/Video */
+        /* ==================== CENTER PANEL: CANVAS/VIDEO ==================== */
+        /* Workspace container (center panel) */
         .workspace {
-            position: relative;
-            background: transparent;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+            position: relative;  /* For absolute positioning */
+            background: transparent;  /* Transparent background */
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            align-items: center;  /* Center horizontally */
+            justify-content: center;  /* Center vertically */
+            padding: 20px;  /* Inner spacing */
         }
 
+        /* Camera/video wrapper */
         .camera-wrapper {
-            position: relative;
-            width: 100%;
-            max-width: 800px;
-            aspect-ratio: 16/9;
-            background: black;
-            border-radius: 28px;
-            overflow: hidden;
-            box-shadow: 0 28px 60px rgba(0, 0, 0, 0.45);
-            border: 1px solid rgba(191, 219, 254, 0.16);
+            position: relative;  /* For absolute positioning */
+            width: 100%;  /* Full width */
+            max-width: 800px;  /* Max width */
+            aspect-ratio: 16/9;  /* 16:9 aspect ratio */
+            background: black;  /* Black background */
+            border-radius: 28px;  /* Rounded corners */
+            overflow: hidden;  /* Hide overflow */
+            box-shadow: 0 28px 60px rgba(0, 0, 0, 0.45);  /* Shadow */
+            border: 1px solid rgba(191, 219, 254, 0.16);  /* Subtle border */
         }
 
+        /* Video and canvas elements (overlay each other) */
         video,
         canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transform: scaleX(-1);
+            position: absolute;  /* Positioned in wrapper */
+            top: 0;  /* Top aligned */
+            left: 0;  /* Left aligned */
+            width: 100%;  /* Full width */
+            height: 100%;  /* Full height */
+            object-fit: cover;  /* Cover area */
+            transform: scaleX(-1);  /* Mirror horizontally (like a mirror) */
         }
 
+        /* Recording indicator (shows when recording) */
         .recording-indicator {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(239, 68, 68, 0.92);
-            color: white;
-            padding: 8px 14px;
-            border-radius: 999px;
-            font-weight: 700;
-            font-size: 0.8rem;
-            display: none;
-            align-items: center;
-            gap: 6px;
-            animation: pulse-red 1.5s infinite;
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            box-shadow: 0 12px 28px rgba(127, 29, 29, 0.35);
+            position: absolute;  /* Positioned in camera wrapper */
+            top: 20px;  /* From top */
+            right: 20px;  /* From right */
+            background: rgba(239, 68, 68, 0.92);  /* Red background */
+            color: white;  /* White text */
+            padding: 8px 14px;  /* Inner spacing */
+            border-radius: 999px;  /* Pill shape */
+            font-weight: 700;  /* Bold */
+            font-size: 0.8rem;  /* Small font */
+            display: none;  /* Hidden by default */
+            align-items: center;  /* Center vertically */
+            gap: 6px;  /* Space between elements */
+            animation: pulse-red 1.5s infinite;  /* Pulsing animation */
+            border: 1px solid rgba(255, 255, 255, 0.18);  /* Subtle border */
+            box-shadow: 0 12px 28px rgba(127, 29, 29, 0.35);  /* Red shadow */
         }
 
+        /* Pulsing animation for recording indicator */
         @keyframes pulse-red {
             0% {
-                opacity: 1;
+                opacity: 1;  /* Fully visible */
             }
 
             50% {
-                opacity: 0.5;
+                opacity: 0.5;  /* Half visible */
             }
 
             100% {
-                opacity: 1;
+                opacity: 1;  /* Fully visible */
             }
         }
 
-        /* RIGHT PANEL: Data & Stats */
-
+        /* ==================== RIGHT PANEL: DATA & STATS ==================== */
+        /* List header (for data panel) */
         .list-header {
-            padding: 20px;
-            border-bottom: 1px solid var(--studio-border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: var(--studio-text);
-            background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.86));
+            padding: 20px;  /* Inner spacing */
+            border-bottom: 1px solid var(--studio-border);  /* Bottom border */
+            display: flex;  /* Flex layout */
+            justify-content: space-between;  /* Space apart */
+            align-items: center;  /* Center vertically */
+            color: var(--studio-text);  /* Light text */
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.86));  /* Gradient background */
         }
 
+        /* Data list container (scrollable) */
         .data-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 12px;
+            flex: 1;  /* Fill available space */
+            overflow-y: auto;  /* Vertical scroll */
+            padding: 12px;  /* Inner spacing */
         }
 
+        /* Individual data item in list */
         .data-item {
-            background: rgba(15, 23, 42, 0.78);
-            border: 1px solid var(--studio-border);
-            border-radius: 16px;
-            padding: 12px;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+            background: rgba(15, 23, 42, 0.78);  /* Dark background */
+            border: 1px solid var(--studio-border);  /* Subtle border */
+            border-radius: 16px;  /* Rounded corners */
+            padding: 12px;  /* Inner spacing */
+            margin-bottom: 10px;  /* Space below */
+            display: flex;  /* Flex layout */
+            justify-content: space-between;  /* Space apart */
+            align-items: center;  /* Center vertically */
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);  /* Shadow */
         }
 
+        /* Data item info (label and count) */
         .data-item-info {
-            display: flex;
-            flex-direction: column;
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
         }
 
+        /* Data label (sign name) */
         .data-label {
-            color: var(--studio-text);
-            font-weight: 600;
-            font-size: 0.9rem;
+            color: var(--studio-text);  /* Light text */
+            font-weight: 600;  /* Semi-bold */
+            font-size: 0.9rem;  /* Medium font */
         }
 
+        /* Data count (number of samples) */
         .data-count {
-            color: var(--studio-text-muted);
-            font-size: 0.8rem;
+            color: var(--studio-text-muted);  /* Muted text */
+            font-size: 0.8rem;  /* Small font */
         }
 
+        /* Delete button (for data items) */
         .delete-btn {
-            background: transparent;
-            border: none;
-            color: var(--studio-danger);
-            cursor: pointer;
-            padding: 5px;
-            border-radius: 999px;
+            background: transparent;  /* Transparent background */
+            border: none;  /* No border */
+            color: var(--studio-danger);  /* Red color */
+            cursor: pointer;  /* Pointer cursor */
+            padding: 5px;  /* Inner spacing */
+            border-radius: 999px;  /* Circle */
         }
 
+        /* Delete button hover effect */
         .delete-btn:hover {
-            background: rgba(239, 68, 68, 0.12);
+            background: rgba(239, 68, 68, 0.12);  /* Red background */
         }
 
+        /* Hidden file input (for file uploads) */
         .hidden-file-input {
-            display: none;
+            display: none;  /* Hidden from view */
         }
 
-        /* Capture Button (Floating) */
+        /* ==================== CAPTURE BUTTON (FLOATING) ==================== */
+        /* Floating action button for capturing signs */
         .capture-fab {
-            position: absolute;
-            bottom: 30px;
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            background: rgba(248, 250, 252, 0.96);
-            border: 4px solid rgba(191, 219, 254, 0.35);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+            position: absolute;  /* Fixed position */
+            bottom: 30px;  /* From bottom */
+            width: 80px;  /* Width */
+            height: 80px;  /* Height */
+            border-radius: 50%;  /* Circle */
+            background: rgba(248, 250, 252, 0.96);  /* Light background */
+            border: 4px solid rgba(191, 219, 254, 0.35);  /* Border */
+            cursor: pointer;  /* Pointer cursor */
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            transition: all 0.2s;  /* Smooth transitions */
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);  /* Shadow */
         }
 
+        /* Capture button hover effect */
         .capture-fab:hover {
-            transform: scale(1.1);
+            transform: scale(1.1);  /* Scale up */
         }
 
+        /* Capture button active (pressed) state */
         .capture-fab:active {
-            transform: scale(0.95);
-            background: #eee;
+            transform: scale(0.95);  /* Scale down */
+            background: #eee;  /* Lighter background */
         }
 
+        /* Capture button active (recording) state */
         .capture-fab.active {
-            background: rgba(239, 68, 68, 0.95);
-            border-color: rgba(254, 202, 202, 0.45);
+            background: rgba(239, 68, 68, 0.95);  /* Red background */
+            border-color: rgba(254, 202, 202, 0.45);  /* Lighter border */
         }
 
+        /* Inner circle when recording */
         .capture-fab.active .capture-inner {
-            background: white;
-            border-radius: 10px;
-            width: 34px;
-            height: 34px;
+            background: white;  /* White */
+            border-radius: 10px;  /* Rounded rectangle */
+            width: 34px;  /* Width */
+            height: 34px;  /* Height */
         }
 
+        /* Inner circle (red button inside) */
         .capture-inner {
-            width: 60px;
-            height: 60px;
-            background: var(--studio-danger);
-            border-radius: 50%;
+            width: 60px;  /* Width */
+            height: 60px;  /* Height */
+            background: var(--studio-danger);  /* Red color */
+            border-radius: 50%;  /* Circle */
         }
 
+        /* Mode toggle button active state */
         .mode-toggle-btn.active {
-            background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb) !important;
-            color: white !important;
-            border-color: rgba(191, 219, 254, 0.28) !important;
+            background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb) !important;  /* Blue gradient */
+            color: white !important;  /* White text */
+            border-color: rgba(191, 219, 254, 0.28) !important;  /* Light border */
         }
 
+        /* Mode toggle button (for static/dynamic mode) */
         .mode-toggle-btn {
-            flex: 1;
-            background: transparent;
-            color: var(--studio-text-muted);
-            border: 1px solid var(--studio-border);
-            padding: 8px;
-            border-radius: 12px;
-            cursor: pointer;
-            font-weight: 700;
-            transition: all 0.2s;
+            flex: 1;  /* Fill available space */
+            background: transparent;  /* Transparent background */
+            color: var(--studio-text-muted);  /* Muted text */
+            border: 1px solid var(--studio-border);  /* Subtle border */
+            padding: 8px;  /* Inner spacing */
+            border-radius: 12px;  /* Rounded corners */
+            cursor: pointer;  /* Pointer cursor */
+            font-weight: 700;  /* Bold */
+            transition: all 0.2s;  /* Smooth transitions */
         }
 
+        /* Mode toggle button hover (when not active) */
         .mode-toggle-btn:not(.active):hover {
-            background: rgba(15, 23, 42, 0.8);
-            border-color: rgba(96, 165, 250, 0.35);
+            background: rgba(15, 23, 42, 0.8);  /* Darker background */
+            border-color: rgba(96, 165, 250, 0.35);  /* Blue border */
         }
 
-            .mobile-data-toggle {
-                display: none;
-                position: absolute;
-                top: 16px;
-                right: 16px;
-                z-index: 15;
-                background: var(--studio-surface);
-                color: var(--studio-text);
-                border: 1px solid var(--studio-border);
-                border-radius: 999px;
-                padding: 8px 12px;
-                font-size: 0.85rem;
-                font-weight: 700;
-                align-items: center;
-                justify-content: center;
-                gap: 6px;
-                cursor: pointer;
-                backdrop-filter: blur(14px);
-                box-shadow: var(--studio-shadow);
-            }
+        /* Mobile data toggle button (for mobile devices) */
+        .mobile-data-toggle {
+            display: none;  /* Hidden on desktop */
+            position: absolute;  /* Fixed position */
+            top: 16px;  /* From top */
+            right: 16px;  /* From right */
+            z-index: 15;  /* High z-index */
+            background: var(--studio-surface);  /* Dark background */
+            color: var(--studio-text);  /* Light text */
+            border: 1px solid var(--studio-border);  /* Subtle border */
+            border-radius: 999px;  /* Pill shape */
+            padding: 8px 12px;  /* Inner spacing */
+            font-size: 0.85rem;  /* Small font */
+            font-weight: 700;  /* Bold */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            gap: 6px;  /* Space between elements */
+            cursor: pointer;  /* Pointer cursor */
+            backdrop-filter: blur(14px);  /* Blur background */
+            box-shadow: var(--studio-shadow);  /* Shadow */
+        }
 
+        /* Drawer close button (for mobile drawer) */
         .drawer-close-btn {
-            display: none;
-            background: transparent;
-            color: #8b949e;
-            border: 1px solid #30363d;
-            border-radius: 50%;
-            width: 34px;
-            height: 34px;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
+            display: none;  /* Hidden on desktop */
+            background: transparent;  /* Transparent background */
+            color: #8b949e;  /* Gray color */
+            border: 1px solid #30363d;  /* Dark border */
+            border-radius: 50%;  /* Circle */
+            width: 34px;  /* Width */
+            height: 34px;  /* Height */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            cursor: pointer;  /* Pointer cursor */
         }
 
+        /* Drawer close button hover effect */
         .drawer-close-btn:hover {
-            color: #e6edf3;
-            border-color: #8b949e;
+            color: #e6edf3;  /* Lighter color */
+            border-color: #8b949e;  /* Lighter border */
         }
 
+        /* Drawer backdrop (overlay behind drawer) */
         .drawer-backdrop {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.45);
-            backdrop-filter: blur(2px);
-            z-index: 28;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.2s ease;
+            position: fixed;  /* Fixed position */
+            inset: 0;  /* Fill screen */
+            background: rgba(0, 0, 0, 0.45);  /* Dark overlay */
+            backdrop-filter: blur(2px);  /* Slight blur */
+            z-index: 28;  /* High z-index */
+            opacity: 0;  /* Invisible by default */
+            pointer-events: none;  /* Don't block clicks */
+            transition: opacity 0.2s ease;  /* Smooth transition */
         }
 
+        /* Drawer backdrop active state */
         .drawer-backdrop.active {
-            opacity: 1;
-            pointer-events: auto;
+            opacity: 1;  /* Visible */
+            pointer-events: auto;  /* Block clicks */
         }
 
-            /* These were mobile-only styles, now applied via global overrides or moved */
+        /* ==================== MOBILE STYLES ==================== */
+        /* Mobile-only styles applied via media queries */
+        /* These styles override desktop styles for mobile devices */
 
-            /* Desktop Sidebar hide */
+        /* Mobile app header (fixed at top) */
+        .mobile-app-header {
+            display: flex !important;  /* Force flex display */
+            align-items: center;  /* Center vertically */
+            justify-content: space-between;  /* Space apart */
+            padding: calc(10px + env(safe-area-inset-top)) 14px 0 14px;  /* Account for safe area */
+            background: transparent;  /* Transparent background */
+            position: fixed;  /* Fixed position */
+            top: 0;  /* At top */
+            left: 0;  /* Full width */
+            right: 0;
+            z-index: 100;  /* Very high z-index */
+            pointer-events: none;  /* Don't block clicks on container */
+        }
 
-            /* Mobile Header appearance */
-            .mobile-app-header {
-                display: flex !important;
-                align-items: center;
-                justify-content: space-between;
-                padding: calc(10px + env(safe-area-inset-top)) 14px 0 14px;
-                background: transparent;
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                z-index: 100;
-                pointer-events: none;
-            }
+        /* Re-enable clicks on header children */
+        .mobile-app-header > * {
+            pointer-events: all;  /* Enable clicks */
+        }
 
-            .mobile-app-header > * {
-                pointer-events: all;
-            }
-            .app-title {
-                font-family: 'Outfit', sans-serif;
-                font-size: 1rem;
-                font-weight: 700;
-                color: var(--studio-text);
-                margin: 0;
-            }
+        /* App title in header */
+        .app-title {
+            font-family: 'Outfit', sans-serif;  /* Outfit font */
+            font-size: 1rem;  /* Medium font */
+            font-weight: 700;  /* Bold */
+            color: var(--studio-text);  /* Light text */
+            margin: 0;  /* No margin */
+        }
 
-            .header-actions {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
+        /* Header actions container */
+        .header-actions {
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            gap: 10px;  /* Space between buttons */
+        }
 
-            .header-icon-btn {
-                background: rgba(13, 20, 36, 0.7);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                color: var(--studio-text);
-                width: 44px;
-                height: 44px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                backdrop-filter: blur(12px);
-                box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
-                text-decoration: none;
-                transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
-            }
+        /* Header icon button (circular buttons) */
+        .header-icon-btn {
+            background: rgba(13, 20, 36, 0.7);  /* Dark background */
+            border: 1px solid rgba(255, 255, 255, 0.1);  /* Subtle border */
+            color: var(--studio-text);  /* Light text */
+            width: 44px;  /* Width */
+            height: 44px;  /* Height */
+            border-radius: 50%;  /* Circle */
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            cursor: pointer;  /* Pointer cursor */
+            backdrop-filter: blur(12px);  /* Blur background */
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);  /* Shadow */
+            text-decoration: none;  /* Remove underline */
+            transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;  /* Smooth transitions */
+        }
 
-            .header-icon-btn:hover {
-                background: rgba(30, 41, 59, 0.9);
-                border-color: rgba(191, 219, 254, 0.24);
-                transform: translateY(-1px);
-            }
+        /* Header icon button hover effect */
+        .header-icon-btn:hover {
+            background: rgba(30, 41, 59, 0.9);  /* Stronger background */
+            border-color: rgba(191, 219, 254, 0.24);  /* Blue border */
+            transform: translateY(-1px);  /* Move up */
+        }
 
-            .header-title-pill {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                min-width: 0;
-                padding: 11px 16px;
-                border-radius: 999px;
-                background: rgba(13, 20, 36, 0.72);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                color: var(--studio-text);
-                backdrop-filter: blur(12px);
-                box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
-            }
+        /* Header title pill (styled container for title) */
+        .header-title-pill {
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            gap: 10px;  /* Space between elements */
+            min-width: 0;  /* Allow shrinking */
+            padding: 11px 16px;  /* Inner spacing */
+            border-radius: 999px;  /* Pill shape */
+            background: rgba(13, 20, 36, 0.72);  /* Dark background */
+            border: 1px solid rgba(255, 255, 255, 0.1);  /* Subtle border */
+            color: var(--studio-text);  /* Light text */
+            backdrop-filter: blur(12px);  /* Blur background */
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);  /* Shadow */
+        }
 
-            .header-title-pill .material-icons {
-                color: #7dd3fc;
-                font-size: 20px;
-            }
+        /* Icon in header title pill */
+        .header-title-pill .material-icons {
+            color: #7dd3fc;  /* Light blue */
+            font-size: 20px;  /* Icon size */
+        }
 
-            .header-title-text {
-                display: flex;
-                flex-direction: column;
-                min-width: 0;
-            }
+        /* Header title text container */
+        .header-title-text {
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            min-width: 0;  /* Allow shrinking */
+        }
 
-            .header-kicker {
-                color: var(--studio-text-muted);
-                font-size: 0.62rem;
-                font-weight: 700;
-                line-height: 1;
-                text-transform: uppercase;
-                letter-spacing: 0.14em;
-            }
+        /* Header kicker (small label above title) */
+        .header-kicker {
+            color: var(--studio-text-muted);  /* Muted color */
+            font-size: 0.62rem;  /* Very small font */
+            font-weight: 700;  /* Bold */
+            line-height: 1;  /* Tight line height */
+            text-transform: uppercase;  /* All caps */
+            letter-spacing: 0.14em;  /* Wide letter spacing */
+        }
 
-            .workspace {
-                flex: 1;
-                order: 1;
-                padding: 0;
-                justify-content: center;
-                position: relative;
-                overflow: hidden;
-                background:
-                    radial-gradient(circle at top, rgba(59, 130, 246, 0.14), transparent 30%),
-                    linear-gradient(180deg, rgba(2, 6, 23, 0.78), rgba(1, 4, 13, 0.98));
-            }
+        /* Mobile workspace (center panel) */
+        .workspace {
+            flex: 1;  /* Fill available space */
+            order: 1;  /* First in order */
+            padding: 0;  /* No padding */
+            justify-content: center;  /* Center horizontally */
+            position: relative;  /* For absolute positioning */
+            overflow: hidden;  /* Hide overflow */
+            /* Gradient background */
+            background:
+                radial-gradient(circle at top, rgba(59, 130, 246, 0.14), transparent 30%),  /* Blue glow */
+                linear-gradient(180deg, rgba(2, 6, 23, 0.78), rgba(1, 4, 13, 0.98));  /* Dark gradient */
+        }
 
-            .camera-wrapper {
-                width: 100%;
-                height: 100%;
-                max-width: none;
-                border-radius: 0;
-                border: none;
-                aspect-ratio: auto;
-                box-shadow: none;
-            }
+        /* Mobile camera wrapper (full screen) */
+        .camera-wrapper {
+            width: 100%;  /* Full width */
+            height: 100%;  /* Full height */
+            max-width: none;  /* No max width */
+            border-radius: 0;  /* No border radius */
+            border: none;  /* No border */
+            aspect-ratio: auto;  /* Auto aspect ratio */
+            box-shadow: none;  /* No shadow */
+        }
 
-            video, canvas {
-                object-fit: cover !important;
-            }
+        /* Mobile video and canvas */
+        video, canvas {
+            object-fit: cover !important;  /* Cover area */
+        }
 
-            /* Bottom Control Bar */
-            .mobile-bottom-bar {
-                display: flex !important;
-                justify-content: center;
-                align-items: center;
-                position: absolute;
-                bottom: calc(30px + env(safe-area-inset-bottom));
-                left: 50%;
-                transform: translateX(-50%);
-                background: rgba(13, 20, 36, 0.82);
-                backdrop-filter: blur(20px);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 40px;
-                padding: 14px 18px;
-                z-index: 90;
-                gap: 0;
-                width: max-content;
-                box-shadow: 0 20px 42px rgba(0, 0, 0, 0.38);
-            }
+        /* ==================== MOBILE BOTTOM CONTROL BAR ==================== */
+        /* Mobile bottom control bar (floating at bottom) */
+        .mobile-bottom-bar {
+            display: flex !important;  /* Force flex display */
+            justify-content: center;  /* Center horizontally */
+            align-items: center;  /* Center vertically */
+            position: absolute;  /* Fixed position */
+            bottom: calc(30px + env(safe-area-inset-bottom));  /* Account for safe area */
+            left: 50%;  /* Center horizontally */
+            transform: translateX(-50%);  /* Center with transform */
+            background: rgba(13, 20, 36, 0.82);  /* Dark background */
+            backdrop-filter: blur(20px);  /* Blur background */
+            border: 1px solid rgba(255, 255, 255, 0.1);  /* Subtle border */
+            border-radius: 40px;  /* Rounded corners */
+            padding: 14px 18px;  /* Inner spacing */
+            z-index: 90;  /* High z-index */
+            gap: 0;  /* No gap */
+            width: max-content;  /* Auto width */
+            box-shadow: 0 20px 42px rgba(0, 0, 0, 0.38);  /* Shadow */
+        }
 
-            .mobile-side-actions {
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-            }
+        /* Mobile side actions (vertical stack) */
+        .mobile-side-actions {
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            gap: 8px;  /* Space between buttons */
+        }
 
-            .mobile-bottom-btn {
-                background: rgba(255, 255, 255, 0.08);
-                color: var(--studio-text);
-                border: 1px solid rgba(255, 255, 255, 0.12);
-                padding: 8px 10px;
-                border-radius: 50%;
-                font-size: 0.75rem;
-                font-weight: 700;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 6px;
-                cursor: pointer;
-                white-space: nowrap;
-                transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
-            }
+        /* Mobile bottom button */
+        .mobile-bottom-btn {
+            background: rgba(255, 255, 255, 0.08);  /* Light background */
+            color: var(--studio-text);  /* Light text */
+            border: 1px solid rgba(255, 255, 255, 0.12);  /* Subtle border */
+            padding: 8px 10px;  /* Inner spacing */
+            border-radius: 50%;  /* Circle */
+            font-size: 0.75rem;  /* Small font */
+            font-weight: 700;  /* Bold */
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            gap: 6px;  /* Space between elements */
+            cursor: pointer;  /* Pointer cursor */
+            white-space: nowrap;  /* No text wrapping */
+            transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;  /* Smooth transitions */
+        }
 
-            .mobile-bottom-btn.primary {
-                background: rgba(59, 130, 246, 0.18);
-                color: #dbeafe;
-                border-color: rgba(96, 165, 250, 0.28);
-            }
+        /* Primary mobile bottom button variant */
+        .mobile-bottom-btn.primary {
+            background: rgba(59, 130, 246, 0.18);  /* Blue background */
+            color: #dbeafe;  /* Light blue text */
+            border-color: rgba(96, 165, 250, 0.28);  /* Blue border */
+        }
 
-            .mobile-bottom-btn:hover {
-                background: rgba(255, 255, 255, 0.14);
-                border-color: rgba(191, 219, 254, 0.2);
-                transform: translateY(-1px);
-            }
+        /* Mobile bottom button hover effect */
+        .mobile-bottom-btn:hover {
+            background: rgba(255, 255, 255, 0.14);  /* Lighter background */
+            border-color: rgba(191, 219, 254, 0.2);  /* Lighter border */
+            transform: translateY(-1px);  /* Move up */
+        }
 
-            .mobile-bottom-btn:disabled {
-                opacity: 0.5;
-                cursor: not-allowed;
-            }
+        /* Mobile bottom button disabled state */
+        .mobile-bottom-btn:disabled {
+            opacity: 0.5;  /* Semi-transparent */
+            cursor: not-allowed;  /* Not allowed cursor */
+        }
 
-            .mobile-add-btn-wrapper {
-                position: relative;
-                display: inline-flex;
-                align-items: center;
-            }
+        /* Mobile add button wrapper (for capture button) */
+        .mobile-add-btn-wrapper {
+            position: relative;  /* For absolute positioning */
+            display: inline-flex;  /* Inline flex */
+            align-items: center;  /* Center vertically */
+        }
 
-            .mobile-bottom-bar .mobile-add-btn-wrapper .mobile-bottom-btn.primary {
-                width: 64px !important;
-                height: 64px !important;
-                border-radius: 50% !important;
-            }
+        /* Mobile capture button (larger circle) */
+        .mobile-bottom-bar .mobile-add-btn-wrapper .mobile-bottom-btn.primary {
+            width: 64px !important;  /* Larger width */
+            height: 64px !important;  /* Larger height */
+            border-radius: 50% !important;  /* Circle */
+        }
 
-            .mobile-bottom-bar .mobile-add-btn-wrapper .mobile-bottom-btn.primary .material-icons {
-                font-size: 38px !important;
-            }
+        /* Icon in mobile capture button */
+        .mobile-bottom-bar .mobile-add-btn-wrapper .mobile-bottom-btn.primary .material-icons {
+            font-size: 38px !important;  /* Larger icon */
+        }
 
-            .mobile-recording-actions {
-                display: none;
-                flex-direction: column;
-                align-items: center;
-                gap: 10px;
-            }
+        /* Mobile recording actions (shown when recording) */
+        .mobile-recording-actions {
+            display: none;  /* Hidden by default */
+            flex-direction: column;  /* Vertical stacking */
+            align-items: center;  /* Center horizontally */
+            gap: 10px;  /* Space between elements */
+        }
 
-            .mobile-train-save-btn {
-                display: none;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-                min-width: 188px;
-                padding: 12px 18px;
-                border-radius: 999px;
-                border: 1px solid rgba(134, 239, 172, 0.28);
-                background: linear-gradient(135deg, #16a34a, #22c55e);
-                color: white;
-                font-size: 0.95rem;
-                font-weight: 700;
-                letter-spacing: 0.02em;
-                box-shadow: 0 14px 32px rgba(34, 197, 94, 0.24);
-                cursor: pointer;
-                transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
-            }
+        /* Mobile train/save button (green) */
+        .mobile-train-save-btn {
+            display: none;  /* Hidden by default */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            gap: 8px;  /* Space between icon and text */
+            min-width: 188px;  /* Minimum width */
+            padding: 12px 18px;  /* Inner spacing */
+            border-radius: 999px;  /* Pill shape */
+            border: 1px solid rgba(134, 239, 172, 0.28);  /* Green border */
+            background: linear-gradient(135deg, #16a34a, #22c55e);  /* Green gradient */
+            color: white;  /* White text */
+            font-size: 0.95rem;  /* Medium font */
+            font-weight: 700;  /* Bold */
+            letter-spacing: 0.02em;  /* Wide letter spacing */
+            box-shadow: 0 14px 32px rgba(34, 197, 94, 0.24);  /* Green shadow */
+            cursor: pointer;  /* Pointer cursor */
+            transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;  /* Smooth transitions */
+        }
 
-            .mobile-train-save-btn:hover {
-                filter: brightness(1.04);
-                transform: translateY(-1px);
-            }
+        /* Mobile train/save button hover effect */
+        .mobile-train-save-btn:hover {
+            filter: brightness(1.04);  /* Slightly brighter */
+            transform: translateY(-1px);  /* Move up */
+        }
 
-            .mobile-train-save-btn:disabled {
-                cursor: not-allowed;
-                opacity: 0.72;
-                transform: none;
-                filter: none;
-            }
+        /* Mobile train/save button disabled state */
+        .mobile-train-save-btn:disabled {
+            cursor: not-allowed;  /* Not allowed cursor */
+            opacity: 0.72;  /* Semi-transparent */
+            transform: none;  /* No transform */
+            filter: none;  /* No filter */
+        }
 
-            .mobile-session-btn {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-                min-width: 188px;
-                padding: 11px 18px;
-                border-radius: 999px;
-                border: 1px solid rgba(96, 165, 250, 0.28);
-                background: rgba(15, 23, 42, 0.92);
-                color: #dbeafe;
-                font-size: 0.95rem;
-                font-weight: 700;
-                letter-spacing: 0.02em;
-                box-shadow: 0 14px 32px rgba(15, 23, 42, 0.24);
-                cursor: pointer;
-                transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
-            }
+        /* Mobile session button (blue) */
+        .mobile-session-btn {
+            display: inline-flex;  /* Inline flex */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            gap: 8px;  /* Space between icon and text */
+            min-width: 188px;  /* Minimum width */
+            padding: 11px 18px;  /* Inner spacing */
+            border-radius: 999px;  /* Pill shape */
+            border: 1px solid rgba(96, 165, 250, 0.28);  /* Blue border */
+            background: rgba(15, 23, 42, 0.92);  /* Dark background */
+            color: #dbeafe;  /* Light blue text */
+            font-size: 0.95rem;  /* Medium font */
+            font-weight: 700;  /* Bold */
+            letter-spacing: 0.02em;  /* Wide letter spacing */
+            box-shadow: 0 14px 32px rgba(15, 23, 42, 0.24);  /* Dark shadow */
+            cursor: pointer;  /* Pointer cursor */
+            transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;  /* Smooth transitions */
+        }
 
-            .mobile-session-btn:hover {
-                filter: brightness(1.04);
-                transform: translateY(-1px);
-            }
+        /* Mobile session button hover effect */
+        .mobile-session-btn:hover {
+            filter: brightness(1.04);  /* Slightly brighter */
+            transform: translateY(-1px);  /* Move up */
+        }
 
-            .mobile-session-btn:disabled {
-                cursor: not-allowed;
-                opacity: 0.6;
-                transform: none;
-                filter: none;
-            }
+        /* Mobile session button disabled state */
+        .mobile-session-btn:disabled {
+            cursor: not-allowed;  /* Not allowed cursor */
+            opacity: 0.6;  /* Semi-transparent */
+            transform: none;  /* No transform */
+            filter: none;  /* No filter */
+        }
 
-            .mobile-recording-counter {
-                min-width: 88px;
-                padding: 6px 12px;
-                border-radius: 999px;
-                background: rgba(13, 20, 36, 0.82);
-                border: 1px solid rgba(96, 165, 250, 0.22);
-                color: #dbeafe;
-                font-size: 0.9rem;
-                font-weight: 700;
-                text-align: center;
-                letter-spacing: 0.04em;
-                backdrop-filter: blur(10px);
-                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
-            }
+        /* Mobile recording counter (shows sample count) */
+        .mobile-recording-counter {
+            min-width: 88px;  /* Minimum width */
+            padding: 6px 12px;  /* Inner spacing */
+            border-radius: 999px;  /* Pill shape */
+            background: rgba(13, 20, 36, 0.82);  /* Dark background */
+            border: 1px solid rgba(96, 165, 250, 0.22);  /* Blue border */
+            color: #dbeafe;  /* Light blue text */
+            font-size: 0.9rem;  /* Medium font */
+            font-weight: 700;  /* Bold */
+            text-align: center;  /* Center text */
+            letter-spacing: 0.04em;  /* Wide letter spacing */
+            backdrop-filter: blur(10px);  /* Blur background */
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);  /* Shadow */
+        }
 
-            .mobile-recording-buttons {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-            }
+        /* Mobile recording buttons container */
+        .mobile-recording-buttons {
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            gap: 12px;  /* Space between buttons */
+        }
 
-            .mobile-recording-actions .mobile-bottom-btn {
-                width: 52px;
-                height: 52px;
-                padding: 0;
-            }
+        /* Mobile recording action buttons (smaller) */
+        .mobile-recording-actions .mobile-bottom-btn {
+            width: 52px;  /* Smaller width */
+            height: 52px;  /* Smaller height */
+            padding: 0;  /* No padding */
+        }
 
-            .capture-btn-portal {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
+        /* Capture button portal (for positioning) */
+        .capture-btn-portal {
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+        }
 
-            .mobile-clear-sign-btn {
-                position: absolute;
-                top: -12px;
-                right: -12px;
-                background: rgba(239, 68, 68, 0.14);
-                color: #fecaca;
-                border: 1px solid rgba(239, 68, 68, 0.24);
-                border-radius: 50%;
-                width: 24px;
-                height: 24px;
-                display: none; /* Shown when sign info is added */
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                z-index: 10;
-            }
+        /* Mobile clear sign button (removes current sign) */
+        .mobile-clear-sign-btn {
+            position: absolute;  /* Fixed position */
+            top: -12px;  /* Above button */
+            right: -12px;  /* To the right */
+            background: rgba(239, 68, 68, 0.14);  /* Red background */
+            color: #fecaca;  /* Light red text */
+            border: 1px solid rgba(239, 68, 68, 0.24);  /* Red border */
+            border-radius: 50%;  /* Circle */
+            width: 24px;  /* Width */
+            height: 24px;  /* Height */
+            display: none;  /* Hidden by default (shown when sign info is added) */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            cursor: pointer;  /* Pointer cursor */
+            z-index: 10;  /* High z-index */
+        }
 
-            .mobile-revert-badge-btn {
-                position: absolute;
-                bottom: -12px;
-                right: -12px;
-                background: rgba(245, 158, 11, 0.14);
-                color: #fde68a;
-                border: 1px solid rgba(245, 158, 11, 0.24);
-                border-radius: 50%;
-                width: 24px;
-                height: 24px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                z-index: 10;
-            }
+        /* Mobile revert badge button (reverts to previous sign) */
+        .mobile-revert-badge-btn {
+            position: absolute;  /* Fixed position */
+            bottom: -12px;  /* Below button */
+            right: -12px;  /* To the right */
+            background: rgba(245, 158, 11, 0.14);  /* Orange background */
+            color: #fde68a;  /* Light orange text */
+            border: 1px solid rgba(245, 158, 11, 0.24);  /* Orange border */
+            border-radius: 50%;  /* Circle */
+            width: 24px;  /* Width */
+            height: 24px;  /* Height */
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            cursor: pointer;  /* Pointer cursor */
+            z-index: 10;  /* High z-index */
+        }
 
-            .mobile-revert-badge-btn:disabled {
-                opacity: 0.5;
-                cursor: not-allowed;
-            }
+        /* Mobile revert badge button disabled state */
+        .mobile-revert-badge-btn:disabled {
+            opacity: 0.5;  /* Semi-transparent */
+            cursor: not-allowed;  /* Not allowed cursor */
+        }
 
-            /* DRAWERS (Sidebar & Data) */
-            .sidebar, .data-panel {
-                position: fixed;
-                top: 0;
-                right: 0;
-                width: min(88vw, 400px);
-                height: 100dvh;
-                transform: translateX(100%);
-                transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                z-index: 1500;
-                box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
-                display: flex;
-                flex-direction: column;
-                background:
+        /* ==================== MOBILE DRAWERS (SIDEBAR & DATA) ==================== */
+        /* Mobile drawer panels (slide in from right) */
+        .sidebar, .data-panel {
+            position: fixed;  /* Fixed position */
+            top: 0;  /* At top */
+            right: 0;  /* From right */
+            width: min(88vw, 400px);  /* Responsive width */
+            height: 100dvh;  /* Full viewport height */
+            transform: translateX(100%);  /* Hidden off-screen */
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);  /* Smooth slide */
+            z-index: 1500;  /* Very high z-index */
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);  /* Shadow */
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            background:
                     radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 24%),
                     linear-gradient(180deg, rgba(6, 12, 25, 0.98), rgba(2, 8, 23, 0.98));
                 border-left: 1px solid rgba(191, 219, 254, 0.12);
@@ -919,361 +1012,414 @@
             }
 
             .sidebar-close-btn, .drawer-close-btn {
-                background: transparent;
-                border: 1px solid var(--studio-border);
-                color: var(--studio-text-muted);
-                width: 32px;
-                height: 32px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
+                background: transparent;  /* Transparent background */
+                border: 1px solid var(--studio-border);  /* Subtle border */
+                color: var(--studio-text-muted);  /* Muted color */
+                width: 32px;  /* Width */
+                height: 32px;  /* Height */
+                border-radius: 50%;  /* Circle */
+                display: flex;  /* Flex layout */
+                align-items: center;  /* Center vertically */
+                justify-content: center;  /* Center horizontally */
             }
 
-            /* Modal for Sign Setup */
+            /* ==================== MOBILE SIGN SETUP MODAL ==================== */
+            /* Modal for sign setup (bottom sheet on mobile) */
             .sign-setup-modal {
-                position: fixed;
-                bottom: 0;
-                left: 0;
+                position: fixed;  /* Fixed position */
+                bottom: 0;  /* At bottom */
+                left: 0;  /* Full width */
                 right: 0;
+                /* Gradient background */
                 background:
                     radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 24%),
                     linear-gradient(180deg, rgba(9, 15, 28, 0.98), rgba(2, 8, 23, 0.98));
-                border-top: 1px solid rgba(191, 219, 254, 0.14);
-                border-radius: 24px 24px 0 0;
-                z-index: 200;
-                padding: 24px;
-                transform: translateY(100%);
-                transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
-                backdrop-filter: blur(20px);
+                border-top: 1px solid rgba(191, 219, 254, 0.14);  /* Top border */
+                border-radius: 24px 24px 0 0;  /* Rounded top corners */
             }
 
-            .sign-setup-modal.active {
-                transform: translateY(0);
-            }
+        /* Modal step (each step in the setup flow) */
+        .modal-step {
+            display: none;  /* Hidden by default */
+            flex-direction: column;  /* Vertical stacking */
+            gap: 20px;  /* Space between elements */
+        }
 
-            .modal-step {
-                display: none;
-                flex-direction: column;
-                gap: 20px;
-            }
+        /* Modal step active state */
+        .modal-step.active {
+            display: flex;  /* Show when active */
+        }
 
-            .modal-step.active {
-                display: flex;
-            }
+        /* Modal header */
+        .modal-header {
+            display: flex;  /* Flex layout */
+            justify-content: space-between;  /* Space apart */
+            align-items: center;  /* Center vertically */
+            margin-bottom: 4px;  /* Space below */
+        }
 
-            .modal-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 4px;
-            }
+        /* Modal title */
+        .modal-title {
+            font-family: 'Outfit', sans-serif;  /* Outfit font */
+            font-weight: 700;  /* Bold */
+            font-size: 1.25rem;  /* Large font */
+            color: var(--studio-text);  /* Light text */
+        }
 
-            .modal-title {
-                font-family: 'Outfit', sans-serif;
-                font-weight: 700;
-                font-size: 1.25rem;
-                color: var(--studio-text);
-            }
+        /* Modal step indicator (e.g., "Step 1 of 3") */
+        .modal-step-indicator {
+            color: var(--studio-text-muted);  /* Muted color */
+            font-size: 0.8rem;  /* Small font */
+            font-weight: 500;  /* Medium weight */
+        }
 
-            .modal-step-indicator {
-                color: var(--studio-text-muted);
-                font-size: 0.8rem;
-                font-weight: 500;
-            }
+        /* Modal body (content area) */
+        .modal-body {
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            gap: 16px;  /* Space between elements */
+        }
 
-            .modal-body {
-                display: flex;
-                flex-direction: column;
-                gap: 16px;
-            }
+        /* Modal footer (buttons) */
+        .modal-footer {
+            display: flex;  /* Flex layout */
+            gap: 12px;  /* Space between buttons */
+            margin-top: 10px;  /* Space above */
+        }
 
-            .modal-footer {
-                display: flex;
-                gap: 12px;
-                margin-top: 10px;
-            }
+        /* Modal button */
+        .modal-btn {
+            flex: 1;  /* Fill available space */
+            padding: 14px;  /* Inner spacing */
+            border-radius: 16px;  /* Rounded corners */
+            font-weight: 700;  /* Bold */
+            cursor: pointer;  /* Pointer cursor */
+            transition: 0.2s;  /* Smooth transition */
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            justify-content: center;  /* Center horizontally */
+            gap: 8px;  /* Space between icon and text */
+        }
 
-            .modal-btn {
-                flex: 1;
-                padding: 14px;
-                border-radius: 16px;
-                font-weight: 700;
-                cursor: pointer;
-                transition: 0.2s;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-            }
+        /* Primary modal button */
+        .modal-btn.primary {
+            background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb);  /* Blue gradient */
+            color: white;  /* White text */
+            border: 1px solid rgba(191, 219, 254, 0.2);  /* Subtle border */
+            box-shadow: 0 12px 30px rgba(37, 99, 235, 0.28);  /* Blue shadow */
+        }
 
-            .modal-btn.primary {
-                background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb);
-                color: white;
-                border: 1px solid rgba(191, 219, 254, 0.2);
-                box-shadow: 0 12px 30px rgba(37, 99, 235, 0.28);
-            }
+        /* Secondary modal button */
+        .modal-btn.secondary {
+            background: rgba(15, 23, 42, 0.78);  /* Dark background */
+            color: var(--studio-text);  /* Light text */
+            border: 1px solid var(--studio-border);  /* Subtle border */
+        }
 
-            .modal-btn.secondary {
-                background: rgba(15, 23, 42, 0.78);
-                color: var(--studio-text);
-                border: 1px solid var(--studio-border);
-            }
-
-
-        /* Custom Alert Dialog */
+        /* ==================== CUSTOM ALERT DIALOG ==================== */
+        /* Custom alert dialog (replaces browser alert) */
         .custom-alert {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) scale(0.9);
+            position: fixed;  /* Fixed position */
+            top: 50%;  /* Center vertically */
+            left: 50%;  /* Center horizontally */
+            transform: translate(-50%, -50%) scale(0.9);  /* Center and scale down */
+            /* Gradient background */
             background:
                 radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 25%),
                 linear-gradient(180deg, rgba(9, 15, 28, 0.98), rgba(2, 8, 23, 0.98));
-            border: 1px solid rgba(191, 219, 254, 0.14);
-            border-radius: 20px;
-            padding: 30px 24px;
-            z-index: 1000;
-            width: 90%;
-            max-width: 360px;
-            text-align: center;
-            opacity: 0;
-            pointer-events: none;
-            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(191, 219, 254, 0.14);  /* Subtle border */
+            border-radius: 20px;  /* Rounded corners */
+            padding: 30px 24px;  /* Inner spacing */
+            z-index: 1000;  /* High z-index */
+            width: 90%;  /* Responsive width */
+            max-width: 360px;  /* Max width */
+            text-align: center;  /* Center text */
+            opacity: 0;  /* Invisible by default */
+            pointer-events: none;  /* Don't block clicks */
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);  /* Bouncy transition */
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);  /* Shadow */
         }
 
+        /* Custom alert active state */
         .custom-alert.active {
-            opacity: 1;
-            pointer-events: auto;
-            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;  /* Visible */
+            pointer-events: auto;  /* Block clicks */
+            transform: translate(-50%, -50%) scale(1);  /* Scale to normal */
         }
 
+        /* Alert backdrop (overlay behind alert) */
         .alert-backdrop {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(4px);
-            z-index: 999;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s ease;
+            position: fixed;  /* Fixed position */
+            inset: 0;  /* Fill screen */
+            background: rgba(0, 0, 0, 0.7);  /* Dark overlay */
+            backdrop-filter: blur(4px);  /* Blur background */
+            z-index: 999;  /* Below alert */
+            opacity: 0;  /* Invisible by default */
+            pointer-events: none;  /* Don't block clicks */
+            transition: opacity 0.3s ease;  /* Smooth transition */
         }
 
+        /* Alert backdrop active state */
         .alert-backdrop.active {
-            opacity: 1;
-            pointer-events: auto;
+            opacity: 1;  /* Visible */
+            pointer-events: auto;  /* Block clicks */
         }
 
+        /* Alert icon */
         .alert-icon {
-            font-size: 48px;
-            color: #fbbf24;
-            margin-bottom: 16px;
-            display: block;
+            font-size: 48px;  /* Large icon */
+            color: #fbbf24;  /* Yellow color */
+            margin-bottom: 16px;  /* Space below */
+            display: block;  /* Block display */
         }
 
+        /* Alert message text */
         .alert-message {
-            color: var(--studio-text);
-            font-size: 1.1rem;
-            font-weight: 500;
-            margin-bottom: 24px;
-            line-height: 1.5;
+            color: var(--studio-text);  /* Light text */
+            font-size: 1.1rem;  /* Medium font */
+            font-weight: 500;  /* Medium weight */
+            margin-bottom: 24px;  /* Space below */
+            line-height: 1.5;  /* Readable line height */
         }
 
+        /* Alert button */
         .alert-btn {
-            background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb);
-            color: white;
-            border: none;
-            padding: 12px 32px;
-            border-radius: 14px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: background 0.2s;
-            width: 100%;
+            background: linear-gradient(135deg, var(--studio-accent-strong), #2563eb);  /* Blue gradient */
+            color: white;  /* White text */
+            border: none;  /* No border */
+            padding: 12px 32px;  /* Inner spacing */
+            border-radius: 14px;  /* Rounded corners */
+            font-weight: 700;  /* Bold */
+            cursor: pointer;  /* Pointer cursor */
+            transition: background 0.2s;  /* Smooth transition */
+            width: 100%;  /* Full width */
         }
 
+        /* Alert button hover effect */
         .alert-btn:hover {
-            filter: brightness(1.06);
+            filter: brightness(1.06);  /* Slightly brighter */
         }
 
-        /* Toast Notifications */
+        /* ==================== TOAST NOTIFICATIONS ==================== */
+        /* Toast container (holds all toast messages) */
         .toast-container {
-            position: fixed;
-            top: calc(18px + env(safe-area-inset-top));
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 2000;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            pointer-events: none;
+            position: fixed;  /* Fixed position */
+            top: calc(18px + env(safe-area-inset-top));  /* Account for safe area */
+            left: 50%;  /* Center horizontally */
+            transform: translateX(-50%);  /* Center with transform */
+            z-index: 2000;  /* Very high z-index */
+            display: flex;  /* Flex layout */
+            flex-direction: column;  /* Vertical stacking */
+            gap: 10px;  /* Space between toasts */
+            pointer-events: none;  /* Don't block clicks */
         }
 
+        /* Individual toast notification */
         .toast {
-            background: rgba(13, 20, 36, 0.92);
-            color: var(--studio-text);
-            padding: 12px 20px;
-            border-radius: 16px;
-            border: 1px solid var(--studio-border);
-            font-size: 0.9rem;
-            font-weight: 600;
-            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            animation: toast-in 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
-            opacity: 0;
-            backdrop-filter: blur(12px);
+            background: rgba(13, 20, 36, 0.92);  /* Dark background */
+            color: var(--studio-text);  /* Light text */
+            padding: 12px 20px;  /* Inner spacing */
+            border-radius: 16px;  /* Rounded corners */
+            border: 1px solid var(--studio-border);  /* Subtle border */
+            font-size: 0.9rem;  /* Small font */
+            font-weight: 600;  /* Semi-bold */
+            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34);  /* Shadow */
+            display: flex;  /* Flex layout */
+            align-items: center;  /* Center vertically */
+            gap: 8px;  /* Space between icon and text */
+            animation: toast-in 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;  /* Bouncy entrance */
+            opacity: 0;  /* Start invisible */
+            backdrop-filter: blur(12px);  /* Blur background */
         }
 
+        /* Toast entrance animation */
         @keyframes toast-in {
-            from { transform: translateY(-20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+            from { transform: translateY(-20px); opacity: 0; }  /* Start above and invisible */
+            to { transform: translateY(0); opacity: 1; }  /* End at position and visible */
         }
 
+        /* Toast exit animation */
         .toast.out {
-            animation: toast-out 0.3s ease forwards;
+            animation: toast-out 0.3s ease forwards;  /* Smooth exit */
         }
 
+        /* Toast exit keyframes */
         @keyframes toast-out {
-            from { transform: translateY(0); opacity: 1; }
-            to { transform: translateY(-20px); opacity: 0; }
+            from { transform: translateY(0); opacity: 1; }  /* Start at position and visible */
+            to { transform: translateY(-20px); opacity: 0; }  /* End above and invisible */
         }
 
-        /* Processing Modal */
+        /* ==================== PROCESSING MODAL ==================== */
+        /* Processing modal (shows during long operations) */
         .processing-modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(2, 6, 23, 0.8);
-            backdrop-filter: blur(8px);
-            z-index: 3000;
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: #e6edf3;
-            text-align: center;
+            position: fixed;  /* Fixed position */
+            inset: 0;  /* Fill screen */
+            background: rgba(2, 6, 23, 0.8);  /* Dark overlay */
+            backdrop-filter: blur(8px);  /* Blur background */
+            z-index: 3000;  /* Very high z-index */
+            display: none;  /* Hidden by default */
+            flex-direction: column;  /* Vertical stacking */
+            align-items: center;  /* Center horizontally */
+            justify-content: center;  /* Center vertically */
+            color: #e6edf3;  /* Light text */
+            text-align: center;  /* Center text */
         }
 
+        /* Processing modal active state */
         .processing-modal.active {
-            display: flex;
+            display: flex;  /* Show when active */
         }
 
+        /* Loading spinner */
         .spinner {
-            width: 60px;
-            height: 60px;
-            border: 5px solid rgba(191, 219, 254, 0.12);
-            border-top: 5px solid var(--studio-accent);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 24px;
+            width: 60px;  /* Width */
+            height: 60px;  /* Height */
+            border: 5px solid rgba(191, 219, 254, 0.12);  /* Light border */
+            border-top: 5px solid var(--studio-accent);  /* Accent top */
+            border-radius: 50%;  /* Circle */
+            animation: spin 1s linear infinite;  /* Spin animation */
+            margin-bottom: 24px;  /* Space below */
         }
 
+        /* Spin animation keyframes */
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% { transform: rotate(0deg); }  /* Start at 0 degrees */
+            100% { transform: rotate(360deg); }  /* Rotate to 360 degrees */
         }
 
+        /* Processing text (main message) */
         .processing-text {
-            font-size: 1.1rem;
-            font-weight: 500;
-            margin-bottom: 8px;
+            font-size: 1.1rem;  /* Medium font */
+            font-weight: 500;  /* Medium weight */
+            margin-bottom: 8px;  /* Space below */
         }
 
+        /* Processing status (secondary message) */
         .processing-status {
-            font-size: 0.9rem;
-            color: var(--studio-text-muted);
+            font-size: 0.9rem;  /* Small font */
+            color: var(--studio-text-muted);  /* Muted color */
         }
     </style>
 
-    <!-- Dependencies -->
+    <!-- ==================== EXTERNAL DEPENDENCIES ==================== -->
+    <!-- MediaPipe Camera Utils (for camera handling) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <!-- MediaPipe Control Utils (for MediaPipe controls) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
         crossorigin="anonymous"></script>
+    <!-- MediaPipe Drawing Utils (for drawing landmarks) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
         crossorigin="anonymous"></script>
+    <!-- MediaPipe Hands (for hand detection) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <!-- TensorFlow.js (for machine learning) -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     
-    <!-- Supabase Client -->
+    <!-- ==================== SUPABASE CLIENT ==================== -->
+    <!-- Supabase JavaScript SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Custom Supabase client configuration -->
     <script src="supabase-client.js"></script>
 
 </head>
 
+<!-- ==================== HTML BODY ==================== -->
 <body>
 
+    <!-- Main layout container -->
     <div class="studio-layout">
 
-        <!-- MOBILE APP HEADER - just back button floating above camera -->
+        <!-- ==================== MOBILE APP HEADER ==================== -->
+        <!-- Header with back button, title, and data panel button (mobile only) -->
         <div class="mobile-app-header">
+            <!-- Back button to return to home page -->
             <a href="index.html?mode=training&reload=true" class="header-icon-btn" aria-label="Back to home">
                 <span class="material-icons" style="font-size: 28px; margin-right: 2px;">chevron_left</span>
             </a>
+            <!-- Title pill with icon and text -->
             <div class="header-title-pill">
-                <span class="material-icons">model_training</span>
+                <span class="material-icons">model_training</span>  <!-- Training icon -->
                 <div class="header-title-text">
-                    <span class="header-kicker">SignLink</span>
-                    <h1 class="app-title">AI Training Studio</h1>
+                    <span class="header-kicker">SignLink</span>  <!-- App name -->
+                    <h1 class="app-title">AI Training Studio</h1>  <!-- Page title -->
                 </div>
             </div>
+            <!-- Header actions (right side) -->
             <div class="header-actions">
+                <!-- Button to open data panel -->
                 <button id="openDataPanelBtn" class="header-icon-btn" type="button" aria-label="Open collected data">
                     <span class="material-icons" style="font-size: 22px;">analytics</span>
                 </button>
             </div>
         </div>
 
-        <!-- HIDDEN STATE HOLDERS (Internal logic depends on these) -->
+        <!-- ==================== HIDDEN STATE HOLDERS ==================== -->
+        <!-- Hidden elements that JavaScript logic depends on for state management -->
         <div style="display: none;">
+            <!-- Language selection dropdown (ISL or ASL) -->
             <select id="langSelect">
-                <option value="ISL">ISL</option>
-                <option value="ASL">ASL</option>
+                <option value="ISL">ISL</option>  <!-- Indian Sign Language -->
+                <option value="ASL">ASL</option>  <!-- American Sign Language -->
             </select>
-            <button id="staticModeBtn"></button>
-            <button id="dynamicModeBtn"></button>
-            <input type="text" id="labelInput">
-            <input type="file" id="signCardInput" accept=".jpg,.jpeg,.png,.gif,.webp">
-            <button id="signCardBtn"></button>
-            <button id="clearSignDetailsBtn"></button>
-            <div id="signCardFileName"></div>
-            <div id="signCardStatus"></div>
-            <div id="statusMsg"></div>
+            <!-- Mode toggle buttons (static vs dynamic) -->
+            <button id="staticModeBtn"></button>  <!-- Static mode button -->
+            <button id="dynamicModeBtn"></button>  <!-- Dynamic mode button -->
+            <!-- Sign label input -->
+            <input type="text" id="labelInput">  <!-- Text input for sign name -->
+            <!-- Sign card image input -->
+            <input type="file" id="signCardInput" accept=".jpg,.jpeg,.png,.gif,.webp">  <!-- Image file input -->
+            <!-- Action buttons -->
+            <button id="signCardBtn"></button>  <!-- Sign card upload button -->
+            <button id="clearSignDetailsBtn"></button>  <!-- Clear sign details button -->
+            <!-- Status display elements -->
+            <div id="signCardFileName"></div>  <!-- Shows uploaded file name -->
+            <div id="signCardStatus"></div>  <!-- Shows upload status -->
+            <div id="statusMsg"></div>  <!-- General status message -->
         </div>
 
 
-        <!-- WORKSPACE (Camera) -->
+        <!-- ==================== WORKSPACE (CAMERA) ==================== -->
+        <!-- Center panel with camera feed and canvas -->
         <div class="workspace">
+            <!-- Camera wrapper containing video and canvas -->
             <div class="camera-wrapper">
+                <!-- Video element for camera feed -->
                 <video id="inputVideo" autoplay playsinline muted></video>
+                <!-- Canvas for drawing landmarks and overlays -->
                 <canvas id="outputCanvas"></canvas>
+                <!-- Recording indicator (shows when recording) -->
                 <div class="recording-indicator" id="recIndicator">
                     <span class="material-icons" style="font-size: 14px;">fiber_manual_record</span> REC
                 </div>
             </div>
 
-            <!-- Capture Button -->
+            <!-- ==================== CAPTURE BUTTON ==================== -->
+            <!-- Floating capture button (for static mode) -->
             <button id="captureBtn" class="capture-fab" title="Click to Start/Stop Recording" style="display: none;">
-                <div class="capture-inner"></div>
+                <div class="capture-inner"></div>  <!-- Inner red circle -->
             </button>
 
-            <!-- Dynamic Recording Controls (hidden by default) -->
+            <!-- ==================== DYNAMIC RECORDING CONTROLS ==================== -->
+            <!-- Controls for dynamic mode (video recording) - hidden by default -->
             <div id="dynamicControls" style="display: none; margin-top: 20px; text-align: center;">
+                <!-- Start recording button -->
                 <button id="startRecordBtn" class="primary-btn"
                     style="width: 200px; display: inline-flex; margin-bottom: 10px;">
                     <span class="material-icons">fiber_manual_record</span>
                     Start Recording
                 </button>
+                <!-- Stop recording button -->
                 <button id="stopRecordBtn" class="secondary-btn"
                     style="width: 200px; display: none; margin-bottom: 10px;">
                     <span class="material-icons">stop</span>
                     Stop Recording
                 </button>
+                <!-- Frame counter (shows number of frames recorded) -->
                 <div id="frameCounter"
                     style="color: #58a6ff; font-size: 1.2rem; font-weight: 600; margin-top: 5px; display: none;">
                     Frames: <span id="frameCount">0</span> / 30
                 </div>
+                <!-- Recording progress bar -->
                 <div id="recordingProgress"
                     style="width: 200px; height: 4px; background: #21262d; border-radius: 2px; margin: 10px auto; overflow: hidden; display: none;">
                     <div id="progressBar" style="height: 100%; background: #238636; width: 0%; transition: width 0.1s;">
@@ -1282,31 +1428,43 @@
             </div>
 
 
-            <!-- MOBILE CONTROL BAR -->
+            <!-- ==================== MOBILE CONTROL BAR ==================== -->
+            <!-- Bottom control bar for mobile devices -->
             <div class="mobile-bottom-bar">
+                <!-- Add sign button wrapper (with clear and revert buttons) -->
                 <div id="mobileAddButtonWrap" class="mobile-add-btn-wrapper">
+                    <!-- Add new sign button (large circle) -->
                     <button id="mobileAddSignBtn" class="mobile-bottom-btn primary" title="Add New Sign" style="width: 64px; height: 64px; padding: 0;">
                         <span class="material-icons" style="font-size: 38px;">add_circle</span>
                     </button>
+                    <!-- Clear sign details button (small red X) -->
                     <button id="mobileClearSignBtn" class="mobile-clear-sign-btn" title="Clear sign details">
                         <span class="material-icons" style="font-size: 16px;">close</span>
                     </button>
+                    <!-- Revert badge button (undo last record) -->
                     <button id="mobileRevertBtn" class="mobile-revert-badge-btn" title="Undo last sign record" disabled>
                         <span class="material-icons" style="font-size: 14px;">undo</span>
                     </button>
                 </div>
+                <!-- Recording actions (shown when recording) -->
                 <div id="mobileRecordingActions" class="mobile-recording-actions">
+                    <!-- Train & Upload button -->
                     <button id="mobileTrainSaveBtn" class="mobile-train-save-btn" type="button">
                         <span class="material-icons" style="font-size: 22px;">cloud_upload</span>
                         <span>Train &amp; Upload</span>
                     </button>
+                    <!-- Save & Next Sign button -->
                     <button id="mobileSaveNextBtn" class="mobile-session-btn" type="button" disabled>
                         <span class="material-icons" style="font-size: 20px;">playlist_add</span>
                         <span>Save &amp; Next Sign</span>
                     </button>
+                    <!-- Recording counter (shows samples collected) -->
                     <div id="mobileRecordingCounter" class="mobile-recording-counter">0/100</div>
+                    <!-- Recording buttons container -->
                     <div class="mobile-recording-buttons">
+                        <!-- Portal for capture button (moved here during recording) -->
                         <div id="captureBtnPortal" class="capture-btn-portal"></div>
+                        <!-- Back button (returns to add button view) -->
                         <button id="mobileBackBtn" class="mobile-bottom-btn" title="Back to add button">
                             <span class="material-icons" style="font-size: 28px;">arrow_back</span>
                         </button>
@@ -1316,38 +1474,49 @@
         </div>
 
 
-        <!-- DATA PANEL -->
+        <!-- ==================== DATA PANEL ==================== -->
+        <!-- Slide-in panel showing collected training data -->
         <div class="data-panel">
+            <!-- Panel header with back button and sample count -->
             <div class="list-header">
                 <div style="display:flex; align-items:center; gap:12px;">
+                    <!-- Back button to return to training view -->
                     <button id="backToMainBtn" class="drawer-close-btn" type="button" aria-label="Back to training">
                         <span class="material-icons" style="font-size: 18px;">arrow_back</span>
                     </button>
+                    <!-- Panel title -->
                     <span style="font-weight: 700;">Collected Data</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px;">
+                    <!-- Total samples badge -->
                     <span id="totalSamples"
                         style="background: rgba(59, 130, 246, 0.16); color: #dbeafe; border: 1px solid rgba(96, 165, 250, 0.22); padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 700;">0</span>
                 </div>
             </div>
+            <!-- Data list container (scrollable) -->
             <div id="dataList" class="data-list">
-                <!-- Data items injected here -->
+                <!-- Data items injected here by JavaScript -->
                 <div style="text-align: center; color: #64748b; margin-top: 50px;">
                     No details yet.
                 </div>
             </div>
 
+            <!-- ==================== DATA PANEL FOOTER ==================== -->
+            <!-- Footer with action buttons -->
             <div style="padding: 20px; border-top: 1px solid rgba(148, 163, 184, 0.16); display: flex; flex-direction: column; align-items: stretch; gap: 12px;">
+                <!-- Revert latest change button -->
                 <button id="revertLatestBtn" class="secondary-btn" type="button" title="Revert the last untrained recording batch" disabled
                     style="width: 100%; justify-content: center; display: flex; align-items: center; gap: 8px;">
                     <span class="material-icons" style="font-size: 20px;">undo</span>
                     Revert Latest Change
                 </button>
+                <!-- Train & Save button -->
                 <button id="sidebarTrainSaveBtn" class="primary-btn" type="button" disabled style="width: 100%; justify-content: center; display: flex; align-items: center; gap: 8px;">
                     <span class="material-icons" style="font-size: 20px;">cloud_upload</span>
                     Train &amp; Save
                 </button>
 
+                <!-- Clear all data button -->
                 <div style="display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
                     <button id="clearAllBtn" class="secondary-btn" title="Clear All Data"
                         style="color: #fecaca; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.2); display: flex; justify-content: center; align-items: center; width: 44px; height: 44px; border-radius: 50%; padding: 0;">
@@ -1359,9 +1528,10 @@
 
     </div>
 
-    <!-- SIGN SETUP MODAL (MOBILE) -->
+    <!-- ==================== SIGN SETUP MODAL (MOBILE) ==================== -->
+    <!-- Multi-step modal for setting up a new sign (mobile only) -->
     <div id="signSetupModal" class="sign-setup-modal">
-        <!-- Step 1: Language -->
+        <!-- ==================== STEP 1: LANGUAGE SELECTION ==================== -->
         <div class="modal-step active" data-step="1">
             <div class="modal-header">
                 <h3 class="modal-title">Target Language</h3>
@@ -1370,10 +1540,12 @@
             <div class="modal-body">
                 <p style="color: #94a3b8; font-size: 0.9rem;">Choose the sign language you want to train.</p>
                 <div class="input-group-vertical">
+                    <!-- ISL option (selected by default) -->
                     <button class="modal-btn secondary lang-option active" data-value="ISL" style="justify-content: flex-start; border-color: #60a5fa;">
                         <span class="material-icons">flag</span>
                         Indian Sign Language (ISL)
                     </button>
+                    <!-- ASL option -->
                     <button class="modal-btn secondary lang-option" data-value="ASL" style="justify-content: flex-start;">
                         <span class="material-icons">outlined_flag</span>
                         American Sign Language (ASL)
@@ -1388,7 +1560,7 @@
             </div>
         </div>
 
-        <!-- Step 2: Recording Mode -->
+        <!-- ==================== STEP 2: RECORDING MODE ==================== -->
         <div class="modal-step" data-step="2">
             <div class="modal-header">
                 <h3 class="modal-title">Recording Mode</h3>
@@ -1397,15 +1569,18 @@
             <div class="modal-body">
                 <p style="color: #94a3b8; font-size: 0.9rem;">Select how the sign is performed.</p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <!-- Static mode option (selected by default) -->
                     <button class="modal-btn secondary mode-option active" data-value="static" style="flex-direction: column; height: 80px; border-color: #60a5fa;">
                         <span class="material-icons">front_hand</span>
                         Static
                     </button>
+                    <!-- Dynamic mode option -->
                     <button class="modal-btn secondary mode-option" data-value="dynamic" style="flex-direction: column; height: 80px;">
                         <span class="material-icons">sync</span>
                         Dynamic
                     </button>
                 </div>
+                <!-- Mode description (updates based on selection) -->
                 <p id="modalModeDesc" style="font-size: 0.75rem; color: #94a3b8; text-align: center;">Static: Single pose signs (A, B, etc.)</p>
             </div>
             <div class="modal-footer">
@@ -1414,6 +1589,7 @@
             </div>
         </div>
 
+        <!-- ==================== STEP 3: SIGN DETAILS ==================== -->
         <div class="modal-step" data-step="3">
             <div class="modal-header">
                 <h3 class="modal-title">Sign Details</h3>
@@ -1421,6 +1597,7 @@
             </div>
             <div class="modal-body">
                 <p style="color: #94a3b8; font-size: 0.9rem;">Give the sign a name (Required).</p>
+                <!-- Sign name input -->
                 <input type="text" id="modalLabelInput" class="text-input" placeholder="Sign Name (e.g. Hello)" style="font-size: 1rem; padding: 14px;">
             </div>
             <div class="modal-footer">
@@ -1430,25 +1607,37 @@
         </div>
     </div>
 
+    <!-- ==================== GLOBAL UI ELEMENTS ==================== -->
+    <!-- Drawer backdrop (overlay behind slide-in panels) -->
     <div id="drawerBackdrop" class="drawer-backdrop"></div>
+    <!-- Toast container (holds notification toasts) -->
     <div id="toastContainer" class="toast-container"></div>
 
+    <!-- ==================== PROCESSING MODAL ==================== -->
+    <!-- Loading modal (shows during long operations like training/upload) -->
     <div id="processingModal" class="processing-modal">
-        <div class="spinner"></div>
-        <div id="processingText" class="processing-text">Processing...</div>
-        <div id="processingStatus" class="processing-status">Please wait</div>
+        <div class="spinner"></div>  <!-- Loading spinner -->
+        <div id="processingText" class="processing-text">Processing...</div>  <!-- Main message -->
+        <div id="processingStatus" class="processing-status">Please wait</div>  <!-- Status message -->
     </div>
 
+    <!-- ==================== CUSTOM ALERT DIALOG ==================== -->
+    <!-- Alert backdrop (overlay behind alert) -->
     <div id="alertBackdrop" class="alert-backdrop"></div>
+    <!-- Custom alert dialog (replaces browser alert) -->
     <div id="customAlert" class="custom-alert">
-        <span class="material-icons alert-icon">warning_amber</span>
-        <div id="alertMessage" class="alert-message">Please enter the details of the sign!</div>
+        <span class="material-icons alert-icon">warning_amber</span>  <!-- Warning icon -->
+        <div id="alertMessage" class="alert-message">Please enter the details of the sign!</div>  <!-- Alert message -->
         <div style="display: flex; gap: 12px; width: 100%;">
+            <!-- Cancel button (hidden by default, shown for confirm dialogs) -->
             <button id="alertCancelBtn" class="alert-btn" style="display: none; background: #21262d; border: 1px solid #30363d; color: #c9d1d9;">Cancel</button>
+            <!-- OK button -->
             <button id="alertOkBtn" class="alert-btn">OK</button>
         </div>
     </div>
 
+    <!-- ==================== MAIN JAVASCRIPT FILE ==================== -->
+    <!-- Training logic and UI interactions -->
     <script src="training.js"></script>
 </body>
 
