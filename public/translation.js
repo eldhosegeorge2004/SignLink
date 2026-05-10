@@ -764,12 +764,12 @@ function chooseBestCandidateWithLocalPriority(candidates) {
         const localIsDigit = /^[0-9]$/.test(localLabel);
 
         // Keep a narrow safety guard only for strong alphabet-vs-digit conflicts.
-        if (serverIsAlphabet && localIsDigit && bestServer.conf >= 0.75 && (bestServer.conf - bestLocal.conf) >= 0.08) {
+        if (serverIsAlphabet && localIsDigit && bestServer.conf >= 0.80 && (bestServer.conf - bestLocal.conf) >= 0.12) {
             return bestServer;
         }
 
-        // Stronger local preference so website-trained signs win more consistently.
-        const localScore = bestLocal.conf + 0.10;
+        // Moderate local preference - AI training page data gets priority boost
+        const localScore = bestLocal.conf + 0.15;
         const serverScore = bestServer.conf;
         return localScore >= serverScore ? bestLocal : bestServer;
     }
