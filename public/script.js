@@ -1,6 +1,3 @@
-import { db } from './firebase-config.js';
-import { collection, addDoc, getDocs, deleteDoc, doc } from "firebase/firestore";
-
 // Note: supabaseClient is initialized globally in videocall.html
 let supabaseChannel = null;
 
