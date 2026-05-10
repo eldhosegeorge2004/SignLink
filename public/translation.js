@@ -764,12 +764,12 @@ function chooseBestCandidateWithLocalPriority(candidates) {
         const localIsDigit = /^[0-9]$/.test(localLabel);
 
         // Keep a narrow safety guard only for strong alphabet-vs-digit conflicts.
-        if (serverIsAlphabet && localIsDigit && bestServer.conf >= 0.75 && (bestServer.conf - bestLocal.conf) >= 0.08) {
+        if (serverIsAlphabet && localIsDigit && bestServer.conf >= 0.82 && (bestServer.conf - bestLocal.conf) >= 0.15) {
             return bestServer;
         }
 
-        // Stronger local preference so website-trained signs win more consistently.
-        const localScore = bestLocal.conf + 0.10;
+        // Moderate local preference - AI training page data gets priority boost
+        const localScore = bestLocal.conf + 0.20;
         const serverScore = bestServer.conf;
         return localScore >= serverScore ? bestLocal : bestServer;
     }
@@ -825,8 +825,9 @@ function runPrediction(landmarks, detectedHandCount = 1) {
         }
 
         // 3. Query Dynamic Model with frame buffer
+        // Only query dynamic model when hand is NOT still (to prevent dynamic signs being detected as static)
         // Skip dynamic detection if user is in the middle of spelling
-        if (localModelDynamic && localLabelsDynamic.length) {
+        if (localModelDynamic && localLabelsDynamic.length && !staticAllowed) {
             if (dynamicBufferStartTime === 0) {
                 dynamicBufferStartTime = Date.now();
             }

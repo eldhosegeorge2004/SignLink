@@ -3,6 +3,7 @@ node_modules/
 firebase-debug.log
 .DS_Store
 Sign-Language2.zip
+Thumbs.db
 
 # Generated Datasets and Weights
 datasets/
@@ -18,3 +19,17 @@ public/test_final.html
 scripts/serviceAccountKey.json
 scripts/
 .env
+.env.local
+.env.production
+.env.*.local
+
+# Uploads and temporary files
+.uploads/
+*.log
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

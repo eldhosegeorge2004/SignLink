@@ -2264,6 +2264,13 @@ hands.onResults(onResults);
 let isCollecting = false;
 // Initial Load
 if (modeSelect) modeSelect.value = currentMode;
+// Check if returning from training page and reload models
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('reload') === 'true') {
+    // Clear the URL parameter without reloading
+    window.history.replaceState({}, document.title, window.location.pathname);
+    console.log('Reloading models after training...');
+}
 // updateModeVariables already reloads models for the active mode.
 updateModeVariables();
 loadSavedLabels();
