@@ -1,8 +1,13 @@
+// translation.js - Live sign language translation page
+// Handles camera input, hand detection, ML model prediction, and sign card display
 
+// DOM Elements - Camera and Canvas
 const videoElement = document.getElementById('input-video');
 const canvasElement = document.getElementById('output-canvas');
 const canvasCtx = canvasElement.getContext('2d');
 const signView = document.getElementById('sign-view');
+
+// DOM Elements - UI Panels
 const speechPanel = document.getElementById('speech-panel');
 const speechCaptionLog = document.getElementById('speech-caption-log');
 const signCardsOutput = document.getElementById('sign-cards-output');
@@ -10,11 +15,14 @@ const captionLogWindow = document.getElementById('caption-log-window');
 const captionToggleBtn = document.getElementById('captionToggleBtn');
 const signCardsPanelWindow = document.getElementById('sign-cards-panel-window');
 const signCardsToggleBtn = document.getElementById('signCardsToggleBtn');
+
+// DOM Elements - Controls
 const camBtn = document.getElementById('cam-btn');
 const ttsBtn = document.getElementById('tts-btn');
 const sttResult = document.getElementById('stt-result');
 let signVoiceToggle = document.getElementById('sign-voice-toggle');
 
+// --- Application State ---
 let isSignMode = true; // true = sign detection, false = voice recognition
 let isCamOn = true;
 let isTTSOn = true;
@@ -28,10 +36,12 @@ let speechRestartTimer = null;
 let isHandInferencePending = false;
 let lastHandInferenceAt = 0;
 let lastResultText = null;
+
+// Mobile optimization settings
 const IS_MOBILE_DEVICE = window.matchMedia('(pointer: coarse)').matches
     || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
-const HAND_INFERENCE_INTERVAL_MS = IS_MOBILE_DEVICE ? 45 : 55;
-const SKELETON_MAX_EXTRAPOLATION_MS = IS_MOBILE_DEVICE ? 180 : 140;
+const HAND_INFERENCE_INTERVAL_MS = IS_MOBILE_DEVICE ? 45 : 55;  // Faster inference on mobile
+const SKELETON_MAX_EXTRAPOLATION_MS = IS_MOBILE_DEVICE ? 180 : 140;  // Longer extrapolation on mobile
 const SKELETON_VELOCITY_DAMPING = IS_MOBILE_DEVICE ? 0.94 : 0.88;
 let skeletonRenderLoopId = null;
 let targetHandLandmarks = [];
@@ -40,6 +50,7 @@ let handLandmarkVelocities = [];
 let lastDetectionAt = 0;
 
 // --- Spelling Mode State ---
+// Used for detecting when user is spelling words letter by letter
 let accumulatedWord = "";
 let lastLetterTime = 0;
 let lastAddedLetter = null;
@@ -49,21 +60,23 @@ const SPELLING_IDLE_TIMEOUT_MS = 5000;
 
 // --- Model & State ---
 // Hybrid Model Approaches:
-// 1. Server Model (Pre-trained ISL Dataset)
-// 2. Local Model (User Generated via AI Training)
+// 1. Server Model (Pre-trained ISL Dataset) - default model
+// 2. Local Model (User Generated via AI Training) - custom trained signs
 let serverModel = null;
 let serverLabels = [];
 let localModel = null;
 let localLabels = [];
 
-// Dynamic sign support
+// Dynamic sign support (for signs that involve movement)
 let localModelDynamic = null;
 let localLabelsDynamic = [];
-let dynamicLabelHandRequirements = {};
+let dynamicLabelHandRequirements = {};  // How many hands needed for each dynamic sign
 let dynamicFrameBuffer = [];
 const MAX_DYNAMIC_FRAMES = 30;
 const DYNAMIC_ANALYZE_MS = 1500;
 let dynamicBufferStartTime = 0;
+
+// ASL Z-letter motion detection thresholds (special case for ASL 'Z' which requires motion)
 const BIG_MOTION_CHANGE_THRESHOLD = 0.06;
 const ASL_Z_MIN_CONFIDENCE = 0.82;
 const ASL_Z_MIN_FRAMES = 6;
@@ -76,6 +89,8 @@ const ASL_Z_MIN_DIRECTION_CHANGES = 1;
 const ASL_Z_MIN_CURVATURE_RATIO = 1.03;
 const ASL_Z_MIN_WHOLE_HAND_PATH = 0.11;
 const ASL_Z_MIN_ACTIVE_LANDMARK_RATIO = 0.28;
+
+// Motion detection for static signs (hand must be still to predict)
 let lastDisplayedPrediction = null;
 let lastDisplayedFrame = null;
 const STATIC_STILL_DURATION_MS = 1000;
@@ -87,9 +102,10 @@ let lastHandDetectedTime = Date.now();
 let noHandsTimeoutId = null;
 
 const predictionBuffer = [];
-let localStorageModelKey = 'my-isl-model'; // Default
+let localStorageModelKey = 'my-isl-model'; // Default storage key for ISL model
 let localStorageLabelKey = 'isl_labels';
 
+// Update the result display text
 function setResultText(text) {
     if (sttResult && text !== lastResultText) {
         sttResult.innerText = text;
@@ -97,11 +113,13 @@ function setResultText(text) {
     }
 }
 
+// Normalize single letter labels to uppercase (A, B, C, etc.)
 function normalizeAlphabetLabel(label) {
     if (typeof label !== 'string') return label;
     return /^[a-zA-Z]$/.test(label) ? label.toUpperCase() : label;
 }
 
+// Normalize all labels in a list to ensure consistency
 function normalizeLabelList(labels) {
     let changed = false;
     const normalized = (labels || []).map((label) => {
@@ -112,6 +130,7 @@ function normalizeLabelList(labels) {
     return { labels: normalized, changed };
 }
 
+// Normalize hand requirement map keys (which signs need 1 or 2 hands)
 function normalizeHandRequirementMap(map) {
     let changed = false;
     const normalized = {};
@@ -159,7 +178,8 @@ if (ttsBtn) {
     ttsBtn.classList.remove('red-btn');
 }
 
-// Load Models and Labels (Hybrid)
+// Load Models and Labels (Hybrid approach)
+// Tries to load server model, local static model, and local dynamic model in parallel
 async function loadSavedModelAndLabels() {
     try {
         // Reset State
@@ -178,7 +198,7 @@ async function loadSavedModelAndLabels() {
 
         const promises = [];
 
-        // 1. Load Server Model
+        // 1. Load Server Model (pre-trained dataset)
         const serverLoad = async () => {
             console.log("Attempting to load Server Model...");
             try {
@@ -207,7 +227,7 @@ async function loadSavedModelAndLabels() {
         };
         promises.push(serverLoad());
 
-        // 2. Load Local Static Model
+        // 2. Load Local Static Model (user-trained signs)
         const localLoad = async () => {
             console.log("Attempting to load Local Static Model...");
             try {
@@ -227,6 +247,7 @@ async function loadSavedModelAndLabels() {
                         localStorage.setItem(`${localStorageLabelKey}-static`, JSON.stringify(localLabels));
                     } catch (e) {}
                 } else {
+                    // Fall back to localStorage
                     let localLabelData = localStorage.getItem(`${localStorageLabelKey}-static`);
                     if (localLabelData) {
                         const normalizedLocalLabels = normalizeLabelList(JSON.parse(localLabelData));
@@ -249,7 +270,7 @@ async function loadSavedModelAndLabels() {
         };
         promises.push(localLoad());
 
-        // 3. Load Local Dynamic Model
+        // 3. Load Local Dynamic Model (for movement-based signs)
         const dynamicLoad = async () => {
             console.log("Attempting to load Local Dynamic Model...");
             try {
@@ -269,6 +290,7 @@ async function loadSavedModelAndLabels() {
                         localStorage.setItem(`${localStorageLabelKey}-dynamic-hand-req`, JSON.stringify(dynamicLabelHandRequirements));
                     } catch (e) {}
                 } else {
+                    // Fall back to localStorage
                     let dynamicLabelData = localStorage.getItem(`${localStorageLabelKey}-dynamic`);
                     if (dynamicLabelData) {
                         const normalizedDynamicLabels = normalizeLabelList(JSON.parse(dynamicLabelData));
@@ -292,6 +314,7 @@ async function loadSavedModelAndLabels() {
                 }
             } catch (e) {
                 console.warn("Local dynamic model load failed:", e);
+                localModelDynamic = null;
             }
         };
         promises.push(dynamicLoad());
@@ -332,6 +355,8 @@ async function loadSavedModelAndLabels() {
         setResultText("Error loading systems.");
     }
 }
+// Fetch model from Supabase cloud storage
+// Tries multiple buckets with fallback support
 async function fetchCloudModel(type, lang) {
     try {
         const langLower = lang.toLowerCase();
@@ -358,6 +383,7 @@ async function fetchCloudModel(type, lang) {
             // 3. Load Model
             const model = await tf.loadLayersModel(modelUrlData.publicUrl);
             
+            // 4. Load hand requirements for dynamic models
             let handReqs = null;
             if (type === 'dynamic') {
                 const { data: handReqsUrlData } = window.supabaseClient.storage
@@ -381,7 +407,7 @@ async function fetchCloudModel(type, lang) {
 
 loadSavedModelAndLabels();
 
-// --- MediaPipe Setup ---
+// --- MediaPipe Hands Setup ---
 const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
 });
@@ -395,6 +421,7 @@ hands.setOptions({
 
 hands.onResults(onResults);
 
+// Deep clone hand landmarks to avoid reference issues
 function cloneHands(hands) {
     return (hands || []).map((hand) => hand.map((point) => ({
         x: point.x,
@@ -403,6 +430,7 @@ function cloneHands(hands) {
     })));
 }
 
+// Ensure canvas size matches video size
 function syncCanvasSize() {
     if (!videoElement.videoWidth || !videoElement.videoHeight) return false;
     if (canvasElement.width !== videoElement.videoWidth || canvasElement.height !== videoElement.videoHeight) {
@@ -412,6 +440,7 @@ function syncCanvasSize() {
     return true;
 }
 
+// Update skeleton target positions and calculate velocities for smooth rendering
 function updateSkeletonTargets(handLandmarks) {
     const now = performance.now();
     const nextHands = cloneHands(handLandmarks);
@@ -420,6 +449,7 @@ function updateSkeletonTargets(handLandmarks) {
         previousTargetHandLandmarks = cloneHands(nextHands);
     }
 
+    // Calculate velocity for each landmark (for extrapolation)
     handLandmarkVelocities = nextHands.map((hand, handIndex) => {
         const previousHand = previousTargetHandLandmarks[handIndex] || hand;
         const deltaMs = Math.max(now - lastDetectionAt, 1);
@@ -439,12 +469,14 @@ function updateSkeletonTargets(handLandmarks) {
     lastDetectionAt = now;
 }
 
+// Clear skeleton targets when no hands detected
 function clearSkeletonTargets() {
     targetHandLandmarks = [];
     previousTargetHandLandmarks = [];
     handLandmarkVelocities = [];
 }
 
+// Render skeleton with extrapolation for smooth animation between detections
 function renderSkeletonFrame(now) {
     skeletonRenderLoopId = requestAnimationFrame(renderSkeletonFrame);
 
@@ -457,6 +489,7 @@ function renderSkeletonFrame(now) {
     }
 
     const sinceDetectionMs = now - lastDetectionAt;
+    // Extrapolate positions if detection was recent (smooths out frame drops)
     const shouldExtrapolate = sinceDetectionMs > 0 && sinceDetectionMs <= SKELETON_MAX_EXTRAPOLATION_MS;
 
     const displayHands = targetHandLandmarks.map((targetHand, handIndex) => {
@@ -478,11 +511,13 @@ function renderSkeletonFrame(now) {
     }
 }
 
+// Start the skeleton rendering loop
 function startSkeletonRenderer() {
     if (skeletonRenderLoopId) return;
     skeletonRenderLoopId = requestAnimationFrame(renderSkeletonFrame);
 }
 
+// Stop the skeleton rendering loop
 function stopSkeletonRenderer() {
     if (skeletonRenderLoopId) {
         cancelAnimationFrame(skeletonRenderLoopId);
@@ -491,11 +526,14 @@ function stopSkeletonRenderer() {
     clearSkeletonTargets();
 }
 
+// Preprocess hand landmarks for ML model input
+// Normalizes positions relative to wrist and scales by hand size
 function preprocessLandmarks(landmarks, mirrorX = false) {
     const wrist = landmarks[0];
     const wristX = mirrorX ? 1 - wrist.x : wrist.x;
     const indexMCP = landmarks[5];
     const indexX = mirrorX ? 1 - indexMCP.x : indexMCP.x;
+    // Calculate hand size using wrist to index finger distance
     const distance = Math.hypot(
         indexX - wristX,
         indexMCP.y - wrist.y,
@@ -503,6 +541,7 @@ function preprocessLandmarks(landmarks, mirrorX = false) {
     ) || 1e-6;
     const normalized = new Array(landmarks.length * 3);
 
+    // Normalize each landmark relative to wrist and scale by hand size
     for (let index = 0; index < landmarks.length; index += 1) {
         const point = landmarks[index];
         const pointX = mirrorX ? 1 - point.x : point.x;
@@ -515,6 +554,7 @@ function preprocessLandmarks(landmarks, mirrorX = false) {
     return normalized;
 }
 
+// Smooth predictions using a rolling buffer (reduces flickering)
 function getSmoothedPrediction(predLabel) {
     predictionBuffer.push(predLabel);
     if (predictionBuffer.length > 10) predictionBuffer.shift(); // Slightly faster response
@@ -523,6 +563,7 @@ function getSmoothedPrediction(predLabel) {
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
 }
 
+// Detect if hand is still (needed for static sign prediction)
 function updateMotionState(currentFrame) {
     const now = Date.now();
 
@@ -551,11 +592,13 @@ function updateMotionState(currentFrame) {
     return { isStillFrame, stillForMs };
 }
 
+// Reset motion detection state
 function resetMotionState() {
     previousMotionFrame = null;
     staticStillStartTime = 0;
 }
 
+// Calculate difference between two frames (for motion detection)
 function getFrameDifference(frameA, frameB) {
     if (!frameA || !frameB || frameA.length !== frameB.length) return Infinity;
 
@@ -566,11 +609,13 @@ function getFrameDifference(frameA, frameB) {
     return totalDelta / frameA.length;
 }
 
+// Update the last displayed prediction and frame
 function updateDisplayedPrediction(label, conf, isDynamic, currentFrame) {
     lastDisplayedPrediction = { label, conf, isDynamic };
     lastDisplayedFrame = currentFrame.slice();
 }
 
+// Check if we should keep the last prediction (hand hasn't moved much)
 function shouldKeepLastPrediction(currentFrame) {
     if (!lastDisplayedPrediction || !lastDisplayedFrame) return false;
     const diff = getFrameDifference(currentFrame, lastDisplayedFrame);
@@ -578,6 +623,7 @@ function shouldKeepLastPrediction(currentFrame) {
 }
 
 // Helper to run a single model prediction
+// Returns the label with highest confidence
 function getPredictionFromTensor(predictionTensor, labels) {
     if (!predictionTensor || !labels.length) return { label: null, conf: 0 };
 
@@ -596,17 +642,20 @@ function getPredictionFromTensor(predictionTensor, labels) {
     return { label: normalizeAlphabetLabel(labels[idx]), conf: conf };
 }
 
+// Run prediction on a single model
 function predictSingleModel(modelInstance, labels, tensor) {
     if (!modelInstance || !labels.length) return { label: null, conf: 0 };
     return getPredictionFromTensor(modelInstance.predict(tensor), labels);
 }
 
+// Normalize hand requirement value to 1, 2, or 'any'
 function normalizeHandRequirement(rawValue) {
     if (rawValue === 1 || rawValue === '1') return 1;
     if (rawValue === 2 || rawValue === '2') return 2;
     return 'any';
 }
 
+// Check if this is the ASL 'Z' letter (special case requiring motion detection)
 function isASLDynamicSpellingLetter(label) {
     if (localStorageModelKey !== 'my-asl-model') return false;
     if (typeof label !== 'string') return false;
@@ -727,19 +776,23 @@ function hasStrongASLZMotion(label, confidence, frameBuffer) {
     return hasDirectionOrCurvature;
 }
 
+// Check if the predicted label matches the detected hand count requirement
 function labelMatchesDetectedHands(label, detectedHandCount) {
     const requirement = normalizeHandRequirement(dynamicLabelHandRequirements[label]);
     return requirement === 'any' || requirement === detectedHandCount;
 }
 
+// Skip certain labels in static mode (special cases)
 function shouldSkipStaticLabel(label) {
     return typeof label === 'string' && label.toLowerCase() === 'hello';
 }
 
+// Apply ISL-specific hand count disambiguation rules
 function applyISLHandCountDisambiguation(label, detectedHandCount) {
     if (localStorageModelKey !== 'my-isl-model') return label;
     if (typeof label !== 'string') return label;
 
+    // In ISL, 'T' with one hand is actually '1'
     if (detectedHandCount < 2 && label.toUpperCase() === 'T') {
         return '1';
     }
@@ -747,6 +800,8 @@ function applyISLHandCountDisambiguation(label, detectedHandCount) {
     return label;
 }
 
+// Choose the best prediction from multiple model candidates
+// Prioritizes local (user-trained) models over server models
 function chooseBestCandidateWithLocalPriority(candidates) {
     const serverCandidates = candidates.filter(c => c.source.startsWith('Server'));
     const localCandidates = candidates.filter(c => c.source.startsWith('Local') || c.source === 'Dynamic');
@@ -777,6 +832,7 @@ function chooseBestCandidateWithLocalPriority(candidates) {
     return bestLocal || bestServer || null;
 }
 
+// Main prediction function - runs all available models and chooses best result
 function runPrediction(landmarks, detectedHandCount = 1) {
     // We need at least one model
     if (!serverModel && !localModel && !localModelDynamic) return;
@@ -805,6 +861,7 @@ function runPrediction(landmarks, detectedHandCount = 1) {
                 candidates.push({ ...pNorm, source: 'Server' });
             }
 
+            // Try mirrored version if confidence is low (handles left/right hand ambiguity)
             if (pNorm.conf < 0.7) {
                 const tensorFlipped = tf.tensor2d([preprocessLandmarks(landmarks, true)]);
                 const pFlip = predictSingleModel(serverModel, serverLabels, tensorFlipped);

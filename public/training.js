@@ -1,3 +1,6 @@
+// training.js - AI Training page for collecting and training sign language data
+// Handles camera input, hand landmark collection, model training, and cloud sync
+
 // --- DOM Elements ---
 // --- TensorFlow.js Mobile Optimization ---
 // Configure TensorFlow.js for mobile devices (Capacitor WebView)
@@ -23,9 +26,12 @@ async function configureTensorFlowForMobile() {
 // Initialize TensorFlow.js configuration
 configureTensorFlowForMobile();
 
+// Camera and Canvas Elements
 const videoElement = document.getElementById('inputVideo');
 const canvasElement = document.getElementById('outputCanvas');
 const canvasCtx = canvasElement.getContext('2d');
+
+// UI Control Elements
 const langSelect = document.getElementById('langSelect');
 const labelInput = document.getElementById('labelInput');
 const captureBtn = document.getElementById('captureBtn');
@@ -35,23 +41,26 @@ const totalSamplesBadge = document.getElementById('totalSamples');
 const recIndicator = document.getElementById('recIndicator');
 const saveBtn = document.getElementById('saveBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
+
+// Data Panel (Sidebar) Elements
 const dataPanel = document.querySelector('.data-panel');
 const openDataPanelBtn = document.getElementById('openDataPanelBtn');
 const openDataPanelBtnMobile = document.getElementById('openDataPanelBtnMobile');
 const closeDataPanelBtn = document.getElementById('closeDataPanelBtn');
 const backToMainBtn = document.getElementById('backToMainBtn');
 const drawerBackdrop = document.getElementById('drawerBackdrop');
+
+// Alert/Modal Elements
 const alertBackdrop = document.getElementById('alertBackdrop');
 const customAlert = document.getElementById('customAlert');
 const alertMessage = document.getElementById('alertMessage');
 const alertOkBtn = document.getElementById('alertOkBtn');
 
 // Mobile Sidebar Elements
-// Mobile Sidebar Elements
 const mobileLabelDisplay = document.getElementById('mobileLabelDisplay');
 const mobileModeDisplay = document.getElementById('mobileModeDisplay');
 
-// Mobile Multi-step Setup Elements
+// Mobile Multi-step Setup Elements (for adding new signs)
 const mobileAddButtonWrap = document.getElementById('mobileAddButtonWrap');
 const mobileAddSignBtn = document.getElementById('mobileAddSignBtn');
 const mobileRecordingActions = document.getElementById('mobileRecordingActions');
@@ -75,14 +84,14 @@ const langOptions = document.querySelectorAll('.lang-option');
 const modeOptions = document.querySelectorAll('.mode-option');
 const captureBtnPortal = document.getElementById('captureBtnPortal');
 
-// Sign Card Elements
+// Sign Card Elements (for reference images)
 const signCardBtn = document.getElementById('signCardBtn');
 const signCardInput = document.getElementById('signCardInput');
 const signCardStatus = document.getElementById('signCardStatus');
 const clearSignDetailsBtn = document.getElementById('clearSignDetailsBtn');
 const signCardFileName = document.getElementById('signCardFileName');
 
-// Dynamic mode elements
+// Dynamic mode elements (for movement-based signs)
 const staticModeBtn = document.getElementById('staticModeBtn');
 const dynamicModeBtn = document.getElementById('dynamicModeBtn');
 const modeDescription = document.getElementById('modeDescription');
@@ -96,38 +105,40 @@ const recordingProgress = document.getElementById('recordingProgress');
 const progressBar = document.getElementById('progressBar');
 
 // --- State ---
-let isCollecting = false;
-let collectedData = [];
-let currentLang = 'ISL';
-let model = null;
-let recordingMode = 'static'; // 'static' or 'dynamic'
-let hasRecordedSignInSession = false;
-const MAX_STATIC_SAMPLES_PER_SESSION = 100;
-let staticSessionSampleCount = 0;
-let isStaticPausedNoHands = false;
+let isCollecting = false;  // Whether currently collecting hand landmark data
+let collectedData = [];  // Array of collected training samples
+let currentLang = 'ISL';  // Current language (ISL or ASL)
+let model = null;  // TensorFlow.js model
+let recordingMode = 'static';  // 'static' (single pose) or 'dynamic' (movement)
+let hasRecordedSignInSession = false;  // Whether user has recorded any signs in current session
+const MAX_STATIC_SAMPLES_PER_SESSION = 100;  // Max samples per sign in static mode
+let staticSessionSampleCount = 0;  // Count of samples in current static session
+let isStaticPausedNoHands = false;  // Whether static recording is paused due to no hands
 
 // Dynamic recording state
-let isDynamicRecording = false;
-let dynamicFrameBuffer = [];
-const MAX_DYNAMIC_FRAMES = 30;
-const TARGET_FPS = 10; // Capture ~10 frames per second
-let lastFrameCaptureTime = 0;
-let dynamicRecordingMaxHands = 1;
+let isDynamicRecording = false;  // Whether currently recording dynamic sign frames
+let dynamicFrameBuffer = [];  // Buffer of frames for dynamic signs
+const MAX_DYNAMIC_FRAMES = 30;  // Maximum frames to capture for dynamic signs
+const TARGET_FPS = 10;  // Capture ~10 frames per second for dynamic signs
+let lastFrameCaptureTime = 0;  // Last time a frame was captured
+let dynamicRecordingMaxHands = 1;  // Maximum number of hands to track in dynamic mode
 
 // Pending data for mobile "Finish Setup" workflow
-let pendingSignCard = null; // { base64Data, extension }
-let lastSessionSampleCountAtStart = 0;
-let isInSetupMode = false;
-let lastRecordedBatchCount = 0;
-let sessionHistory = [];
-let lastTrainSaveState = { lang: '', label: '', sampleCount: 0 };
+let pendingSignCard = null;  // { base64Data, extension } - sign card image waiting to upload
+let lastSessionSampleCountAtStart = 0;  // Sample count when session started
+let isInSetupMode = false;  // Whether in mobile setup mode
+let lastRecordedBatchCount = 0;  // Count of last recorded batch
+let sessionHistory = [];  // History of recorded sessions for revert functionality
+let lastTrainSaveState = { lang: '', label: '', sampleCount: 0 };  // Last trained model state
 
+// Open the data panel drawer (sidebar)
 function openDataDrawer() {
     if (!dataPanel) return;
     dataPanel.classList.add('open');
     if (drawerBackdrop) drawerBackdrop.classList.add('active');
 }
 
+// Close the data panel drawer (sidebar)
 function closeDataDrawer() {
     if (!dataPanel) return;
     dataPanel.classList.remove('open');
@@ -136,6 +147,7 @@ function closeDataDrawer() {
     }
 }
 
+// Normalize label to uppercase for single letters, trim for others
 function normalizeLabel(label) {
     const trimmed = (label || '').trim();
     if (!trimmed) return '';
@@ -143,6 +155,7 @@ function normalizeLabel(label) {
     return trimmed;
 }
 
+// Normalize all labels in a dataset
 function normalizeDatasetLabels(samples) {
     let changed = false;
     const normalized = samples.map((sample) => {
@@ -156,6 +169,7 @@ function normalizeDatasetLabels(samples) {
     return { normalized, changed };
 }
 
+// Normalize all labels in a list
 function normalizeLabelList(labels) {
     let changed = false;
     const normalized = (labels || []).map((label) => {
@@ -168,6 +182,7 @@ function normalizeLabelList(labels) {
     return { normalized, changed };
 }
 
+// Normalize hand requirement map keys (which signs need 1 or 2 hands)
 function normalizeHandRequirementMap(map) {
     let changed = false;
     const normalized = {};
@@ -183,14 +198,17 @@ function normalizeHandRequirementMap(map) {
     return { normalized, changed };
 }
 
+// Generate localStorage key for a sign card
 function getSignCardStorageKey(lang, label) {
     return `sign_card_${lang}_${normalizeLabel(label)}`;
 }
 
+// Generate localStorage prefix for sign cards of a language
 function getSignCardStoragePrefix(lang) {
     return `sign_card_${lang}_`;
 }
 
+// Get all stored sign card keys for a language
 function getStoredSignCardKeys(lang) {
     const prefix = getSignCardStoragePrefix(lang);
     const keys = [];
@@ -203,6 +221,7 @@ function getStoredSignCardKeys(lang) {
     return keys;
 }
 
+// Save current training data to localStorage (for offline backup)
 function persistCurrentTrainingDataLocally(lang = currentLang) {
     const keys = STORAGE_KEYS[lang];
     if (!keys) return;
@@ -224,6 +243,7 @@ function persistCurrentTrainingDataLocally(lang = currentLang) {
     }
 }
 
+// Clear all local draft data for a language
 function clearLocalDraftDataForLanguage(lang = currentLang) {
     const keys = STORAGE_KEYS[lang];
     if (keys) {
@@ -234,6 +254,7 @@ function clearLocalDraftDataForLanguage(lang = currentLang) {
     signCardKeys.forEach((key) => localStorage.removeItem(key));
 }
 
+// Load local draft data from localStorage
 function loadLocalDraftData(lang = currentLang) {
     const keys = STORAGE_KEYS[lang];
     if (!keys) return [];
@@ -249,6 +270,7 @@ function loadLocalDraftData(lang = currentLang) {
     }
 }
 
+// Convert label to cloud-safe format (lowercase, hyphens only)
 function toCloudSignLabel(label) {
     const normalized = normalizeLabel(label);
     if (!normalized) return '';
@@ -357,7 +379,7 @@ function hasAllDataTrained() {
     return hasCollectedData() && getUntrainedSampleCount() === 0;
 }
 
-// Storage Keys
+// Storage Keys for localStorage
 const STORAGE_KEYS = {
     'ISL': { model: 'my-isl-model', labels: 'isl_labels', data: 'isl_data' },
     'ASL': { model: 'my-asl-model', labels: 'asl_labels', data: 'asl_data' }
@@ -365,12 +387,12 @@ const STORAGE_KEYS = {
 
 // --- Initialization ---
 async function init() {
-    startCamera();
-    setupModeToggle();
-    setupMobileDataDrawer();
-    setupMobileSignSetup(); // New mobile workflow
-    setupCustomAlert();
-    await loadDataFromServer();
+    startCamera();  // Start camera for hand detection
+    setupModeToggle();  // Setup static/dynamic mode toggle
+    setupMobileDataDrawer();  // Setup mobile data panel
+    setupMobileSignSetup();  // Setup mobile sign setup workflow
+    setupCustomAlert();  // Setup custom alert dialogs
+    await loadDataFromServer();  // Load existing training data from server
 }
 
 let confirmResolver = null;

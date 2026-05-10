@@ -1,3 +1,5 @@
+// server.js - Express server for SignLink application
+// Handles API endpoints for training data, model uploads, and sign cards
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
@@ -6,6 +8,7 @@ const fs = require('fs');
 const { supabase } = require('./supabase-config');
 
 // --- Production Middleware ---
+// Redirect HTTP to HTTPS in production
 app.use((req, res, next) => {
     if (req.headers['x-forwarded-proto'] === 'http') {
         return res.redirect(`https://${req.headers.host}${req.url}`);
@@ -13,15 +16,19 @@ app.use((req, res, next) => {
     next();
 });
 
+// Parse JSON requests with large limit for model files
 app.use(express.json({ limit: '100mb' }));
+// Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
 const TRAINING_DATA_FILE = path.join(__dirname, 'public', 'training_data.json');
+// Storage bucket names from environment or defaults
 const STORAGE_BUCKETS = {
     signCards: process.env.SUPABASE_SIGN_CARDS_BUCKET || 'sign-cards',
     models: process.env.SUPABASE_MODELS_BUCKET || 'models'
 };
 
+// Verify that a storage bucket exists in Supabase
 async function ensureBucketExists(bucketName) {
     const { data: buckets, error } = await supabase.storage.listBuckets();
     if (error) {
@@ -36,14 +43,18 @@ async function ensureBucketExists(bucketName) {
     return bucket;
 }
 
+// Get list of buckets to try for model storage (with fallback)
 async function getModelBucketCandidates() {
     const candidates = [STORAGE_BUCKETS.models];
+    // Add sign-cards bucket as fallback if different from models bucket
     if (STORAGE_BUCKETS.signCards !== STORAGE_BUCKETS.models) {
         candidates.push(STORAGE_BUCKETS.signCards);
     }
     return candidates;
 }
 
+// Upload file to the first available bucket from candidates list
+// Tries each bucket in order until one succeeds
 async function uploadToAvailableBucket(bucketCandidates, filePath, buffer, options) {
     let lastError = null;
 
@@ -61,6 +72,7 @@ async function uploadToAvailableBucket(bucketCandidates, filePath, buffer, optio
             lastError = error;
             const isBucketMissing = /bucket.*not found/i.test(error.message || '');
             const hasAnotherCandidate = index < bucketCandidates.length - 1;
+            // Only try next bucket if current is missing and there are more candidates
             if (!isBucketMissing || !hasAnotherCandidate) {
                 throw error;
             }
@@ -75,6 +87,7 @@ async function uploadToAvailableBucket(bucketCandidates, filePath, buffer, optio
 // ─────────────────────────────────────────────────────────────────────────────
 async function migrateLocalDataToSupabase() {
     try {
+        // Check if Supabase already has training data
         const { count, error } = await supabase
             .from('training_data')
             .select('id', { count: 'exact', head: true });
@@ -84,11 +97,13 @@ async function migrateLocalDataToSupabase() {
             return;
         }
 
+        // Skip migration if data already exists
         if (count > 0) {
             console.log(`✅ Supabase already has ${count} training samples. Skipping migration.`);
             return;
         }
 
+        // Check if local file exists
         if (!fs.existsSync(TRAINING_DATA_FILE)) {
             console.log('No local training_data.json found. Starting fresh in Supabase.');
             return;
@@ -98,6 +113,7 @@ async function migrateLocalDataToSupabase() {
         const raw = fs.readFileSync(TRAINING_DATA_FILE, 'utf8');
         const allData = JSON.parse(raw);
 
+        // Migrate data for each language (ISL, ASL)
         for (const lang of ['ISL', 'ASL']) {
             const samples = allData[lang] || [];
             if (samples.length === 0) continue;
@@ -139,6 +155,7 @@ async function migrateLocalDataToSupabase() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/training-data — read training data from Supabase
+// Returns all training samples grouped by language (ISL, ASL)
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/training-data', async (req, res) => {
     try {
@@ -159,6 +176,7 @@ app.get('/api/training-data', async (req, res) => {
                 recordedAt: row.recorded_at,
                 trainedAt: row.trained_at,
             };
+            // Include frame data for dynamic signs, landmarks for static signs
             if (row.type === 'dynamic') {
                 sample.frames = row.frames;
                 sample.handCount = row.hand_count;
@@ -185,10 +203,11 @@ app.post('/api/training-data', async (req, res) => {
     try {
         const allData = req.body; // { ISL: [...], ASL: [...] }
 
+        // Process each language separately
         for (const lang of Object.keys(allData)) {
             const samples = allData[lang] || [];
 
-            // Delete existing rows for this language
+            // Delete existing rows for this language before inserting new data
             const { error: deleteErr } = await supabase
                 .from('training_data')
                 .delete()
@@ -198,7 +217,7 @@ app.post('/api/training-data', async (req, res) => {
 
             if (samples.length === 0) continue;
 
-            // Insert in batches of 500
+            // Insert in batches of 500 to avoid payload limits
             const BATCH = 500;
             for (let i = 0; i < samples.length; i += BATCH) {
                 const batch = samples.slice(i, i + BATCH).map(s => ({
@@ -230,6 +249,7 @@ app.post('/api/training-data', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/upload-sign-card — upload sign card image to Supabase Storage
+// Also saves reference URL to sign_cards table and local file for fallback
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/upload-sign-card', async (req, res) => {
     try {
@@ -241,14 +261,16 @@ app.post('/api/upload-sign-card', async (req, res) => {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
+        // Sanitize label for safe filename
         const safeLabel = label.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-');
         const langFolder = lang.toLowerCase();
         const filePath = `${langFolder}/${safeLabel}.${extension}`;
 
-        // Strip data URL prefix
+        // Strip data URL prefix and convert to buffer
         const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
         const imageBuffer = Buffer.from(base64Data, 'base64');
 
+        // Determine content type based on extension
         const contentType = extension === 'png' ? 'image/png'
             : extension === 'gif' ? 'image/gif'
             : extension === 'webp' ? 'image/webp'
@@ -264,14 +286,14 @@ app.post('/api/upload-sign-card', async (req, res) => {
 
         if (uploadErr) throw uploadErr;
 
-        // Get public URL
+        // Get public URL for the uploaded file
         const { data: urlData } = supabase.storage
             .from(STORAGE_BUCKETS.signCards)
             .getPublicUrl(filePath);
 
         const publicUrl = urlData.publicUrl;
 
-        // Save URL to sign_cards table
+        // Save URL to sign_cards table for reference
         const { error: upsertErr } = await supabase
             .from('sign_cards')
             .upsert({ lang: langFolder, label: safeLabel, url: publicUrl, extension, updated_at: new Date().toISOString() },
@@ -283,7 +305,7 @@ app.post('/api/upload-sign-card', async (req, res) => {
         const uploadsDir = path.join(__dirname, 'public', 'signs-images', langFolder);
         if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-        // Remove old formats
+        // Remove old formats to avoid conflicts
         ['jpg', 'jpeg', 'png', 'gif', 'webp'].forEach(ext => {
             const old = path.join(uploadsDir, `${safeLabel}.${ext}`);
             if (fs.existsSync(old)) fs.unlinkSync(old);
@@ -300,6 +322,7 @@ app.post('/api/upload-sign-card', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/delete-sign-card — delete sign card from Supabase Storage & DB
+// Also removes local file copy
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/delete-sign-card', async (req, res) => {
     try {
@@ -309,7 +332,7 @@ app.post('/api/delete-sign-card', async (req, res) => {
         const safeLabel = label.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-');
         const langFolder = lang.toLowerCase();
 
-        // Get extension from sign_cards table
+        // Get extension from sign_cards table to construct file path
         const { data: cardData } = await supabase
             .from('sign_cards')
             .select('extension')
@@ -322,10 +345,10 @@ app.post('/api/delete-sign-card', async (req, res) => {
             await supabase.storage.from(STORAGE_BUCKETS.signCards).remove([filePath]);
         }
 
-        // Delete from sign_cards table
+        // Delete record from sign_cards table
         await supabase.from('sign_cards').delete().eq('lang', langFolder).eq('label', safeLabel);
 
-        // Also delete local copy
+        // Also delete local copy for cleanup
         const uploadsDir = path.join(__dirname, 'public', 'signs-images', langFolder);
         if (fs.existsSync(uploadsDir)) {
             ['jpg', 'jpeg', 'png', 'gif', 'webp'].forEach(ext => {
@@ -343,6 +366,7 @@ app.post('/api/delete-sign-card', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/upload-model-component — upload trained model files (JSON/Bin) to Supabase Storage
+// Accepts base64-encoded model files and stores them with bucket fallback
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/upload-model-component', async (req, res) => {
     try {
@@ -352,6 +376,7 @@ app.post('/api/upload-model-component', async (req, res) => {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
+        // Construct storage path: models/{lang}/{type}/{filename}
         const filePath = `models/${lang.toLowerCase()}/${type}/${fileName}`;
         const buffer = Buffer.from(fileDataB64, 'base64');
         const bucketCandidates = await getModelBucketCandidates();
@@ -369,6 +394,7 @@ app.post('/api/upload-model-component', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/trigger-cloud-training — trigger python training scripts
+// Currently simulated with a delay, would call actual Python training scripts in production
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/trigger-cloud-training', async (req, res) => {
     try {
@@ -426,6 +452,7 @@ app.post('/api/trigger-cloud-training', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/list-models — check which models are available in the cloud
+// Returns list of files in the models storage bucket with fallback support
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/list-models', async (req, res) => {
     try {
@@ -433,6 +460,7 @@ app.get('/api/list-models', async (req, res) => {
         let data = null;
         let lastError = null;
 
+        // Try each bucket until one succeeds
         for (let index = 0; index < bucketCandidates.length; index += 1) {
             const bucketName = bucketCandidates[index];
             try {
@@ -463,6 +491,7 @@ app.get('/api/list-models', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/sign-cards — list all sign card URLs from Supabase (for preloading)
+// Returns sign cards grouped by language for client-side caching
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/sign-cards', async (req, res) => {
     try {
@@ -473,7 +502,7 @@ app.get('/api/sign-cards', async (req, res) => {
 
         if (error) throw error;
 
-        // Group by lang
+        // Group by lang for easier client-side access
         const result = {};
         for (const card of data) {
             if (!result[card.lang]) result[card.lang] = [];
@@ -487,6 +516,7 @@ app.get('/api/sign-cards', async (req, res) => {
     }
 });
 
+// Returns storage bucket configuration to client
 app.get('/api/storage-config', (req, res) => {
     res.json(STORAGE_BUCKETS);
 });
@@ -498,6 +528,7 @@ app.get('/api/storage-config', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 
+// Run migration first, then start server (or start anyway if migration fails)
 migrateLocalDataToSupabase().then(() => {
     app.listen(PORT, () => {
         console.log(`🚀 Server running on http://localhost:${PORT}`);

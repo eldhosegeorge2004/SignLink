@@ -1,3 +1,5 @@
+// script.js - Video call page with WebRTC, sign language prediction, and speech features
+// Handles peer connections, camera/microphone controls, and real-time translation
 // Note: supabaseClient is initialized globally in videocall.html
 let supabaseChannel = null;
 
@@ -9,19 +11,20 @@ let localStorageModelKey = 'my-isl-model';
 let localStorageLabelKey = 'isl_labels';
 
 // Hybrid model support (same as translation.js)
-let serverModel = null;
-let serverLabels = [];
-let model = null; // local model reference (used earlier)
-let uniqueLabels = [];
+let serverModel = null;  // Pre-trained server model
+let serverLabels = [];  // Labels for server model
+let model = null;  // Local model reference (used earlier)
+let uniqueLabels = [];  // Unique labels from all models
 
-// Dynamic sign support
-let modelDynamic = null;
-let uniqueLabelsDynamic = [];
-let dynamicLabelHandRequirements = {};
-let dynamicFrameBuffer = [];
-const MAX_DYNAMIC_FRAMES = 30;
-const DYNAMIC_ANALYZE_MS = 1500;
-let dynamicBufferStartTime = 0;
+// Dynamic sign support (for movement-based signs)
+let modelDynamic = null;  // Dynamic model for movement-based signs
+let uniqueLabelsDynamic = [];  // Labels for dynamic model
+let dynamicLabelHandRequirements = {};  // Hand requirements for dynamic signs
+let dynamicFrameBuffer = [];  // Buffer of frames for dynamic signs
+const MAX_DYNAMIC_FRAMES = 30;  // Maximum frames to capture for dynamic signs
+const DYNAMIC_ANALYZE_MS = 1500;  // Time to analyze dynamic signs
+let dynamicBufferStartTime = 0;  // When dynamic buffer started
+// ASL Z-letter motion detection thresholds (special case for ASL 'Z' which requires motion)
 const BIG_MOTION_CHANGE_THRESHOLD = 0.06;
 const ASL_Z_MIN_CONFIDENCE = 0.82;
 const ASL_Z_MIN_FRAMES = 6;
@@ -34,31 +37,34 @@ const ASL_Z_MIN_DIRECTION_CHANGES = 1;
 const ASL_Z_MIN_CURVATURE_RATIO = 1.03;
 const ASL_Z_MIN_WHOLE_HAND_PATH = 0.11;
 const ASL_Z_MIN_ACTIVE_LANDMARK_RATIO = 0.28;
-let lastDisplayedPrediction = null;
-let lastDisplayedFrame = null;
-const STATIC_STILL_DURATION_MS = 1000;
-const MOTION_THRESHOLD = 0.02;
-let previousMotionFrame = null;
-let staticStillStartTime = 0;
-const NO_HANDS_TIMEOUT_MS = 2000;
-let lastHandDetectedTime = Date.now();
-let noHandsTimeoutId = null;
+// Motion detection for static signs (hand must be still to predict)
+let lastDisplayedPrediction = null;  // Last prediction displayed
+let lastDisplayedFrame = null;  // Last frame displayed
+const STATIC_STILL_DURATION_MS = 1000;  // Time hand must be still for static prediction
+const MOTION_THRESHOLD = 0.02;  // Threshold for detecting motion
+let previousMotionFrame = null;  // Previous frame for motion detection
+let staticStillStartTime = 0;  // When hand became still
+const NO_HANDS_TIMEOUT_MS = 2000;  // Timeout when no hands detected
+let lastHandDetectedTime = Date.now();  // Last time hands were detected
+let noHandsTimeoutId = null;  // Timeout ID for no hands
 
 // prediction buffer must exist before any model loading/prediction logic
-const predictionBuffer = [];
+const predictionBuffer = [];  // Buffer for smoothing predictions
 
 // Spelling hold state (same feature added in translation.js)
-const minimumHoldDuration = 1000; // ms
-let holdStartTime = 0;
-let heldLetter = null;
-const DYNAMIC_LETTER_COOLDOWN_MS = 1200;
-let lastDynamicLetterAddedAt = 0;
+const minimumHoldDuration = 1000;  // Minimum time to hold a letter (ms)
+let holdStartTime = 0;  // When letter hold started
+let heldLetter = null;  // Currently held letter
+const DYNAMIC_LETTER_COOLDOWN_MS = 1200;  // Cooldown between dynamic letters
+let lastDynamicLetterAddedAt = 0;  // Last time dynamic letter was added
 
+// Normalize single letter labels to uppercase (A, B, C, etc.)
 function normalizeAlphabetLabel(label) {
     if (typeof label !== 'string') return label;
     return /^[a-zA-Z]$/.test(label) ? label.toUpperCase() : label;
 }
 
+// Normalize all labels in a list to ensure consistency
 function normalizeLabelList(labels) {
     let changed = false;
     const normalized = (labels || []).map((label) => {
@@ -69,6 +75,7 @@ function normalizeLabelList(labels) {
     return { labels: normalized, changed };
 }
 
+// Normalize hand requirement map keys (which signs need 1 or 2 hands)
 function normalizeHandRequirementMap(map) {
     let changed = false;
     const normalized = {};
@@ -82,6 +89,8 @@ function normalizeHandRequirementMap(map) {
     return { map: normalized, changed };
 }
 
+// Fetch model from Supabase cloud storage
+// Tries multiple buckets with fallback support
 async function fetchCloudModel(type, lang) {
     try {
         const langLower = lang.toLowerCase();
