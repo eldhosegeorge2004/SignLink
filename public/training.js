@@ -1564,18 +1564,18 @@ function onResults(results) {
         for (const landmarks of results.multiHandLandmarks) {
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
             drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
+        }
 
-            // Static mode recording
-            if (isCollecting && recordingMode === 'static') {
-                const label = normalizeLabel(labelInput.value);
-                if (label) {
-                    labelInput.value = label;
-                    const flatLandmarks = preprocessLandmarks(landmarks);
-                    const shouldContinue = captureStaticSample(label, flatLandmarks);
-                    if (!shouldContinue) break;
-                }
+        // Static mode recording: only use primary hand (first detected hand)
+        if (isCollecting && recordingMode === 'static') {
+            const label = normalizeLabel(labelInput.value);
+            if (label && results.multiHandLandmarks.length > 0) {
+                labelInput.value = label;
+                const primaryLandmarks = results.multiHandLandmarks[0];
+                const flatLandmarks = preprocessLandmarks(primaryLandmarks);
+                const shouldContinue = captureStaticSample(label, flatLandmarks);
+                if (!shouldContinue) return;
             }
-
         }
 
         // Dynamic mode recording: capture one frame per interval from primary hand,
@@ -1776,13 +1776,31 @@ async function loadDataFromServer() {
         }
 
         const loadedData = allData[currentLang] || [];
-        const normalizedData = normalizeDatasetLabels(loadedData);
+        // Filter out samples with incorrect landmark length (should be 63 for single hand)
+        const validLoadedData = loadedData.filter(d => {
+            if (d.type === 'dynamic') return true; // Dynamic data has different structure
+            return d.landmarks && d.landmarks.length === 63;
+        });
+        if (validLoadedData.length !== loadedData.length) {
+            console.warn(`Filtered out ${loadedData.length - validLoadedData.length} samples with incorrect landmark length from Supabase`);
+        }
+
+        const normalizedData = normalizeDatasetLabels(validLoadedData);
         collectedData = normalizedData.normalized;
         sessionHistory = [];
 
         const localDraft = normalizeDatasetLabels(loadLocalDraftData(currentLang)).normalized;
+        // Also filter local draft data
+        const validLocalDraft = localDraft.filter(d => {
+            if (d.type === 'dynamic') return true;
+            return d.landmarks && d.landmarks.length === 63;
+        });
+        if (validLocalDraft.length !== localDraft.length) {
+            console.warn(`Filtered out ${localDraft.length - validLocalDraft.length} samples with incorrect landmark length from localStorage`);
+        }
+
         const existingKeys = new Set(collectedData.map((sample) => `${sample.label}|${sample.type}|${sample.recordedAt}`));
-        localDraft.forEach((sample) => {
+        validLocalDraft.forEach((sample) => {
             const key = `${sample.label}|${sample.type}|${sample.recordedAt}`;
             if (!existingKeys.has(key)) {
                 collectedData.push(sample);
@@ -1794,7 +1812,12 @@ async function loadDataFromServer() {
         }
     } catch (err) {
         console.error('Failed to load training data from Supabase:', err);
-        collectedData = normalizeDatasetLabels(loadLocalDraftData(currentLang)).normalized;
+        const localDraft = normalizeDatasetLabels(loadLocalDraftData(currentLang)).normalized;
+        const validLocalDraft = localDraft.filter(d => {
+            if (d.type === 'dynamic') return true;
+            return d.landmarks && d.landmarks.length === 63;
+        });
+        collectedData = validLocalDraft;
     } finally {
         renderDataList();
     }
@@ -2282,6 +2305,15 @@ async function trainStaticModel(staticData, newStaticData) {
     if (!hasExistingModel) {
         if (staticData.length < 5) return { trained: false };
 
+        // Filter out samples with incorrect landmark length (should be 63 for single hand)
+        const validStaticData = staticData.filter(d => d.landmarks && d.landmarks.length === 63);
+        if (validStaticData.length !== staticData.length) {
+            console.warn(`Filtered out ${staticData.length - validStaticData.length} samples with incorrect landmark length`);
+            staticData = validStaticData;
+        }
+
+        if (staticData.length < 5) return { trained: false };
+
         let baseLabels = getUniqueLabels(staticData);
         const prepared = withDummyClassIfNeeded(staticData, baseLabels);
         const trainingData = prepared.trainingData;
@@ -2290,6 +2322,15 @@ async function trainStaticModel(staticData, newStaticData) {
         trainingLabels.forEach((label, index) => { labelMap[label] = index; });
 
         statusMsg.innerText = "🔄 Training static model from base dataset...";
+
+        // Final validation: ensure all training data has correct landmark length
+        const validTrainingData = trainingData.filter(d => d.landmarks && d.landmarks.length === 63);
+        if (validTrainingData.length !== trainingData.length) {
+            console.warn(`Final filter: removed ${trainingData.length - validTrainingData.length} samples with incorrect landmark length`);
+            trainingData = validTrainingData;
+        }
+
+        if (trainingData.length < 5) return { trained: false };
 
         const xs = tf.tensor2d(trainingData.map(d => d.landmarks));
         const ys = tf.oneHot(tf.tensor1d(trainingData.map(d => labelMap[d.label]), 'int32'), trainingLabels.length);
@@ -2319,6 +2360,15 @@ async function trainStaticModel(staticData, newStaticData) {
 
     if (newStaticData.length === 0) return { trained: false };
 
+    // Filter out samples with incorrect landmark length
+    const validNewStaticData = newStaticData.filter(d => d.landmarks && d.landmarks.length === 63);
+    if (validNewStaticData.length !== newStaticData.length) {
+        console.warn(`Filtered out ${newStaticData.length - validNewStaticData.length} new samples with incorrect landmark length`);
+        newStaticData = validNewStaticData;
+    }
+
+    if (newStaticData.length === 0) return { trained: false };
+
     const newLabels = getUniqueLabels(newStaticData);
     const unseenLabels = newLabels.filter(label => !existingLabels.includes(label));
 
@@ -2335,6 +2385,13 @@ async function trainStaticModel(staticData, newStaticData) {
         internalLabels.forEach((label, index) => { labelMap[label] = index; });
 
         statusMsg.innerText = `🔄 Incremental static training on ${newStaticData.length} new samples...`;
+
+        // Final validation for incremental training
+        const validIncrementalData = newStaticData.filter(d => d.landmarks && d.landmarks.length === 63);
+        if (validIncrementalData.length !== newStaticData.length) {
+            console.warn(`Incremental filter: removed ${newStaticData.length - validIncrementalData.length} samples with incorrect landmark length`);
+            newStaticData = validIncrementalData;
+        }
 
         const xs = tf.tensor2d(newStaticData.map(d => d.landmarks));
         const ys = tf.oneHot(tf.tensor1d(newStaticData.map(d => labelMap[d.label]), 'int32'), internalLabels.length);
