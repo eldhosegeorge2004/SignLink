@@ -1,5 +1,28 @@
-
 // --- DOM Elements ---
+// --- TensorFlow.js Mobile Optimization ---
+// Configure TensorFlow.js for mobile devices (Capacitor WebView)
+async function configureTensorFlowForMobile() {
+    try {
+        // Prefer WebGL for better performance on mobile
+        await tf.setBackend('webgl');
+        console.log('TensorFlow.js backend set to WebGL');
+    } catch (e) {
+        console.warn('WebGL backend not available, falling back to CPU:', e);
+        try {
+            await tf.setBackend('cpu');
+            console.log('TensorFlow.js backend set to CPU');
+        } catch (cpuError) {
+            console.error('Failed to set TensorFlow.js backend:', cpuError);
+        }
+    }
+    // Enable memory management for mobile
+    tf.enableProdMode();
+    console.log('TensorFlow.js production mode enabled');
+}
+
+// Initialize TensorFlow.js configuration
+configureTensorFlowForMobile();
+
 const videoElement = document.getElementById('inputVideo');
 const canvasElement = document.getElementById('outputCanvas');
 const canvasCtx = canvasElement.getContext('2d');
@@ -189,7 +212,16 @@ function persistCurrentTrainingDataLocally(lang = currentLang) {
         return;
     }
 
-    localStorage.setItem(keys.data, JSON.stringify(collectedData));
+    try {
+        localStorage.setItem(keys.data, JSON.stringify(collectedData));
+    } catch (e) {
+        if (e.name === 'QuotaExceededError') {
+            console.error('LocalStorage quota exceeded on mobile device');
+            showCustomAlert('Storage full. Please train and upload your data to clear space.');
+        } else {
+            console.error('Failed to save training data locally:', e);
+        }
+    }
 }
 
 function clearLocalDraftDataForLanguage(lang = currentLang) {
@@ -296,12 +328,15 @@ async function uploadAllPendingSignCards(lang = currentLang) {
     const signCardKeys = getStoredSignCardKeys(lang);
     for (const key of signCardKeys) {
         const label = key.slice(getSignCardStoragePrefix(lang).length);
-        const raw = localStorage.getItem(key);
-        if (!raw) continue;
-        const cardRecord = JSON.parse(raw);
-        await uploadSignCardRecord(label, cardRecord, lang);
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+            const cardRecord = JSON.parse(raw);
+            await uploadSignCardRecord(label, cardRecord, lang);
+        } catch (e) {
+            console.error(`Failed to upload sign card for ${label}:`, e);
+        }
     }
-
     if (pendingSignCard && normalizeLabel(labelInput.value)) {
         await uploadSignCardRecord(labelInput.value, {
             imageBase64: pendingSignCard.base64Data,
@@ -553,10 +588,19 @@ function setupMobileSignSetup() {
 
         if (pendingSignCard) {
             const cardKey = getSignCardStorageKey(currentLang, label);
-            localStorage.setItem(cardKey, JSON.stringify({
-                imageBase64: pendingSignCard.base64Data,
-                extension: pendingSignCard.extension
-            }));
+            try {
+                localStorage.setItem(cardKey, JSON.stringify({
+                    imageBase64: pendingSignCard.base64Data,
+                    extension: pendingSignCard.extension
+                }));
+            } catch (e) {
+                if (e.name === 'QuotaExceededError') {
+                    console.error('LocalStorage quota exceeded for sign card');
+                    showCustomAlert('Storage full. Cannot save sign card image.');
+                } else {
+                    console.error('Failed to save sign card:', e);
+                }
+            }
         }
 
         sessionHistory = [];
@@ -1218,17 +1262,38 @@ async function saveTrainedModelsToLocalStorage() {
     const keys = STORAGE_KEYS[currentLang];
     let savedAnyModel = false;
 
-    if (model?.static && model.staticLabels) {
-        await model.static.save(`localstorage://${keys.model}-static`);
-        localStorage.setItem(`${keys.labels}-static`, JSON.stringify(model.staticLabels));
-        savedAnyModel = true;
-    }
+    try {
+        if (model?.static && model.staticLabels) {
+            await model.static.save(`localstorage://${keys.model}-static`);
+            try {
+                localStorage.setItem(`${keys.labels}-static`, JSON.stringify(model.staticLabels));
+                savedAnyModel = true;
+            } catch (e) {
+                if (e.name === 'QuotaExceededError') {
+                    console.error('LocalStorage quota exceeded for static model labels');
+                    throw new Error('Storage full. Cannot save static model labels.');
+                }
+                throw e;
+            }
+        }
 
-    if (model?.dynamic && model.dynamicLabels) {
-        await model.dynamic.save(`localstorage://${keys.model}-dynamic`);
-        localStorage.setItem(`${keys.labels}-dynamic`, JSON.stringify(model.dynamicLabels));
-        localStorage.setItem(`${keys.labels}-dynamic-hand-req`, JSON.stringify(model.dynamicHandRequirements || {}));
-        savedAnyModel = true;
+        if (model?.dynamic && model.dynamicLabels) {
+            await model.dynamic.save(`localstorage://${keys.model}-dynamic`);
+            try {
+                localStorage.setItem(`${keys.labels}-dynamic`, JSON.stringify(model.dynamicLabels));
+                localStorage.setItem(`${keys.labels}-dynamic-hand-req`, JSON.stringify(model.dynamicHandRequirements || {}));
+                savedAnyModel = true;
+            } catch (e) {
+                if (e.name === 'QuotaExceededError') {
+                    console.error('LocalStorage quota exceeded for dynamic model labels');
+                    throw new Error('Storage full. Cannot save dynamic model labels.');
+                }
+                throw e;
+            }
+        }
+    } catch (e) {
+        console.error('Failed to save models to localStorage:', e);
+        throw e;
     }
 
     return savedAnyModel;

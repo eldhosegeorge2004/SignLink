@@ -1,5 +1,18 @@
 {
   "appId": "com.signlink.app",
   "appName": "SignLink",
-  "webDir": "public"
+  "webDir": "public",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "captureInput": [
+      "camera"
+    ]
+  },
+  "plugins": {
+    "Camera": {
+      "permissions": ["camera"]
+    }
+  }
 }
